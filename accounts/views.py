@@ -4,6 +4,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.contrib.auth import authenticate, login, logout as auth_logout
 from django.contrib.auth.models import User
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.core.mail import send_mail
 
 
 @csrf_exempt
@@ -94,3 +98,58 @@ def me_view(request):
             "email": request.user.email,
         }
     })
+
+
+@csrf_exempt
+@require_POST
+def password_reset_view(request):
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    email = body.get("email", "")
+    if not email:
+        return JsonResponse({"error": "Email is required"}, status=400)
+
+    users = User.objects.filter(email=email)
+    for user in users:
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        send_mail(
+            subject="Password Reset",
+            message=f"http://localhost:3000/reset-password?uid={uid}&token={token}",
+            from_email="webmaster@localhost",
+            recipient_list=[email],
+        )
+
+    return JsonResponse({"message": "If an account with that email exists, a reset link has been sent."})
+
+
+@csrf_exempt
+@require_POST
+def password_reset_confirm_view(request):
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    uid = body.get("uid", "")
+    token = body.get("token", "")
+    new_password = body.get("new_password", "")
+
+    if not all([uid, token, new_password]):
+        return JsonResponse({"error": "uid, token, and new_password are required"}, status=400)
+
+    try:
+        user_id = force_str(urlsafe_base64_decode(uid))
+        user = User.objects.get(pk=user_id)
+    except (User.DoesNotExist, ValueError, TypeError):
+        return JsonResponse({"error": "Invalid reset link"}, status=400)
+
+    if not default_token_generator.check_token(user, token):
+        return JsonResponse({"error": "Invalid or expired token"}, status=400)
+
+    user.set_password(new_password)
+    user.save()
+    return JsonResponse({"message": "Password has been reset successfully."})
