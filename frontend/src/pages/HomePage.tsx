@@ -1,15 +1,20 @@
-import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import "./HomePage.css";
+
+interface User {
+  id: number;
+  username: string;
+  email: string;
+}
 
 export default function HomePage() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.me()
-      .then((data) => setUser(data))
-      .catch(() => navigate("/login"));
+    api.me().then((data) => setUser(data.user)).catch(() => navigate("/login"));
   }, [navigate]);
 
   const handleLogout = async () => {
@@ -21,22 +26,15 @@ export default function HomePage() {
   };
 
   return (
-    <div style={{ padding: 32, fontFamily: "sans-serif", maxWidth: 600, margin: "0 auto" }}>
-      <h1>Home</h1>
-      {user && <p>Welcome, {user.username || user.email || "user"}!</p>}
-      <button
-        onClick={handleLogout}
-        style={{
-          padding: "8px 16px",
-          background: "#d32f2f",
-          color: "white",
-          border: "none",
-          borderRadius: 4,
-          cursor: "pointer",
-        }}
-      >
-        Logout
-      </button>
+    <div className="home-container">
+      <div className="home-header">
+        <h1>Dashboard</h1>
+        <button className="logout-btn" onClick={handleLogout}>Logout</button>
+      </div>
+      <div className="home-content">
+        <p>Welcome, {user?.username}!</p>
+        <p>Email: {user?.email}</p>
+      </div>
     </div>
   );
 }
