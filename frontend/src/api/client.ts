@@ -1,0 +1,40 @@
+const API_BASE = "http://localhost:8000/api/auth";
+
+async function request(path: string, options: RequestInit = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+    credentials: "include",
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Request failed");
+  }
+  return data;
+}
+
+export const api = {
+  login: (username: string, password: string) =>
+    request("/login/", { method: "POST", body: JSON.stringify({ username, password }) }),
+
+  loginWithEmail: (email: string, password: string) =>
+    request("/login/", { method: "POST", body: JSON.stringify({ email, password }) }),
+
+  register: (username: string, email: string, password: string) =>
+    request("/register/", { method: "POST", body: JSON.stringify({ username, email, password }) }),
+
+  logout: () =>
+    request("/logout/", { method: "POST" }),
+
+  me: () =>
+    request("/me/"),
+
+  passwordReset: (email: string) =>
+    request("/password-reset/", { method: "POST", body: JSON.stringify({ email }) }),
+
+  passwordResetConfirm: (uid: string, token: string, new_password: string) =>
+    request("/password-reset/confirm/", { method: "POST", body: JSON.stringify({ uid, token, new_password }) }),
+};
