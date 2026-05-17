@@ -90,3 +90,39 @@ class RegisterViewTest(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 400)
+
+
+class LogoutViewTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(username="testuser", password="secret123")
+
+    def test_logout_success(self):
+        self.client.login(username="testuser", password="secret123")
+        response = self.client.post("/api/auth/logout/")
+        self.assertEqual(response.status_code, 200)
+
+    def test_logout_unauthenticated(self):
+        response = self.client.post("/api/auth/logout/")
+        self.assertEqual(response.status_code, 401)
+
+
+class MeViewTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password="secret123",
+        )
+
+    def test_me_authenticated(self):
+        self.client.login(username="testuser", password="secret123")
+        response = self.client.get("/api/auth/me/")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["user"]["username"], "testuser")
+
+    def test_me_unauthenticated(self):
+        response = self.client.get("/api/auth/me/")
+        self.assertEqual(response.status_code, 401)

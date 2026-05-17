@@ -2,7 +2,7 @@ import json
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-from django.contrib.auth import authenticate, login
+from django.contrib.auth import authenticate, login, logout as auth_logout
 from django.contrib.auth.models import User
 
 
@@ -73,3 +73,24 @@ def register_view(request):
             "email": user.email,
         }
     }, status=201)
+
+
+@csrf_exempt
+@require_POST
+def logout_view(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+    auth_logout(request)
+    return JsonResponse({"message": "Logged out"})
+
+
+def me_view(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+    return JsonResponse({
+        "user": {
+            "id": request.user.id,
+            "username": request.user.username,
+            "email": request.user.email,
+        }
+    })
