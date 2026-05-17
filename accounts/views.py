@@ -42,3 +42,34 @@ def login_view(request):
             "email": user.email,
         }
     })
+
+
+@csrf_exempt
+@require_POST
+def register_view(request):
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    username = body.get("username", "")
+    email = body.get("email", "")
+    password = body.get("password", "")
+
+    if not all([username, email, password]):
+        return JsonResponse({"error": "Username, email, and password are required"}, status=400)
+
+    if User.objects.filter(username=username).exists():
+        return JsonResponse({"error": "Username already taken"}, status=409)
+
+    if User.objects.filter(email=email).exists():
+        return JsonResponse({"error": "Email already registered"}, status=409)
+
+    user = User.objects.create_user(username=username, email=email, password=password)
+    return JsonResponse({
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+        }
+    }, status=201)
