@@ -16,7 +16,7 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     try {
       await api.passwordReset(email);
-      setSuccess("If an account with that email exists, a reset link has been sent. Check the Django console.");
+      setSuccess("如果该邮箱已注册，重置链接已发送，请查看控制台输出。");
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -27,20 +27,20 @@ export default function ForgotPasswordPage() {
   return (
     <div className="forgot-container">
       <div className="forgot-card">
-        <h2>Forgot Password</h2>
+        <h2>忘记密码</h2>
         <form onSubmit={handleSubmit}>
           {error && <div className="error-msg">{error}</div>}
           {success && <div className="success-msg">{success}</div>}
           <div className="form-group">
-            <label>Email</label>
+            <label>邮箱</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <button className="submit-btn" type="submit" disabled={loading}>
-            {loading ? "Sending..." : "Send Reset Link"}
+            {loading ? "发送中..." : "发送重置链接"}
           </button>
         </form>
         <div className="links">
-          <Link to="/login">Back to Login</Link>
+          <Link to="/login">返回登录</Link>
         </div>
       </div>
     </div>

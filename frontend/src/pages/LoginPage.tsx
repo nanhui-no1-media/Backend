@@ -35,48 +35,46 @@ export default function LoginPage() {
   return (
     <div className="login-container">
       <div className="login-card">
-        <h2>Login</h2>
+        <h2>登录</h2>
         <div className="tabs">
           <button className={tab === "username" ? "active" : ""} onClick={() => setTab("username")}>
-            Username
+            用户名
           </button>
           <button className={tab === "email" ? "active" : ""} onClick={() => setTab("email")}>
-            Email
+            邮箱
           </button>
-          <button disabled title="Coming soon">Phone</button>
+          <button disabled title="即将上线">手机号</button>
         </div>
 
         {tab === "phone" ? (
-          <div className="coming-soon">Phone login coming soon</div>
+          <div className="coming-soon">手机号登录即将上线</div>
         ) : (
           <form onSubmit={handleSubmit}>
             {error && <div className="error-msg">{error}</div>}
             {tab === "username" && (
               <div className="form-group">
-                <label>Username</label>
+                <label>用户名</label>
                 <input value={username} onChange={(e) => setUsername(e.target.value)} required />
               </div>
             )}
             {tab === "email" && (
               <div className="form-group">
-                <label>Email</label>
+                <label>邮箱</label>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
               </div>
             )}
             <div className="form-group">
-              <label>Password</label>
+              <label>密码</label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
             <button className="submit-btn" type="submit" disabled={loading}>
-              {loading ? "Logging in..." : "Login"}
+              {loading ? "登录中..." : "登录"}
             </button>
           </form>
         )}
 
         <div className="links">
-          <Link to="/forgot-password">Forgot password?</Link>
-          <span style={{ margin: "0 8px" }}>|</span>
-          <Link to="/register">Register</Link>
+          <Link to="/forgot-password">忘记密码？</Link>
         </div>
       </div>
     </div>

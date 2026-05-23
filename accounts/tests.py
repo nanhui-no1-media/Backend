@@ -14,7 +14,7 @@ class LoginViewTest(TestCase):
 
     def test_login_with_username_success(self):
         response = self.client.post(
-            "/api/auth/login/",
+            "/auth/login/",
             data=json.dumps({"username": "testuser", "password": "secret123"}),
             content_type="application/json",
         )
@@ -25,7 +25,7 @@ class LoginViewTest(TestCase):
 
     def test_login_with_email_success(self):
         response = self.client.post(
-            "/api/auth/login/",
+            "/auth/login/",
             data=json.dumps({"email": "test@example.com", "password": "secret123"}),
             content_type="application/json",
         )
@@ -35,7 +35,7 @@ class LoginViewTest(TestCase):
 
     def test_login_wrong_password(self):
         response = self.client.post(
-            "/api/auth/login/",
+            "/auth/login/",
             data=json.dumps({"username": "testuser", "password": "wrong"}),
             content_type="application/json",
         )
@@ -44,49 +44,8 @@ class LoginViewTest(TestCase):
 
     def test_login_missing_fields(self):
         response = self.client.post(
-            "/api/auth/login/",
+            "/auth/login/",
             data=json.dumps({"username": "testuser"}),
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 400)
-
-
-class RegisterViewTest(TestCase):
-    def setUp(self):
-        self.client = Client()
-
-    def test_register_success(self):
-        response = self.client.post(
-            "/api/auth/register/",
-            data=json.dumps({
-                "username": "newuser",
-                "email": "new@example.com",
-                "password": "secret123",
-            }),
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 201)
-        data = response.json()
-        self.assertEqual(data["user"]["username"], "newuser")
-        self.assertTrue(User.objects.filter(username="newuser").exists())
-
-    def test_register_duplicate_username(self):
-        User.objects.create_user(username="existing", password="secret123")
-        response = self.client.post(
-            "/api/auth/register/",
-            data=json.dumps({
-                "username": "existing",
-                "email": "other@example.com",
-                "password": "secret123",
-            }),
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 409)
-
-    def test_register_missing_fields(self):
-        response = self.client.post(
-            "/api/auth/register/",
-            data=json.dumps({"username": "newuser"}),
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 400)
@@ -99,12 +58,12 @@ class LogoutViewTest(TestCase):
 
     def test_logout_success(self):
         self.client.login(username="testuser", password="secret123")
-        response = self.client.post("/api/auth/logout/")
+        response = self.client.post("/auth/logout/")
         self.assertEqual(response.status_code, 200)
 
     def test_logout_unauthenticated(self):
-        response = self.client.post("/api/auth/logout/")
-        self.assertEqual(response.status_code, 401)
+        response = self.client.post("/auth/logout/")
+        self.assertEqual(response.status_code, 302)
 
 
 class MeViewTest(TestCase):
@@ -118,14 +77,14 @@ class MeViewTest(TestCase):
 
     def test_me_authenticated(self):
         self.client.login(username="testuser", password="secret123")
-        response = self.client.get("/api/auth/me/")
+        response = self.client.get("/auth/me/")
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["user"]["username"], "testuser")
 
     def test_me_unauthenticated(self):
-        response = self.client.get("/api/auth/me/")
-        self.assertEqual(response.status_code, 401)
+        response = self.client.get("/auth/me/")
+        self.assertEqual(response.status_code, 302)
 
 
 class PasswordResetViewTest(TestCase):
@@ -139,7 +98,7 @@ class PasswordResetViewTest(TestCase):
 
     def test_password_reset_success(self):
         response = self.client.post(
-            "/api/auth/password-reset/",
+            "/auth/password-reset/",
             data=json.dumps({"email": "test@example.com"}),
             content_type="application/json",
         )
@@ -148,7 +107,7 @@ class PasswordResetViewTest(TestCase):
 
     def test_password_reset_unknown_email(self):
         response = self.client.post(
-            "/api/auth/password-reset/",
+            "/auth/password-reset/",
             data=json.dumps({"email": "unknown@example.com"}),
             content_type="application/json",
         )
@@ -157,7 +116,7 @@ class PasswordResetViewTest(TestCase):
 
     def test_password_reset_missing_email(self):
         response = self.client.post(
-            "/api/auth/password-reset/",
+            "/auth/password-reset/",
             data=json.dumps({}),
             content_type="application/json",
         )
@@ -184,7 +143,7 @@ class PasswordResetConfirmViewTest(TestCase):
     def test_password_reset_confirm_success(self):
         uid, token = self._get_reset_token()
         response = self.client.post(
-            "/api/auth/password-reset/confirm/",
+            "/auth/password-reset/confirm/",
             data=json.dumps({
                 "uid": uid,
                 "token": token,
@@ -202,7 +161,7 @@ class PasswordResetConfirmViewTest(TestCase):
         from django.utils.http import urlsafe_base64_encode
         uid = urlsafe_base64_encode(force_bytes(self.user.pk))
         response = self.client.post(
-            "/api/auth/password-reset/confirm/",
+            "/auth/password-reset/confirm/",
             data=json.dumps({
                 "uid": uid,
                 "token": "invalid-token",
@@ -214,7 +173,7 @@ class PasswordResetConfirmViewTest(TestCase):
 
     def test_password_reset_confirm_missing_fields(self):
         response = self.client.post(
-            "/api/auth/password-reset/confirm/",
+            "/auth/password-reset/confirm/",
             data=json.dumps({"uid": "MQ"}),
             content_type="application/json",
         )

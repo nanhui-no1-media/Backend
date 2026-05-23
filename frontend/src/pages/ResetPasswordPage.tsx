@@ -16,10 +16,10 @@ export default function ResetPasswordPage() {
     return (
       <div className="reset-container">
         <div className="reset-card">
-          <h2>Invalid Link</h2>
-          <p style={{ textAlign: "center" }}>This password reset link is invalid.</p>
+          <h2>链接无效</h2>
+          <p style={{ textAlign: "center" }}>该密码重置链接无效。</p>
           <div className="links">
-            <Link to="/login">Back to Login</Link>
+            <Link to="/login">返回登录</Link>
           </div>
         </div>
       </div>
@@ -43,15 +43,15 @@ export default function ResetPasswordPage() {
   return (
     <div className="reset-container">
       <div className="reset-card">
-        <h2>Reset Password</h2>
+        <h2>重置密码</h2>
         <form onSubmit={handleSubmit}>
           {error && <div className="error-msg">{error}</div>}
           <div className="form-group">
-            <label>New Password</label>
+            <label>新密码</label>
             <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
           </div>
           <button className="submit-btn" type="submit" disabled={loading}>
-            {loading ? "Resetting..." : "Reset Password"}
+            {loading ? "重置中..." : "重置密码"}
           </button>
         </form>
       </div>

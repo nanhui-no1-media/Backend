@@ -1,10 +1,16 @@
-const API_BASE = "http://localhost:8000/api/auth";
+const API_BASE = "/auth";
+
+function getCSRFToken(): string {
+  const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
 
 async function request(path: string, options: RequestInit = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      "X-CSRFToken": getCSRFToken(),
       ...options.headers,
     },
     credentials: "include",
@@ -22,9 +28,6 @@ export const api = {
 
   loginWithEmail: (email: string, password: string) =>
     request("/login/", { method: "POST", body: JSON.stringify({ email, password }) }),
-
-  register: (username: string, email: string, password: string) =>
-    request("/register/", { method: "POST", body: JSON.stringify({ username, email, password }) }),
 
   logout: () =>
     request("/logout/", { method: "POST" }),

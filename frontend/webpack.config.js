@@ -7,6 +7,7 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, "dist"),
     filename: "bundle.[contenthash].js",
+    publicPath: "/static/",
     clean: true,
   },
   resolve: {
@@ -34,5 +35,9 @@ module.exports = {
     port: 3000,
     hot: true,
     historyApiFallback: true,
+    proxy: {
+      "/auth": "http://localhost:8000",
+      "/admin": "http://localhost:8000",
+    },
   },
 };
