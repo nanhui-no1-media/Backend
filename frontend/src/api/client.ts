@@ -6,10 +6,11 @@ function getCSRFToken(): string {
 }
 
 async function request(path: string, options: RequestInit = {}) {
+  const isFormData = options.body instanceof FormData;
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       "X-CSRFToken": getCSRFToken(),
       ...options.headers,
     },
@@ -40,4 +41,13 @@ export const api = {
 
   passwordResetConfirm: (uid: string, token: string, new_password: string) =>
     request("/password-reset/confirm/", { method: "POST", body: JSON.stringify({ uid, token, new_password }) }),
+
+  getProfile: () =>
+    request("/profile/"),
+
+  updateProfile: (data: FormData) =>
+    request("/profile/update/", { method: "POST", body: data }),
+
+  changePassword: (old_password: string, new_password: string) =>
+    request("/profile/change-password/", { method: "POST", body: JSON.stringify({ old_password, new_password }) }),
 };

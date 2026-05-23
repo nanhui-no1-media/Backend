@@ -16,8 +16,9 @@ Django 单体应用，前端构建产物由 Django 直接服务：
 ```
 用户请求 → Django (localhost:8000)
             ├── /admin/*     → Django Admin 后台
-            ├── /auth/*      → JSON 认证接口
-            ├── /static/*    → 静态文件（JS Bundle）
+            ├── /auth/*      → JSON API 接口
+            ├── /static/*    → 静态文件（JS Bundle、favicon 等）
+            ├── /media/*     → 用户上传文件（头像等）
             └── /*           → SPA 入口（frontend/dist/index.html）
 ```
 
@@ -37,11 +38,12 @@ Backend/
 │   ├── settings.py        # 全局配置
 │   ├── urls.py            # 根 URL 路由
 │   └── wsgi.py
-├── accounts/              # 用户认证应用
+├── accounts/              # 用户认证与资料应用
+│   ├── models.py          # Profile 模型
 │   ├── views.py           # 视图函数
 │   ├── forms.py           # Django 表单验证
-│   ├── admin.py           # 管理后台扩展
-│   ├── urls.py            # 认证路由
+│   ├── admin.py           # 管理后台扩展（含 Profile 内联）
+│   ├── urls.py            # 认证与资料路由
 │   └── tests.py           # 单元测试
 ├── frontend/              # React 前端
 │   ├── src/

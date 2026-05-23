@@ -7,6 +7,8 @@ interface User {
   id: number;
   username: string;
   email: string;
+  avatar?: string | null;
+  nickname?: string;
 }
 
 interface ContentItem {
@@ -62,7 +64,7 @@ export default function HomePage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.me().then((data) => setUser(data.user)).catch(() => setUser(null));
+    api.me().then((data) => setUser({...data.user, avatar: data.profile.avatar, nickname: data.profile.nickname})).catch(() => setUser(null));
   }, []);
 
   const handleLogout = async () => {
@@ -108,11 +110,15 @@ export default function HomePage() {
           <div className="bili-nav-right">
             {user ? (
               <>
-                <div className="bili-user-info">
+                <div className="bili-user-info" onClick={() => navigate("/profile")} style={{ cursor: "pointer" }}>
                   <div className="bili-avatar">
-                    {user.username.charAt(0).toUpperCase()}
+                    {user.avatar ? (
+                      <img src={user.avatar} alt="" />
+                    ) : (
+                      user.username.charAt(0).toUpperCase()
+                    )}
                   </div>
-                  <span className="bili-username">{user.username}</span>
+                  <span className="bili-username">{user.nickname || user.username}</span>
                 </div>
                 <a className="bili-admin-link" href="/admin/" target="_blank" rel="noreferrer">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

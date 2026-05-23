@@ -172,6 +172,13 @@
   color: white;
   font-size: 14px;
   font-weight: 700;
+  overflow: hidden;
+}
+
+.bili-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .bili-username {

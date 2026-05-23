@@ -7,4 +7,7 @@ urlpatterns = [
     path("me/", views.me_view, name="me"),
     path("password-reset/", views.password_reset_view, name="password_reset"),
     path("password-reset/confirm/", views.password_reset_confirm_view, name="password_reset_confirm"),
+    path("profile/", views.profile_view, name="profile"),
+    path("profile/update/", views.profile_update_view, name="profile_update"),
+    path("profile/change-password/", views.change_password_view, name="change_password"),
 ]

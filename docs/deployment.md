@@ -19,7 +19,7 @@ npm install
 npm run dev                                # 开发服务器 (localhost:3000, HMR)
 ```
 
-前端开发模式下，Webpack Dev Server 代理 `/auth` 和 `/admin` 到后端 `localhost:8000`。
+前端开发模式下，Webpack Dev Server 代理 `/auth`、`/admin` 和 `/media` 到后端 `localhost:8000`。
 
 ### 生产构建
 
@@ -47,6 +47,8 @@ npm run build                              # 输出到 frontend/dist/
 | `STATIC_URL` | `/static/` | 静态文件 URL 前缀 |
 | `STATIC_ROOT` | `staticfiles/` | collectstatic 输出目录 |
 | `STATICFILES_DIRS` | `frontend/dist/`, `static/` | 静态文件搜索目录 |
+| `MEDIA_URL` | `/media/` | 用户上传文件 URL 前缀 |
+| `MEDIA_ROOT` | `media/` | 用户上传文件存储目录 |
 
 Webpack 输出 `bundle.[hash].js` 到 `frontend/dist/`，`publicPath` 设为 `/static/`。
 
@@ -67,4 +69,5 @@ uv run python manage.py test accounts      # 运行 accounts 应用测试
 - [ ] 运行 `npm run build` 构建前端
 - [ ] 运行 `python manage.py collectstatic`
 - [ ] 配置 WSGI 服务器（Gunicorn / uWSGI）
-- [ ] 配置反向代理（Nginx）处理静态文件
+- [ ] 配置反向代理（Nginx）处理静态文件和媒体文件
+- [ ] 配置 Nginx 服务 `/media/` 路径指向 `MEDIA_ROOT`

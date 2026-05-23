@@ -9,7 +9,8 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.core.mail import send_mail
 
-from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm
+from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
+from .models import Profile
 
 
 def _json_body(request):
@@ -60,7 +61,8 @@ def logout_view(request):
 
 @login_required
 def me_view(request):
-    return JsonResponse({"user": {"id": request.user.id, "username": request.user.username, "email": request.user.email}})
+    profile = _get_or_create_profile(request.user)
+    return JsonResponse(_profile_response(request.user, profile))
 
 
 @require_POST
@@ -109,3 +111,70 @@ def password_reset_confirm_view(request):
     user.set_password(form.cleaned_data["new_password"])
     user.save()
     return JsonResponse({"message": "Password has been reset successfully."})
+
+
+def _get_or_create_profile(user):
+    profile, _ = Profile.objects.get_or_create(user=user)
+    return profile
+
+
+def _profile_response(user, profile):
+    return {
+        "user": {"id": user.id, "username": user.username, "email": user.email},
+        "profile": {
+            "avatar": profile.avatar.url if profile.avatar else None,
+            "nickname": profile.nickname,
+            "birthday": profile.birthday.isoformat() if profile.birthday else None,
+            "gender": profile.gender,
+            "bio": profile.bio,
+        },
+    }
+
+
+@login_required
+def profile_view(request):
+    profile = _get_or_create_profile(request.user)
+    return JsonResponse(_profile_response(request.user, profile))
+
+
+@require_POST
+@login_required
+def profile_update_view(request):
+    profile = _get_or_create_profile(request.user)
+
+    avatar = request.FILES.get("avatar")
+    if avatar:
+        if avatar.size > 2 * 1024 * 1024:
+            return JsonResponse({"error": "头像文件不能超过 2MB"}, status=400)
+        if avatar.content_type not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+            return JsonResponse({"error": "仅支持 JPG、PNG、GIF、WebP 格式"}, status=400)
+        profile.avatar = avatar
+
+    form = ProfileForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse({"error": _form_errors(form)}, status=400)
+
+    for field in ("nickname", "birthday", "gender", "bio"):
+        setattr(profile, field, form.cleaned_data[field])
+
+    profile.save()
+    return JsonResponse(_profile_response(request.user, profile))
+
+
+@require_POST
+@login_required
+def change_password_view(request):
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    form = ChangePasswordForm(body)
+    if not form.is_valid():
+        return JsonResponse({"error": _form_errors(form)}, status=400)
+
+    if not request.user.check_password(form.cleaned_data["old_password"]):
+        return JsonResponse({"error": "原密码不正确"}, status=400)
+
+    request.user.set_password(form.cleaned_data["new_password"])
+    request.user.save()
+    return JsonResponse({"message": "密码修改成功"})

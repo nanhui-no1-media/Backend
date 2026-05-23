@@ -1,6 +1,8 @@
 from django import forms
 from django.contrib.auth.models import User
 
+from .models import Profile
+
 
 class LoginForm(forms.Form):
     password = forms.CharField(required=True)
@@ -32,3 +34,15 @@ class PasswordResetConfirmForm(forms.Form):
     uid = forms.CharField(required=True)
     token = forms.CharField(required=True)
     new_password = forms.CharField(required=True)
+
+
+class ProfileForm(forms.Form):
+    nickname = forms.CharField(max_length=50, required=False)
+    birthday = forms.DateField(required=False)
+    gender = forms.ChoiceField(choices=[("", "")] + Profile.GENDER_CHOICES, required=False)
+    bio = forms.CharField(max_length=500, required=False)
+
+
+class ChangePasswordForm(forms.Form):
+    old_password = forms.CharField(required=True)
+    new_password = forms.CharField(required=True, min_length=8)
