@@ -6,7 +6,8 @@ module.exports = {
   entry: "./src/index.tsx",
   output: {
     path: path.resolve(__dirname, "dist"),
-    filename: "bundle.[contenthash].js",
+    filename: "[name].[contenthash].js",
+    chunkFilename: "[name].[contenthash].chunk.js",
     publicPath: "/static/",
     clean: true,
   },
@@ -28,17 +29,28 @@ module.exports = {
   },
   plugins: [
     new HtmlWebpackPlugin({
-      template: "./public/index.html",
+      template: "./template.html",
+      favicon: "./public/favicon.ico",
     }),
   ],
+  optimization: {
+    splitChunks: {
+      chunks: "all",
+      cacheGroups: {
+        vendor: {
+          test: /[\\/]node_modules[\\/]/,
+          name: "vendor",
+          chunks: "all",
+        },
+      },
+    },
+  },
   devServer: {
     port: 3000,
     hot: true,
-    historyApiFallback: true,
-    proxy: {
-      "/auth": "http://localhost:8000",
-      "/admin": "http://localhost:8000",
-      "/media": "http://localhost:8000",
-    },
+    historyApiFallback: { index: "/static/index.html" },
+    proxy: [
+      { context: ["/auth", "/admin", "/media", "/tasks", "/messaging"], target: "http://localhost:8000" },
+    ],
   },
 };

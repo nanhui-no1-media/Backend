@@ -1,0 +1,222 @@
+.msg-page {
+  min-height: 100vh;
+  background: #f5f6fa;
+}
+
+.msg-container {
+  display: flex;
+  height: 100vh;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Sidebar */
+.msg-sidebar {
+  width: 320px;
+  border-right: 1px solid var(--border, #e5e8ec);
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.msg-sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border, #e5e8ec);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.msg-sidebar-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text, #1a1b2e);
+}
+
+.msg-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.msg-list-item {
+  display: block;
+  width: 100%;
+  padding: 14px 16px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border, #e5e8ec);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s;
+}
+
+.msg-list-item:hover { background: #f9fafb; }
+.msg-list-item.active { background: #f0f4ff; }
+
+.msg-list-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #1a1b2e);
+  margin-bottom: 4px;
+}
+
+.msg-list-preview {
+  font-size: 12px;
+  color: var(--text-sec, #6b7280);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-list-type {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: #f3f4f6;
+  border-radius: 4px;
+  color: var(--text-sec, #6b7280);
+  position: absolute;
+  top: 14px;
+  right: 16px;
+}
+
+.msg-badge {
+  position: absolute;
+  top: 14px;
+  right: 60px;
+  background: var(--brand, #e85d4a);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.msg-empty-sidebar {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-muted, #9ca3af);
+  font-size: 14px;
+}
+
+/* Main */
+.msg-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #fafbfc;
+}
+
+.msg-main-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border, #e5e8ec);
+  background: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.msg-main-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text, #1a1b2e);
+}
+
+.msg-participant-count {
+  font-size: 12px;
+  color: var(--text-sec, #6b7280);
+}
+
+.msg-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.msg-bubble {
+  max-width: 70%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--border, #e5e8ec);
+}
+
+.msg-bubble.mine {
+  align-self: flex-end;
+  background: var(--brand, #e85d4a);
+  color: #fff;
+  border-color: transparent;
+}
+
+.msg-bubble.mine .msg-bubble-time { color: rgba(255, 255, 255, 0.7); }
+
+.msg-bubble-author {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sec, #6b7280);
+  margin-bottom: 4px;
+}
+
+.msg-bubble-content {
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg-bubble-time {
+  font-size: 11px;
+  color: var(--text-muted, #9ca3af);
+  margin-top: 4px;
+  text-align: right;
+}
+
+.msg-empty-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #9ca3af);
+  font-size: 14px;
+}
+
+/* Input */
+.msg-input-area {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border, #e5e8ec);
+  background: #fff;
+  display: flex;
+  gap: 10px;
+}
+
+.msg-input-area input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid var(--border, #e5e8ec);
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  font-family: inherit;
+}
+
+.msg-input-area input:focus { border-color: var(--brand, #e85d4a); }
+
+@media (max-width: 768px) {
+  .msg-container { flex-direction: column; }
+  .msg-sidebar {
+    width: 100%;
+    height: auto;
+    max-height: 40vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border, #e5e8ec);
+  }
+  .msg-main { min-height: 60vh; }
+}

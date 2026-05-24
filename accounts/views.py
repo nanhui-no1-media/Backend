@@ -178,3 +178,19 @@ def change_password_view(request):
     request.user.set_password(form.cleaned_data["new_password"])
     request.user.save()
     return JsonResponse({"message": "密码修改成功"})
+
+
+@login_required
+def users_view(request):
+    """用户列表（给任务表单选人用）"""
+    users = User.objects.select_related("profile").filter(is_active=True)
+    data = []
+    for u in users:
+        profile = getattr(u, "profile", None)
+        data.append({
+            "id": u.id,
+            "username": u.username,
+            "nickname": profile.nickname if profile else "",
+            "avatar": profile.avatar.url if profile and profile.avatar else None,
+        })
+    return JsonResponse({"results": data})

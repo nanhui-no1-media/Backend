@@ -50,4 +50,7 @@ export const api = {
 
   changePassword: (old_password: string, new_password: string) =>
     request("/profile/change-password/", { method: "POST", body: JSON.stringify({ old_password, new_password }) }),
+
+  listUsers: () =>
+    request("/users/"),
 };
