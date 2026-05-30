@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'accounts',
     'tasks',
     'messaging',
+    'exam_board',
 ]
 
 MIDDLEWARE = [
