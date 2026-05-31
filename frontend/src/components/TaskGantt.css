@@ -1,0 +1,106 @@
+.gantt-wrapper {
+  background: #fff;
+  border: 1px solid var(--border, #e5e8ec);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.gantt-controls {
+  display: flex;
+  gap: 4px;
+  padding: 12px 16px 0;
+}
+
+.gantt-mode-btn {
+  padding: 4px 14px;
+  border: 1px solid var(--border, #e5e8ec);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-sec, #6b7280);
+  transition: all 0.15s;
+}
+
+.gantt-mode-btn:hover {
+  border-color: var(--brand, #e85d4a);
+  color: var(--brand, #e85d4a);
+}
+
+.gantt-legend {
+  display: flex;
+  gap: 16px;
+  padding: 8px 16px 12px;
+  border-bottom: 1px solid var(--border, #e5e8ec);
+  flex-wrap: wrap;
+}
+
+.gantt-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-sec, #6b7280);
+}
+
+.gantt-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.gantt-svg {
+  display: block;
+  width: 100%;
+}
+
+/* Override frappe-gantt default styles */
+.gantt-wrapper .gantt-container {
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.gantt-wrapper .grid-row {
+  fill: #fff;
+}
+
+.gantt-wrapper .grid-row:nth-child(even) {
+  fill: #fafafa;
+}
+
+.gantt-wrapper .grid-header {
+  fill: var(--paper, #f7f7f4);
+}
+
+.gantt-wrapper .row-line {
+  stroke: var(--border, #e5e8ec);
+}
+
+.gantt-wrapper .tick {
+  stroke: var(--border, #e5e8ec);
+}
+
+.gantt-wrapper .tick-text {
+  fill: var(--text-sec, #6b7280);
+  font-size: 11px;
+}
+
+.gantt-wrapper .bar-label {
+  fill: var(--text, #1a1b2e);
+  font-size: 12px;
+}
+
+.gantt-wrapper .today-highlight {
+  fill: var(--brand, #e85d4a);
+  opacity: 0.08;
+}
+
+.gantt-wrapper .lower-text,
+.gantt-wrapper .upper-text {
+  fill: var(--text-sec, #6b7280);
+}
+
+.gantt-empty {
+  text-align: center;
+  padding: 60px 0;
+  color: var(--text-sec, #6b7280);
+}
