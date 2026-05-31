@@ -14,11 +14,13 @@ def upload_data(request):
         try:
             # 解析前端传过来的 JSON 数据
             data = json.loads(request.body)
+            date = data.get("exam_date", "")
             title = data.get('exam_title', '')
             ex_list = data.get('exam_list', '')
 
             # 往数据库创建一条新记录
             ExamData.objects.create(
+                exam_date=date,
                 exam_title=title,
                 exam_list=ex_list
             )
@@ -38,6 +40,7 @@ def read_data(request):
         return JsonResponse({
             "status": "success",
             "data": {
+                "exam_date": last_exam.exam_date,
                 "exam_title": last_exam.exam_title,
                 "exam_list": last_exam.exam_list
             }
