@@ -70,6 +70,13 @@ export default function TaskGantt({ tasks }: Props) {
 
     tasksRef.current = sorted;
     applyBarColors(sorted);
+
+    return () => {
+      if (svgRef.current) {
+        svgRef.current.innerHTML = "";
+      }
+      ganttRef.current = null;
+    };
   }, [tasks]);
 
   const applyBarColors = (taskList: TaskListItem[]) => {
