@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { taskApi } from "../api/tasks";
@@ -7,6 +7,8 @@ import {
   STATUS_LABELS, PRIORITY_LABELS, PRIORITY_COLORS, STATUS_COLORS,
 } from "../types/tasks";
 import "./TaskListPage.css";
+import TaskTimeline from "../components/TaskTimeline";
+import TaskGantt from "../components/TaskGantt";
 
 interface User {
   id: number;
@@ -23,6 +25,7 @@ export default function TaskListPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [priorityFilter, setPriorityFilter] = useState<string>("");
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "timeline" | "gantt">("list");
 
   useEffect(() => {
     api.me()
@@ -47,11 +50,6 @@ export default function TaskListPage() {
     return new Date(d).toLocaleDateString("zh-CN");
   };
 
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / 1024 / 1024).toFixed(1) + " MB";
-  };
 
   if (loading) {
     return <div className="task-page"><div className="task-loading">加载中...</div></div>;
@@ -69,6 +67,26 @@ export default function TaskListPage() {
             返回
           </button>
           <h1 className="task-title">任务列表</h1>
+          <div className="task-view-toggle">
+            <button
+              className={`task-view-btn${viewMode === "list" ? " active" : ""}`}
+              onClick={() => setViewMode("list")}
+            >
+              列表
+            </button>
+            <button
+              className={`task-view-btn${viewMode === "timeline" ? " active" : ""}`}
+              onClick={() => setViewMode("timeline")}
+            >
+              时间线
+            </button>
+            <button
+              className={`task-view-btn${viewMode === "gantt" ? " active" : ""}`}
+              onClick={() => setViewMode("gantt")}
+            >
+              甘特图
+            </button>
+          </div>
           <button className="task-btn-primary" onClick={() => navigate("/tasks/new")}>
             + 新建任务
           </button>
@@ -97,59 +115,63 @@ export default function TaskListPage() {
           </select>
         </div>
 
-        {/* Task List */}
-        {tasks.length === 0 ? (
-          <div className="task-empty">
-            <p>暂无任务</p>
-            <button className="task-btn-primary" onClick={() => navigate("/tasks/new")}>创建第一个任务</button>
-          </div>
-        ) : (
-          <div className="task-list">
-            {tasks.map((task) => (
-              <div
-                key={task.id}
-                className="task-card"
-                onClick={() => navigate(`/tasks/${task.id}`)}
-              >
-                <div className="task-card-left">
-                  <span
-                    className="task-priority-dot"
-                    style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
-                  />
-                  <div className="task-card-info">
-                    <div className="task-card-title">{task.title}</div>
-                    <div className="task-card-meta">
-                      <span
-                        className="task-status-badge"
-                        style={{
-                          backgroundColor: STATUS_COLORS[task.status] + "18",
-                          color: STATUS_COLORS[task.status],
-                        }}
-                      >
-                        {STATUS_LABELS[task.status]}
-                      </span>
-                      {task.tags.map((t) => (
-                        <span key={t.id} className="task-tag" style={{ backgroundColor: t.color + "18", color: t.color }}>
-                          {t.name}
+        {/* View Content */}
+        {viewMode === "list" && (
+          tasks.length === 0 ? (
+            <div className="task-empty">
+              <p>暂无任务</p>
+              <button className="task-btn-primary" onClick={() => navigate("/tasks/new")}>创建第一个任务</button>
+            </div>
+          ) : (
+            <div className="task-list">
+              {tasks.map((task) => (
+                <div
+                  key={task.id}
+                  className="task-card"
+                  onClick={() => navigate(`/tasks/${task.id}`)}
+                >
+                  <div className="task-card-left">
+                    <span
+                      className="task-priority-dot"
+                      style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
+                    />
+                    <div className="task-card-info">
+                      <div className="task-card-title">{task.title}</div>
+                      <div className="task-card-meta">
+                        <span
+                          className="task-status-badge"
+                          style={{
+                            backgroundColor: STATUS_COLORS[task.status] + "18",
+                            color: STATUS_COLORS[task.status],
+                          }}
+                        >
+                          {STATUS_LABELS[task.status]}
                         </span>
-                      ))}
-                      <span className="task-meta-text">
-                        {task.assignee?.nickname || task.assignee?.username || "未分配"}
-                      </span>
-                      {task.attachment_count > 0 && <span className="task-meta-text">{task.attachment_count} 附件</span>}
+                        {task.tags.map((t) => (
+                          <span key={t.id} className="task-tag" style={{ backgroundColor: t.color + "18", color: t.color }}>
+                            {t.name}
+                          </span>
+                        ))}
+                        <span className="task-meta-text">
+                          {task.assignee?.nickname || task.assignee?.username || "未分配"}
+                        </span>
+                        {task.attachment_count > 0 && <span className="task-meta-text">{task.attachment_count} 附件</span>}
+                      </div>
                     </div>
                   </div>
+                  <div className="task-card-right">
+                    <span className="task-meta-text">{formatDate(task.created_at)}</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
+                      <path d="m9 18 6-6-6-6" />
+                    </svg>
+                  </div>
                 </div>
-                <div className="task-card-right">
-                  <span className="task-meta-text">{formatDate(task.created_at)}</span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                    <path d="m9 18 6-6-6-6" />
-                  </svg>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )
         )}
+        {viewMode === "timeline" && <TaskTimeline tasks={tasks} />}
+        {viewMode === "gantt" && <TaskGantt tasks={tasks} />}
       </div>
     </div>
   );

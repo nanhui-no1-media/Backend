@@ -186,3 +186,34 @@
   .task-filters { flex-direction: column; }
   .task-header { flex-wrap: wrap; }
 }
+
+.task-view-toggle {
+  display: flex;
+  border: 1px solid var(--border, #e5e8ec);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.task-view-btn {
+  padding: 6px 14px;
+  border: none;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-sec, #6b7280);
+  transition: all 0.15s;
+  border-right: 1px solid var(--border, #e5e8ec);
+}
+
+.task-view-btn:last-child {
+  border-right: none;
+}
+
+.task-view-btn.active {
+  background: var(--brand, #e85d4a);
+  color: #fff;
+}
+
+.task-view-btn:hover:not(.active) {
+  background: var(--paper, #f7f7f4);
+}
