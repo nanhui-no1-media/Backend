@@ -60,8 +60,6 @@ class Task(models.Model):
         related_name="collaborating_tasks", verbose_name="协作者",
     )
 
-    start_date = models.DateField("开始日期", null=True, blank=True)
-    due_date = models.DateField("截止日期", null=True, blank=True)
     completed_at = models.DateTimeField("完成时间", null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)

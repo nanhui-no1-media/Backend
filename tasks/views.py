@@ -45,7 +45,7 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     filterset_fields = ["status", "priority", "assignee", "creator"]
     search_fields = ["title", "description"]
-    ordering_fields = ["created_at", "due_date", "priority", "status"]
+    ordering_fields = ["created_at", "completed_at", "priority", "status"]
     ordering = ["-created_at"]
 
     def get_serializer_class(self):
@@ -148,8 +148,9 @@ class TaskViewSet(viewsets.ModelViewSet):
         task = self.get_object()
         if task.status != "in_progress":
             return Response({"detail": "只有进行中的任务可以完成"}, status=status.HTTP_400_BAD_REQUEST)
-        if task.creator != request.user and task.assignee != request.user and not is_president(request.user):
-            return Response({"detail": "只有创建者或负责人可以完成"}, status=status.HTTP_403_FORBIDDEN)
+        # 仅允许负责人或社长完成（创建者不再有完成权限）
+        if task.assignee != request.user and not is_president(request.user):
+            return Response({"detail": "只有负责人或社长可以完成"}, status=status.HTTP_403_FORBIDDEN)
         task.status = "completed"
         task.completed_at = timezone.now()
         task.save(update_fields=["status", "completed_at", "updated_at"])

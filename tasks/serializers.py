@@ -76,7 +76,7 @@ class TaskListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "title", "status", "priority",
             "creator", "assignee", "tags",
-            "start_date", "due_date", "completed_at",
+            "completed_at",
             "attachment_count",
             "created_at", "updated_at",
         ]
@@ -114,7 +114,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             "collaborators", "collaborator_ids",
             "tags", "tag_ids",
             "attachments", "claim_requests",
-            "start_date", "due_date", "completed_at",
+            "completed_at",
             "created_at", "updated_at",
         ]
         read_only_fields = ["creator", "status", "completed_at", "created_at", "updated_at"]
