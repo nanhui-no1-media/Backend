@@ -136,7 +136,6 @@ export default function TaskListPage() {
                       <span className="task-meta-text">
                         {task.assignee?.nickname || task.assignee?.username || "未分配"}
                       </span>
-                      <span className="task-meta-text">{formatDate(task.due_date)}</span>
                       {task.attachment_count > 0 && <span className="task-meta-text">{task.attachment_count} 附件</span>}
                     </div>
                   </div>

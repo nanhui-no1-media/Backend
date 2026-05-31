@@ -230,14 +230,6 @@ export default function TaskDetailPage() {
             <span>{task.assignee?.nickname || task.assignee?.username || "未分配"}</span>
           </div>
           <div className="meta-item">
-            <span className="meta-label">开始日期</span>
-            <span>{formatDate(task.start_date)}</span>
-          </div>
-          <div className="meta-item">
-            <span className="meta-label">截止日期</span>
-            <span>{formatDate(task.due_date)}</span>
-          </div>
-          <div className="meta-item">
             <span className="meta-label">创建时间</span>
             <span>{new Date(task.created_at).toLocaleString("zh-CN")}</span>
           </div>

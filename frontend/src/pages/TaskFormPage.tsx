@@ -30,8 +30,6 @@ export default function TaskFormPage() {
   const [assigneeId, setAssigneeId] = useState<number | "">("");
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [collaboratorIds, setCollaboratorIds] = useState<number[]>([]);
-  const [startDate, setStartDate] = useState("");
-  const [dueDate, setDueDate] = useState("");
 
   const [tags, setTags] = useState<Tag[]>([]);
   const [users, setUsers] = useState<SimpleUser[]>([]);
@@ -57,8 +55,6 @@ export default function TaskFormPage() {
         setAssigneeId(task.assignee?.id || "");
         setTagIds(task.tags.map((t) => t.id));
         setCollaboratorIds(task.collaborators.map((c) => c.id));
-        setStartDate(task.start_date || "");
-        setDueDate(task.due_date || "");
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -89,8 +85,6 @@ export default function TaskFormPage() {
       title: title.trim(),
       description,
       priority,
-      start_date: startDate || null,
-      due_date: dueDate || null,
     };
     if (assigneeId) data.assignee_id = Number(assigneeId);
     if (tagIds.length > 0) data.tag_ids = tagIds;
@@ -156,17 +150,6 @@ export default function TaskFormPage() {
                 <option key={u.id} value={u.id}>{u.nickname || u.username}</option>
               ))}
             </select>
-          </div>
-
-          <div className="form-row">
-            <div className="form-field">
-              <label>开始日期</label>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            </div>
-            <div className="form-field">
-              <label>截止日期</label>
-              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </div>
           </div>
 
           <div className="form-field">

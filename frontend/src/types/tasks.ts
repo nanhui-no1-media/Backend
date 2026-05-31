@@ -68,8 +68,6 @@ export interface TaskListItem {
   creator: TaskUser;
   assignee: TaskUser | null;
   tags: Tag[];
-  start_date: string | null;
-  due_date: string | null;
   completed_at: string | null;
   attachment_count: number;
   created_at: string;
@@ -88,8 +86,6 @@ export interface TaskDetail {
   tags: Tag[];
   attachments: Attachment[];
   claim_requests: TaskClaimRequest[];
-  start_date: string | null;
-  due_date: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -103,8 +99,6 @@ export interface TaskFormData {
   assignee_id?: number | null;
   collaborator_ids?: number[];
   tag_ids?: number[];
-  start_date?: string | null;
-  due_date?: string | null;
 }
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {
