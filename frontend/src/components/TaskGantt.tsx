@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Gantt from "frappe-gantt";
 import { TaskListItem, STATUS_COLORS, STATUS_LABELS } from "../types/tasks";
-import "frappe-gantt/dist/frappe-gantt.css";
 import "./TaskGantt.css";
 
 interface Props {

@@ -1,3 +1,32 @@
+/* frappe-gantt base styles (copied from node_modules/frappe-gantt/dist/frappe-gantt.css) */
+:root{--g-arrow-color: #1f2937;--g-bar-color: #fff;--g-bar-border: #fff;--g-tick-color-thick: #ededed;--g-tick-color: #f3f3f3;--g-actions-background: #f3f3f3;--g-border-color: #ebeff2;--g-text-muted: #7c7c7c;--g-text-light: #fff;--g-text-dark: #171717;--g-progress-color: #dbdbdb;--g-handle-color: #37352f;--g-today-highlight: #37352f;--g-popup-actions: #ebeff2}
+.gantt-container{line-height:14.5px;position:relative;overflow:auto;font-size:12px;width:100%;border-radius:8px;isolation:isolate}
+.gantt-container .popup-wrapper{position:absolute;top:0;left:0;background:var(--g-header-background,#fff);box-shadow:0 10px 24px -3px #0003;padding:10px;border-radius:5px;width:max-content;z-index:1000}
+.gantt-container .grid-header{background-color:var(--g-header-background,#fff);position:sticky;top:0;left:0;border-bottom:1px solid var(--g-border-color);z-index:1000}
+.gantt-container .lower-text,.gantt-container .upper-text{text-anchor:middle}
+.gantt-container .lower-text{font-size:12px;position:absolute;align-content:center;text-align:center;color:var(--g-text-muted)}
+.gantt-container .upper-text{position:absolute;font-weight:500;font-size:14px;color:var(--g-text-dark)}
+.gantt-container .side-header{position:sticky;top:0;right:0;float:right;z-index:1000;line-height:20px;width:max-content;margin-left:auto;padding-right:10px;padding-top:10px;background:var(--g-header-background,#fff);display:flex}
+.gantt-container .current-highlight{position:absolute;background:var(--g-today-highlight);width:1px;z-index:999}
+.gantt-container .hide{display:none}
+.gantt{user-select:none;-webkit-user-select:none;position:absolute}
+.gantt .grid-background{fill:none}
+.gantt .grid-row{fill:var(--g-row-color,#fdfdfd)}
+.gantt .row-line{stroke:var(--g-border-color)}
+.gantt .tick{stroke:var(--g-tick-color);stroke-width:.4}
+.gantt .tick.thick{stroke:var(--g-tick-color-thick);stroke-width:.7}
+.gantt .arrow{fill:none;stroke:var(--g-arrow-color);stroke-width:1.5}
+.gantt .bar-wrapper .bar{fill:var(--g-bar-color);stroke:var(--g-bar-border);stroke-width:0;transition:stroke-width .3s ease}
+.gantt .bar-progress{fill:var(--g-progress-color);border-radius:4px}
+.gantt .bar-label{fill:var(--g-text-dark);dominant-baseline:central;font-family:Helvetica;font-size:13px;font-weight:400}
+.gantt .bar-label.big{fill:var(--g-text-dark);text-anchor:start}
+.gantt .handle{fill:var(--g-handle-color);opacity:0;transition:opacity .3s ease}
+.gantt .handle.active,.gantt .handle.visible{cursor:ew-resize;opacity:1}
+.gantt .bar-wrapper{cursor:pointer}
+.gantt .bar-wrapper .bar{outline:1px solid var(--g-border-color);border-radius:3px}
+.gantt .grid-column{fill:transparent;pointer-events:all}
+
+/* Our custom overrides */
 .gantt-wrapper {
   background: #fff;
   border: 1px solid var(--border, #e5e8ec);
