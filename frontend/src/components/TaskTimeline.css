@@ -1,0 +1,113 @@
+.timeline {
+  position: relative;
+  padding-left: 28px;
+}
+
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border, #e5e8ec);
+}
+
+.timeline-item {
+  position: relative;
+  padding-bottom: 24px;
+  cursor: pointer;
+}
+
+.timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.timeline-dot-wrapper {
+  position: absolute;
+  left: -28px;
+  top: 8px;
+  width: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px var(--border, #e5e8ec);
+  z-index: 1;
+}
+
+.timeline-dot.pulse {
+  animation: timeline-pulse 2s ease-in-out infinite;
+}
+
+@keyframes timeline-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--border, #e5e8ec); }
+  50% { box-shadow: 0 0 0 4px var(--brand, #e85d4a); }
+}
+
+.timeline-card {
+  background: #fff;
+  border: 1px solid var(--border, #e5e8ec);
+  border-radius: 10px;
+  padding: 14px 18px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.timeline-item:hover .timeline-card {
+  box-shadow: 0 4px 12px rgba(26, 27, 46, 0.06);
+  border-color: var(--brand, #e85d4a);
+}
+
+.timeline-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.timeline-priority-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.timeline-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #1a1b2e);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.timeline-meta-text {
+  font-size: 12px;
+  color: var(--text-sec, #6b7280);
+}
+
+.timeline-duration {
+  font-size: 12px;
+  color: var(--text-sec, #6b7280);
+}
+
+.timeline-empty {
+  text-align: center;
+  padding: 60px 0;
+  color: var(--text-sec, #6b7280);
+}
