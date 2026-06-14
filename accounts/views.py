@@ -1,4 +1,5 @@
 import json
+from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.contrib.auth import authenticate, login, logout as auth_logout
@@ -81,7 +82,7 @@ def password_reset_view(request):
         token = default_token_generator.make_token(user)
         send_mail(
             subject="Password Reset",
-            message=f"http://localhost:3000/reset-password?uid={uid}&token={token}",
+            message=f"{settings.FRONTEND_URL}/#/reset-password?uid={uid}&token={token}",
             from_email="webmaster@localhost",
             recipient_list=[email],
         )

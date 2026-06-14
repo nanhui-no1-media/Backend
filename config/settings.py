@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -138,6 +139,10 @@ CORS_ALLOW_CREDENTIALS = True
 EMAIL_BACKEND = "django.core.mail.backends.console.ConsoleEmailBackend"
 
 LOGIN_URL = "/login/"
+
+# Origin of the frontend, used to build links sent to users (e.g. password-reset email).
+# Override via the FRONTEND_URL env var in production.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 # Media files (user uploads)
 MEDIA_URL = "/media/"
