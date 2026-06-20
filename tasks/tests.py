@@ -55,3 +55,25 @@ class TaskCompletionReviewTest(TestCase):
         self.client.force_authenticate(self.creator)
         resp = self.client.post(f"/tasks/tasks/{self.task.pk}/approve_completion/")
         self.assertEqual(resp.status_code, 400)
+
+    def test_reject_completion_returns_to_in_progress(self):
+        self.task.status = "reviewing"
+        self.task.save()
+        self.client.force_authenticate(self.creator)
+        resp = self.client.post(f"/tasks/tasks/{self.task.pk}/reject_completion/")
+        self.assertEqual(resp.status_code, 200)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "in_progress")
+        self.assertEqual(self.task.assignee_id, self.assignee.pk)
+
+    def test_reject_completion_forbidden_for_assignee(self):
+        self.task.status = "reviewing"
+        self.task.save()
+        self.client.force_authenticate(self.assignee)
+        resp = self.client.post(f"/tasks/tasks/{self.task.pk}/reject_completion/")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_reject_completion_requires_reviewing(self):
+        self.client.force_authenticate(self.creator)
+        resp = self.client.post(f"/tasks/tasks/{self.task.pk}/reject_completion/")
+        self.assertEqual(resp.status_code, 400)

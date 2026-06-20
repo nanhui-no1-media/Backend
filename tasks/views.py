@@ -168,6 +168,18 @@ class TaskViewSet(viewsets.ModelViewSet):
         return Response(TaskDetailSerializer(task, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
+    def reject_completion(self, request, pk=None):
+        """打回：发起人/社长打回待验收任务，返回进行中（assignee 不变）"""
+        task = self.get_object()
+        if task.creator != request.user and not is_president(request.user):
+            return Response({"detail": "只有创建者或社长可以审批"}, status=status.HTTP_403_FORBIDDEN)
+        if task.status != "reviewing":
+            return Response({"detail": "只有待验收的任务可以打回"}, status=status.HTTP_400_BAD_REQUEST)
+        task.status = "in_progress"
+        task.save(update_fields=["status", "updated_at"])
+        return Response(TaskDetailSerializer(task, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         """取消任务"""
         task = self.get_object()
