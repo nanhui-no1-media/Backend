@@ -23,6 +23,7 @@ export default function TaskFormPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [blocked, setBlocked] = useState(false);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -49,6 +50,10 @@ export default function TaskFormPage() {
     setLoading(true);
     taskApi.get(Number(id))
       .then((task: TaskDetail) => {
+        if (task.status !== "pending") {
+          setBlocked(true);
+          return;
+        }
         setTitle(task.title);
         setDescription(task.description);
         setPriority(task.priority);
@@ -103,6 +108,19 @@ export default function TaskFormPage() {
   };
 
   if (loading) return <div className="task-page"><div className="task-loading">加载中...</div></div>;
+
+  if (blocked) {
+    return (
+      <div className="task-page">
+        <div className="task-form-container">
+          <div className="task-error">该任务当前状态不可编辑</div>
+          <button className="task-btn-secondary" onClick={() => navigate(`/tasks/${id}`)}>
+            返回详情
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="task-page">
