@@ -26,16 +26,17 @@ class CanViewTask(permissions.BasePermission):
 
 
 class CanModifyTask(permissions.BasePermission):
-    """社长或任务创建者可以修改/删除"""
+    """任务编辑/删除：仅 pending 状态可改；进入认领/进行后对所有人锁定（含社长）"""
 
     def has_permission(self, request, view):
         return request.user and request.user.is_authenticated
 
     def has_object_permission(self, request, view, obj):
-        user = request.user
-        if is_president(user):
+        if obj.status != "pending":
+            return False
+        if is_president(request.user):
             return True
-        return obj.creator == user
+        return obj.creator == request.user
 
 
 class CanAssignTask(permissions.BasePermission):
