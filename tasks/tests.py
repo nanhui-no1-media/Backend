@@ -32,3 +32,26 @@ class TaskCompletionReviewTest(TestCase):
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, "reviewing")
         self.assertIsNone(self.task.completed_at)
+
+    def test_approve_completion_by_creator(self):
+        self.task.status = "reviewing"
+        self.task.save()
+        self.client.force_authenticate(self.creator)
+        resp = self.client.post(f"/tasks/tasks/{self.task.pk}/approve_completion/")
+        self.assertEqual(resp.status_code, 200)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "completed")
+        self.assertIsNotNone(self.task.completed_at)
+
+    def test_approve_completion_forbidden_for_assignee(self):
+        self.task.status = "reviewing"
+        self.task.save()
+        self.client.force_authenticate(self.assignee)
+        resp = self.client.post(f"/tasks/tasks/{self.task.pk}/approve_completion/")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_approve_completion_requires_reviewing(self):
+        # setUp 中 task 为 in_progress
+        self.client.force_authenticate(self.creator)
+        resp = self.client.post(f"/tasks/tasks/{self.task.pk}/approve_completion/")
+        self.assertEqual(resp.status_code, 400)
