@@ -121,6 +121,32 @@ export default function TaskDetailPage() {
     }
   };
 
+  const handleApproveCompletion = async () => {
+    if (!task) return;
+    setActionLoading(true);
+    try {
+      const updated = await taskApi.approveCompletion(task.id);
+      setTask(updated);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectCompletion = async () => {
+    if (!task) return;
+    setActionLoading(true);
+    try {
+      const updated = await taskApi.rejectCompletion(task.id);
+      setTask(updated);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleCancel = async () => {
     if (!task) return;
     setActionLoading(true);
@@ -174,7 +200,8 @@ export default function TaskDetailPage() {
   const isCreator = task && currentUser && task.creator.id === currentUser.id;
   const isAssignee = task && currentUser && task.assignee?.id === currentUser.id;
   const canClaim = task && !task.assignee && currentUser && task.creator.id !== currentUser.id && task.status === "pending";
-  const canComplete = task && task.status === "in_progress" && (isCreator || isAssignee);
+  const canComplete = task && task.status === "in_progress" && !!isAssignee;
+  const canReviewCompletion = task && task.status === "reviewing" && !!isCreator;
   const canCancel = task && task.status !== "completed" && task.status !== "cancelled" && isCreator;
   const pendingClaims = task?.claim_requests.filter((c) => c.status === "pending") || [];
 
@@ -192,9 +219,11 @@ export default function TaskDetailPage() {
             </svg>
             任务列表
           </button>
-          <button className="task-btn-secondary" onClick={() => navigate(`/tasks/${task.id}/edit`)}>
-            编辑
-          </button>
+          {task.status === "pending" && (
+            <button className="task-btn-secondary" onClick={() => navigate(`/tasks/${task.id}/edit`)}>
+              编辑
+            </button>
+          )}
         </div>
 
         {error && <div className="task-error">{error}</div>}
@@ -236,12 +265,22 @@ export default function TaskDetailPage() {
         </div>
 
         {/* Action buttons */}
-        {(canComplete || canCancel) && (
+        {(canComplete || canReviewCompletion || canCancel) && (
           <div className="task-actions-row">
             {canComplete && (
               <button className="task-btn-primary" onClick={handleComplete} disabled={actionLoading}>
-                {actionLoading ? "处理中..." : "完成任务"}
+                {actionLoading ? "处理中..." : "提交验收"}
               </button>
+            )}
+            {canReviewCompletion && (
+              <>
+                <button className="task-btn-primary" onClick={handleApproveCompletion} disabled={actionLoading}>
+                  {actionLoading ? "处理中..." : "通过验收"}
+                </button>
+                <button className="task-btn-cancel" onClick={handleRejectCompletion} disabled={actionLoading}>
+                  打回
+                </button>
+              </>
             )}
             {canCancel && (
               <button className="task-btn-cancel" onClick={handleCancel} disabled={actionLoading}>

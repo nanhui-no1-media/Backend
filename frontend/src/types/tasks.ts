@@ -57,7 +57,7 @@ export interface Message {
   updated_at: string;
 }
 
-export type TaskStatus = "pending" | "in_progress" | "review" | "completed" | "cancelled";
+export type TaskStatus = "pending" | "in_progress" | "reviewing" | "review" | "completed" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 
 export interface TaskListItem {
@@ -104,6 +104,7 @@ export interface TaskFormData {
 export const STATUS_LABELS: Record<TaskStatus, string> = {
   pending: "待处理",
   in_progress: "进行中",
+  reviewing: "待验收",
   review: "审核中",
   completed: "已完成",
   cancelled: "已取消",
@@ -126,6 +127,7 @@ export const PRIORITY_COLORS: Record<TaskPriority, string> = {
 export const STATUS_COLORS: Record<TaskStatus, string> = {
   pending: "#6b7280",
   in_progress: "#3b82f6",
+  reviewing: "#8b5cf6",
   review: "#f59e0b",
   completed: "#10b981",
   cancelled: "#9ca3af",

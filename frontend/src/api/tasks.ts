@@ -64,6 +64,10 @@ export const taskApi = {
     request(`/tasks/${taskId}/complete/`, { method: "POST" }),
   cancel: (taskId: number) =>
     request(`/tasks/${taskId}/cancel/`, { method: "POST" }),
+  approveCompletion: (taskId: number) =>
+    request(`/tasks/${taskId}/approve_completion/`, { method: "POST" }),
+  rejectCompletion: (taskId: number) =>
+    request(`/tasks/${taskId}/reject_completion/`, { method: "POST" }),
 
   // Tags
   listTags: () => request("/tags/"),

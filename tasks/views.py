@@ -144,16 +144,39 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
-        """完成任务"""
+        """提交验收：负责人/社长完成工作，任务进入待验收"""
         task = self.get_object()
         if task.status != "in_progress":
-            return Response({"detail": "只有进行中的任务可以完成"}, status=status.HTTP_400_BAD_REQUEST)
-        # 仅允许负责人或社长完成（创建者不再有完成权限）
+            return Response({"detail": "只有进行中的任务可以提交验收"}, status=status.HTTP_400_BAD_REQUEST)
         if task.assignee != request.user and not is_president(request.user):
-            return Response({"detail": "只有负责人或社长可以完成"}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "只有负责人或社长可以提交验收"}, status=status.HTTP_403_FORBIDDEN)
+        task.status = "reviewing"
+        task.save(update_fields=["status", "updated_at"])
+        return Response(TaskDetailSerializer(task, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def approve_completion(self, request, pk=None):
+        """通过验收：发起人/社长确认，任务完成"""
+        task = self.get_object()
+        if task.creator != request.user and not is_president(request.user):
+            return Response({"detail": "只有创建者或社长可以审批"}, status=status.HTTP_403_FORBIDDEN)
+        if task.status != "reviewing":
+            return Response({"detail": "只有待验收的任务可以审批"}, status=status.HTTP_400_BAD_REQUEST)
         task.status = "completed"
         task.completed_at = timezone.now()
         task.save(update_fields=["status", "completed_at", "updated_at"])
+        return Response(TaskDetailSerializer(task, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"])
+    def reject_completion(self, request, pk=None):
+        """打回：发起人/社长打回待验收任务，返回进行中（assignee 不变）"""
+        task = self.get_object()
+        if task.creator != request.user and not is_president(request.user):
+            return Response({"detail": "只有创建者或社长可以审批"}, status=status.HTTP_403_FORBIDDEN)
+        if task.status != "reviewing":
+            return Response({"detail": "只有待验收的任务可以打回"}, status=status.HTTP_400_BAD_REQUEST)
+        task.status = "in_progress"
+        task.save(update_fields=["status", "updated_at"])
         return Response(TaskDetailSerializer(task, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])

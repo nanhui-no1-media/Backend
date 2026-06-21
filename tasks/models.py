@@ -29,6 +29,7 @@ class Task(models.Model):
     STATUS_CHOICES = [
         ("pending", "待处理"),
         ("in_progress", "进行中"),
+        ("reviewing", "待验收"),
         ("review", "审核中"),
         ("completed", "已完成"),
         ("cancelled", "已取消"),
