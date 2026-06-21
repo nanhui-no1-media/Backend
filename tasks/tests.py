@@ -162,3 +162,15 @@ class TaskRejectNoticeTest(TestCase):
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 400)
+
+    def test_complete_clears_reject_reason(self):
+        # 模拟已被打回：回到进行中且带理由
+        self.task.status = "in_progress"
+        self.task.reject_reason = "需补充截图"
+        self.task.save()
+        self.client.force_authenticate(self.assignee)
+        resp = self.client.post(f"/tasks/tasks/{self.task.pk}/complete/")
+        self.assertEqual(resp.status_code, 200)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "reviewing")
+        self.assertEqual(self.task.reject_reason, "")
