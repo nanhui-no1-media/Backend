@@ -113,3 +113,21 @@ class TaskEditLockTest(TestCase):
         self.task.save()
         self.client.force_authenticate(self.creator)
         self.assertEqual(self._patch().status_code, 200)
+
+
+class TaskRejectNoticeTest(TestCase):
+    def setUp(self):
+        self.creator = User.objects.create_user(username="creator2", password="x")
+        self.assignee = User.objects.create_user(username="assignee2", password="x")
+        self.client = APIClient()
+        self.task = Task.objects.create(
+            title="t", creator=self.creator, assignee=self.assignee, status="reviewing",
+        )
+
+    def test_detail_includes_reject_reason(self):
+        self.task.reject_reason = "需补充截图"
+        self.task.save()
+        self.client.force_authenticate(self.creator)
+        resp = self.client.get(f"/tasks/tasks/{self.task.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["reject_reason"], "需补充截图")

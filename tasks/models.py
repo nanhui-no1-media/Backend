@@ -62,6 +62,7 @@ class Task(models.Model):
     )
 
     completed_at = models.DateTimeField("完成时间", null=True, blank=True)
+    reject_reason = models.TextField("打回理由", blank=True, default="")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
