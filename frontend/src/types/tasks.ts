@@ -69,6 +69,7 @@ export interface TaskListItem {
   assignee: TaskUser | null;
   tags: Tag[];
   completed_at: string | null;
+  reject_reason: string;
   attachment_count: number;
   created_at: string;
   updated_at: string;
@@ -87,6 +88,7 @@ export interface TaskDetail {
   attachments: Attachment[];
   claim_requests: TaskClaimRequest[];
   completed_at: string | null;
+  reject_reason: string;
   created_at: string;
   updated_at: string;
 }

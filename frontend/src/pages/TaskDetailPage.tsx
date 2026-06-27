@@ -25,6 +25,8 @@ export default function TaskDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ id: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [showRejectForm, setShowRejectForm] = useState(false);
 
   useEffect(() => {
     api.me().then((d) => setCurrentUser({ id: d.user.id })).catch(() => {});
@@ -136,10 +138,17 @@ export default function TaskDetailPage() {
 
   const handleRejectCompletion = async () => {
     if (!task) return;
+    const reason = rejectReason.trim();
+    if (!reason) {
+      setError("请填写打回理由");
+      return;
+    }
     setActionLoading(true);
     try {
-      const updated = await taskApi.rejectCompletion(task.id);
+      const updated = await taskApi.rejectCompletion(task.id, reason);
       setTask(updated);
+      setShowRejectForm(false);
+      setRejectReason("");
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -245,6 +254,23 @@ export default function TaskDetailPage() {
           </span>
         </div>
 
+        {task.status === "in_progress" && task.reject_reason && (
+          <div
+            style={{
+              backgroundColor: "#fef3c7",
+              color: "#92400e",
+              border: "1px solid #f59e0b",
+              borderRadius: "8px",
+              padding: "10px 14px",
+              margin: "12px 0",
+              fontSize: "14px",
+              lineHeight: 1.5,
+            }}
+          >
+            ⚠ 此任务已被打回：{task.reject_reason}
+          </div>
+        )}
+
         <div className="task-detail-meta">
           <div className="meta-item">
             <span className="meta-label">优先级</span>
@@ -277,7 +303,7 @@ export default function TaskDetailPage() {
                 <button className="task-btn-primary" onClick={handleApproveCompletion} disabled={actionLoading}>
                   {actionLoading ? "处理中..." : "通过验收"}
                 </button>
-                <button className="task-btn-cancel" onClick={handleRejectCompletion} disabled={actionLoading}>
+                <button className="task-btn-cancel" onClick={() => setShowRejectForm(true)} disabled={actionLoading}>
                   打回
                 </button>
               </>
@@ -287,6 +313,30 @@ export default function TaskDetailPage() {
                 取消任务
               </button>
             )}
+          </div>
+        )}
+
+        {showRejectForm && canReviewCompletion && (
+          <div className="task-detail-section">
+            <h3>打回理由</h3>
+            <div className="claim-form">
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="说明打回原因，告知负责人需返工的内容..."
+                rows={3}
+              />
+              <button className="task-btn-primary" onClick={handleRejectCompletion} disabled={actionLoading}>
+                {actionLoading ? "处理中..." : "确认打回"}
+              </button>
+              <button
+                className="task-btn-secondary"
+                onClick={() => { setShowRejectForm(false); setRejectReason(""); }}
+                disabled={actionLoading}
+              >
+                取消
+              </button>
+            </div>
           </div>
         )}
 

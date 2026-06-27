@@ -60,11 +60,16 @@ class TaskCompletionReviewTest(TestCase):
         self.task.status = "reviewing"
         self.task.save()
         self.client.force_authenticate(self.creator)
-        resp = self.client.post(f"/tasks/tasks/{self.task.pk}/reject_completion/")
+        resp = self.client.post(
+            f"/tasks/tasks/{self.task.pk}/reject_completion/",
+            data=json.dumps({"reason": "返工"}),
+            content_type="application/json",
+        )
         self.assertEqual(resp.status_code, 200)
         self.task.refresh_from_db()
         self.assertEqual(self.task.status, "in_progress")
         self.assertEqual(self.task.assignee_id, self.assignee.pk)
+        self.assertEqual(self.task.reject_reason, "返工")
 
     def test_reject_completion_forbidden_for_assignee(self):
         self.task.status = "reviewing"
@@ -113,3 +118,59 @@ class TaskEditLockTest(TestCase):
         self.task.save()
         self.client.force_authenticate(self.creator)
         self.assertEqual(self._patch().status_code, 200)
+
+
+class TaskRejectNoticeTest(TestCase):
+    def setUp(self):
+        self.creator = User.objects.create_user(username="creator2", password="x")
+        self.assignee = User.objects.create_user(username="assignee2", password="x")
+        self.client = APIClient()
+        self.task = Task.objects.create(
+            title="t", creator=self.creator, assignee=self.assignee, status="reviewing",
+        )
+
+    def test_detail_includes_reject_reason(self):
+        self.task.reject_reason = "需补充截图"
+        self.task.save()
+        self.client.force_authenticate(self.creator)
+        resp = self.client.get(f"/tasks/tasks/{self.task.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["reject_reason"], "需补充截图")
+
+    def test_reject_completion_writes_reason(self):
+        self.client.force_authenticate(self.creator)
+        resp = self.client.post(
+            f"/tasks/tasks/{self.task.pk}/reject_completion/",
+            data=json.dumps({"reason": "需补充截图"}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "in_progress")
+        self.assertEqual(self.task.reject_reason, "需补充截图")
+
+    def test_reject_completion_requires_reason(self):
+        self.client.force_authenticate(self.creator)
+        resp = self.client.post(f"/tasks/tasks/{self.task.pk}/reject_completion/")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_reject_completion_blank_reason_rejected(self):
+        self.client.force_authenticate(self.creator)
+        resp = self.client.post(
+            f"/tasks/tasks/{self.task.pk}/reject_completion/",
+            data=json.dumps({"reason": "   "}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_complete_clears_reject_reason(self):
+        # 模拟已被打回：回到进行中且带理由
+        self.task.status = "in_progress"
+        self.task.reject_reason = "需补充截图"
+        self.task.save()
+        self.client.force_authenticate(self.assignee)
+        resp = self.client.post(f"/tasks/tasks/{self.task.pk}/complete/")
+        self.assertEqual(resp.status_code, 200)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, "reviewing")
+        self.assertEqual(self.task.reject_reason, "")

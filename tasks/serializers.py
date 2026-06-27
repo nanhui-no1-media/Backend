@@ -77,6 +77,7 @@ class TaskListSerializer(serializers.ModelSerializer):
             "id", "title", "status", "priority",
             "creator", "assignee", "tags",
             "completed_at",
+            "reject_reason",
             "attachment_count",
             "created_at", "updated_at",
         ]
@@ -115,9 +116,10 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             "tags", "tag_ids",
             "attachments", "claim_requests",
             "completed_at",
+            "reject_reason",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["creator", "status", "completed_at", "created_at", "updated_at"]
+        read_only_fields = ["creator", "status", "completed_at", "reject_reason", "created_at", "updated_at"]
 
     def create(self, validated_data):
         tags = validated_data.pop("tags", [])
