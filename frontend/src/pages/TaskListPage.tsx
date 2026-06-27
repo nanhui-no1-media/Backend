@@ -147,6 +147,14 @@ export default function TaskListPage() {
                         >
                           {STATUS_LABELS[task.status]}
                         </span>
+                        {task.reject_reason && (
+                          <span
+                            className="task-status-badge"
+                            style={{ backgroundColor: "#fef3c7", color: "#92400e" }}
+                          >
+                            被打回
+                          </span>
+                        )}
                         {task.tags.map((t) => (
                           <span key={t.id} className="task-tag" style={{ backgroundColor: t.color + "18", color: t.color }}>
                             {t.name}
