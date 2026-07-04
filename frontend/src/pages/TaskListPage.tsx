@@ -9,6 +9,7 @@ import {
 import "./TaskListPage.css";
 import TaskTimeline from "../components/TaskTimeline";
 import TaskGantt from "../components/TaskGantt";
+import Avatar from "../components/Avatar";
 
 interface User {
   id: number;
@@ -160,7 +161,8 @@ export default function TaskListPage() {
                             {t.name}
                           </span>
                         ))}
-                        <span className="task-meta-text">
+                        <span className="task-meta-text user-with-avatar">
+                          {task.assignee && <Avatar user={task.assignee} />}
                           {task.assignee?.nickname || task.assignee?.username || "未分配"}
                         </span>
                         {task.attachment_count > 0 && <span className="task-meta-text">{task.attachment_count} 附件</span>}

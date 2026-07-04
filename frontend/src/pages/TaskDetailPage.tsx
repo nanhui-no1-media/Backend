@@ -8,6 +8,7 @@ import {
   STATUS_LABELS, PRIORITY_LABELS, PRIORITY_COLORS, STATUS_COLORS,
 } from "../types/tasks";
 import RichTextEditor from "../components/RichTextEditor";
+import Avatar from "../components/Avatar";
 import "./TaskDetailPage.css";
 
 export default function TaskDetailPage() {
@@ -278,11 +279,11 @@ export default function TaskDetailPage() {
           </div>
           <div className="meta-item">
             <span className="meta-label">创建人</span>
-            <span>{task.creator.nickname || task.creator.username}</span>
+            <span className="user-with-avatar"><Avatar user={task.creator} />{task.creator.nickname || task.creator.username}</span>
           </div>
           <div className="meta-item">
             <span className="meta-label">负责人</span>
-            <span>{task.assignee?.nickname || task.assignee?.username || "未分配"}</span>
+            <span className="user-with-avatar">{task.assignee && <Avatar user={task.assignee} />}{task.assignee?.nickname || task.assignee?.username || "未分配"}</span>
           </div>
           <div className="meta-item">
             <span className="meta-label">创建时间</span>
@@ -355,7 +356,8 @@ export default function TaskDetailPage() {
             <h3>协作者</h3>
             <div className="collaborator-list">
               {task.collaborators.map((u) => (
-                <span key={u.id} className="collaborator-chip">
+                <span key={u.id} className="collaborator-chip user-with-avatar">
+                  <Avatar user={u} />
                   {u.nickname || u.username}
                 </span>
               ))}
@@ -398,6 +400,7 @@ export default function TaskDetailPage() {
               {pendingClaims.map((cr) => (
                 <div key={cr.id} className="claim-item">
                   <div className="claim-header">
+                    <Avatar user={cr.claimant} />
                     <strong>{cr.claimant.nickname || cr.claimant.username}</strong>
                     <span className="claim-time">{new Date(cr.created_at).toLocaleString("zh-CN")}</span>
                   </div>
@@ -471,6 +474,7 @@ export default function TaskDetailPage() {
               {messages.map((m) => (
                 <div key={m.id} className="comment-item">
                   <div className="comment-header">
+                    <Avatar user={m.sender} size="md" />
                     <strong>{m.sender.nickname || m.sender.username}</strong>
                     <span className="comment-time">{new Date(m.created_at).toLocaleString("zh-CN")}</span>
                   </div>

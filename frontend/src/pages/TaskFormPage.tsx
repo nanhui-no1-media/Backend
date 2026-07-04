@@ -7,12 +7,14 @@ import {
   Tag, PRIORITY_LABELS,
 } from "../types/tasks";
 import RichTextEditor from "../components/RichTextEditor";
+import Avatar from "../components/Avatar";
 import "./TaskFormPage.css";
 
 interface SimpleUser {
   id: number;
   username: string;
   nickname: string;
+  avatar: string | null;
 }
 
 export default function TaskFormPage() {
@@ -39,7 +41,7 @@ export default function TaskFormPage() {
     taskApi.listTags().then((d) => setTags(d.results || d)).catch(console.error);
     api.listUsers().then((d) => {
       const list: SimpleUser[] = (d.results || []).map((u: any) => ({
-        id: u.id, username: u.username, nickname: u.nickname,
+        id: u.id, username: u.username, nickname: u.nickname, avatar: u.avatar,
       }));
       setUsers(list);
     }).catch(console.error);
@@ -194,9 +196,10 @@ export default function TaskFormPage() {
                 <button
                   key={u.id}
                   type="button"
-                  className={`collab-option${collaboratorIds.includes(u.id) ? " selected" : ""}`}
+                  className={`collab-option user-with-avatar${collaboratorIds.includes(u.id) ? " selected" : ""}`}
                   onClick={() => toggleCollaborator(u.id)}
                 >
+                  <Avatar user={u} />
                   {u.nickname || u.username}
                 </button>
               ))}

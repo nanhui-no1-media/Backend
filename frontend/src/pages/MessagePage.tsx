@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { messagingApi } from "../api/messaging";
 import { api } from "../api/client";
 import { Conversation, Message, TaskUser } from "../types/tasks";
+import Avatar from "../components/Avatar";
 import "./MessagePage.css";
 
 export default function MessagePage() {
@@ -72,6 +73,11 @@ export default function MessagePage() {
     return other?.nickname || other?.username || "私人会话";
   };
 
+  const activeOther =
+    activeConv?.conversation_type === "private"
+      ? activeConv.participants.find((p) => p.id !== user?.id)
+      : undefined;
+
   return (
     <div className="msg-page">
       <div className="msg-container">
@@ -117,6 +123,7 @@ export default function MessagePage() {
           {activeConv ? (
             <>
               <div className="msg-main-header">
+                {activeOther && <Avatar user={activeOther} size="md" />}
                 <h3>{getConvTitle(activeConv)}</h3>
                 <span className="msg-participant-count">
                   {activeConv.participants.length} 人
@@ -132,7 +139,10 @@ export default function MessagePage() {
                       className={`msg-bubble${m.sender.id === user?.id ? " mine" : ""}`}
                     >
                       {m.sender.id !== user?.id && (
-                        <div className="msg-bubble-author">{m.sender.nickname || m.sender.username}</div>
+                        <div className="msg-bubble-author user-with-avatar">
+                          <Avatar user={m.sender} />
+                          {m.sender.nickname || m.sender.username}
+                        </div>
                       )}
                       <div className="msg-bubble-content">{m.content}</div>
                       <div className="msg-bubble-time">

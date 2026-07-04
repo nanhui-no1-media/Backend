@@ -25,7 +25,10 @@ class ConversationViewSet(viewsets.ModelViewSet):
             Conversation.objects
             .filter(participants=self.request.user)
             .select_related("task")
-            .prefetch_related("participants", "messages", "messages__sender")
+            .prefetch_related(
+                "participants", "participants__profile",
+                "messages", "messages__sender", "messages__sender__profile",
+            )
         )
 
     @action(detail=True, methods=["post"])
@@ -72,7 +75,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         except Conversation.DoesNotExist:
             return Response({"detail": "会话不存在"}, status=status.HTTP_404_NOT_FOUND)
 
-        messages = conversation.messages.select_related("sender").prefetch_related("mentions").order_by("created_at")
+        messages = conversation.messages.select_related("sender", "sender__profile").prefetch_related("mentions", "mentions__profile").order_by("created_at")
         return Response(MessageSerializer(messages, many=True, context={"request": request}).data)
 
     @action(detail=False, methods=["post"])

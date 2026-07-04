@@ -6,6 +6,7 @@ import {
   PRIORITY_COLORS,
 } from "../types/tasks";
 import "./TaskTimeline.css";
+import Avatar from "./Avatar";
 
 interface Props {
   tasks: TaskListItem[];
@@ -76,7 +77,8 @@ export default function TaskTimeline({ tasks }: Props) {
                 </span>
               </div>
               <div className="timeline-card-meta">
-                <span className="timeline-meta-text">
+                <span className="timeline-meta-text user-with-avatar">
+                  {task.assignee && <Avatar user={task.assignee} />}
                   {task.assignee?.nickname || task.assignee?.username || "未分配"}
                 </span>
                 {task.tags.map((t) => (

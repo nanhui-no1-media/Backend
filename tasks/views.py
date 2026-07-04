@@ -40,8 +40,14 @@ class TagViewSet(viewsets.ModelViewSet):
 class TaskViewSet(viewsets.ModelViewSet):
     """任务 CRUD"""
     queryset = Task.objects.select_related(
-        "creator", "assignee",
-    ).prefetch_related("tags", "collaborators", "attachments", "claim_requests", "claim_requests__claimant")
+        "creator", "creator__profile",
+        "assignee", "assignee__profile",
+    ).prefetch_related(
+        "tags",
+        "collaborators", "collaborators__profile",
+        "attachments",
+        "claim_requests", "claim_requests__claimant", "claim_requests__claimant__profile",
+    )
 
     filterset_fields = ["status", "priority", "assignee", "creator"]
     search_fields = ["title", "description"]
