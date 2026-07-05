@@ -105,7 +105,8 @@ fetch("/auth/profile/update/", {
   "user": {
     "id": 1,
     "username": "admin",
-    "email": "admin@example.com"
+    "email": "admin@example.com",
+    "is_president": true
   },
   "profile": {
     "avatar": "/media/avatars/photo.jpg",
@@ -117,7 +118,7 @@ fetch("/auth/profile/update/", {
 }
 ```
 
-其中 `avatar`、`birthday` 等可选字段未设置时为 `null`，`gender` 取值为 `"M"`（男）、`"F"`（女）、`"O"`（其他）或空字符串。
+其中 `avatar`、`birthday` 等可选字段未设置时为 `null`，`gender` 取值为 `"M"`（男）、`"F"`（女）、`"O"`（其他）或空字符串。`user.is_president` 为布尔值，表示当前用户是否属于「社长」组（见「任务系统 · 权限模型」）。
 
 ### 列表查询（分页 / 过滤 / 搜索 / 排序）
 
@@ -320,7 +321,7 @@ const initial = displayName.charAt(0).toUpperCase();
 - **标签写**：仅社长（读：任意登录用户）。
 - **消息**：仅会话参与者。
 
-> ⚠️ 当前 `/auth/me/` **不返回用户角色**（是否为社长）。前端无法预知权限，应按需调用动作接口、**以 HTTP 403 兜底**隐藏/禁用相应 UI。
+> `/auth/me/` 返回 `user.is_president`（布尔），前端可据此预判当前用户是否为社长、显示对应操作 UI（审批 / 验收 / 取消等）。实际操作仍由后端校验、失败返回 403，前端应同时兜底。注意：该字段只在当前用户接口出现，任务 / 消息里引用的**其他**用户（`SimpleUserSerializer`）不含此字段。
 
 ### 标签接口 `/tasks/tags/`
 

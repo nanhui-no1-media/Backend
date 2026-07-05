@@ -12,6 +12,7 @@ from django.core.mail import send_mail
 
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .models import Profile
+from tasks.permissions import is_president
 
 
 def _json_body(request):
@@ -121,7 +122,12 @@ def _get_or_create_profile(user):
 
 def _profile_response(user, profile):
     return {
-        "user": {"id": user.id, "username": user.username, "email": user.email},
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "is_president": is_president(user),
+        },
         "profile": {
             "avatar": profile.avatar.url if profile.avatar else None,
             "nickname": profile.nickname,

@@ -52,7 +52,12 @@ GET /auth/me/
 成功响应 `200`：
 ```json
 {
-  "user": { "id": 1, "username": "admin", "email": "admin@example.com" },
+  "user": {
+    "id": 1,
+    "username": "admin",
+    "email": "admin@example.com",
+    "is_president": true
+  },
   "profile": {
     "avatar": "/media/avatars/photo.jpg",
     "nickname": "管理员",
@@ -114,7 +119,12 @@ GET /auth/profile/
 成功响应 `200`：
 ```json
 {
-  "user": { "id": 1, "username": "admin", "email": "admin@example.com" },
+  "user": {
+    "id": 1,
+    "username": "admin",
+    "email": "admin@example.com",
+    "is_president": true
+  },
   "profile": {
     "avatar": "/media/avatars/photo.jpg",
     "nickname": "管理员",
