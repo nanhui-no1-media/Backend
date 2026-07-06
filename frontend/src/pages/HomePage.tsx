@@ -27,7 +27,7 @@ const NAV_ITEMS = [
   { label: "组织架构", path: "/organization", protected: false },
   { label: "任务管理", path: "/tasks", protected: true },
   { label: "站内通信", path: "/messages", protected: true },
-  { label: "活动申报", path: "/activity", protected: true },
+  { label: "活动申报", path: "/activity", protected: false },
   { label: "社团管理", path: "/manage", protected: true },
   { label: "后台管理", path: "/admin/", protected: true },
 ];

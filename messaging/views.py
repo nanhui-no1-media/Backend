@@ -9,6 +9,8 @@ from rest_framework.response import Response
 from tasks.models import Task
 from tasks.permissions import is_president
 
+from proposals.models import Proposal
+
 from .models import Conversation, Message, MessageReadStatus
 from .permissions import IsConversationParticipant
 from .serializers import ConversationSerializer, MessageSerializer
@@ -18,13 +20,13 @@ class ConversationViewSet(viewsets.ModelViewSet):
     """会话管理"""
     serializer_class = ConversationSerializer
     permission_classes = [IsAuthenticated, IsConversationParticipant]
-    filterset_fields = ["conversation_type", "task"]
+    filterset_fields = ["conversation_type", "task", "proposal"]
 
     def get_queryset(self):
         return (
             Conversation.objects
             .filter(participants=self.request.user)
-            .select_related("task")
+            .select_related("task", "proposal")
             .prefetch_related(
                 "participants", "participants__profile",
                 "messages", "messages__sender", "messages__sender__profile",
@@ -141,5 +143,39 @@ class ConversationViewSet(viewsets.ModelViewSet):
         # 请求者也需要加入
         participant_ids.add(user.pk)
 
+        conversation.participants.set(participant_ids)
+        return Response(ConversationSerializer(conversation, context={"request": request}).data)
+
+    @action(detail=False, methods=["post"])
+    def get_proposal_conversation(self, request):
+        """获取或创建申报讨论会话（活动申报）。反馈/举报无创建人，不开放讨论。"""
+        proposal_id = request.data.get("proposal_id")
+        if not proposal_id:
+            return Response({"detail": "缺少 proposal_id"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            proposal = Proposal.objects.get(pk=proposal_id)
+        except Proposal.DoesNotExist:
+            return Response({"detail": "申报不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        user = request.user
+        # 反馈/举报仅社长可见；活动申报对所有登录用户开放
+        if proposal.proposal_type == "feedback":
+            if not is_president(user):
+                return Response({"detail": "无权访问"}, status=status.HTTP_403_FORBIDDEN)
+        if not user.is_authenticated:
+            return Response({"detail": "请先登录"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        conversation, _ = Conversation.objects.get_or_create(
+            conversation_type="proposal",
+            proposal=proposal,
+        )
+        # 参与者：创建人 + 全体社长 + 当前请求者
+        participant_ids = set()
+        if proposal.creator_id is not None:
+            participant_ids.add(proposal.creator_id)
+        participant_ids.update(
+            User.objects.filter(groups__name="社长", is_active=True).values_list("id", flat=True)
+        )
+        participant_ids.add(user.pk)
         conversation.participants.set(participant_ids)
         return Response(ConversationSerializer(conversation, context={"request": request}).data)

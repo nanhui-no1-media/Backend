@@ -25,9 +25,10 @@ urlpatterns = [
     path('auth/', include('accounts.urls')),
     path('tasks/', include('tasks.urls')),
     path('messaging/', include('messaging.urls')),
+    path('proposals/', include('proposals.urls')),
     path('exam_board/', include('exam_board.urls')),
     path('', TemplateView.as_view(template_name='index.html'), name='home'),
-    re_path(r'^(?!static/|admin/|auth/|tasks/|media/|messaging/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
+    re_path(r'^(?!static/|admin/|auth/|tasks/|media/|messaging/|proposals/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
 ]
 
 if settings.DEBUG:

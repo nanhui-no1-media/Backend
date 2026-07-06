@@ -11,6 +11,9 @@ const TaskListPage = lazy(() => import("./pages/TaskListPage"));
 const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage"));
 const TaskFormPage = lazy(() => import("./pages/TaskFormPage"));
 const MessagePage = lazy(() => import("./pages/MessagePage"));
+const ProposalListPage = lazy(() => import("./pages/ProposalListPage"));
+const ProposalFormPage = lazy(() => import("./pages/ProposalFormPage"));
+const ProposalDetailPage = lazy(() => import("./pages/ProposalDetailPage"));
 
 function Loading() {
   return <div style={{ textAlign: "center", padding: "80px 0", color: "#6b7280" }}>加载中...</div>;
@@ -31,6 +34,10 @@ export default function App() {
           <Route path="/tasks/:id/edit" element={<ProtectedRoute><TaskFormPage /></ProtectedRoute>} />
           <Route path="/messages" element={<ProtectedRoute><MessagePage /></ProtectedRoute>} />
           <Route path="/messages/:id" element={<ProtectedRoute><MessagePage /></ProtectedRoute>} />
+          <Route path="/activity" element={<ProposalListPage />} />
+          <Route path="/activity/new" element={<ProtectedRoute><ProposalFormPage /></ProtectedRoute>} />
+          <Route path="/activity/:id" element={<ProtectedRoute><ProposalDetailPage /></ProtectedRoute>} />
+          <Route path="/activity/:id/edit" element={<ProtectedRoute><ProposalFormPage /></ProtectedRoute>} />
           <Route path="/" element={<HomePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

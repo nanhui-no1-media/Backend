@@ -1,27 +1,6 @@
-const API_BASE = "/auth";
+import { createRequest } from "./shared";
 
-function getCSRFToken(): string {
-  const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : "";
-}
-
-async function request(path: string, options: RequestInit = {}) {
-  const isFormData = options.body instanceof FormData;
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      ...(isFormData ? {} : { "Content-Type": "application/json" }),
-      "X-CSRFToken": getCSRFToken(),
-      ...options.headers,
-    },
-    credentials: "include",
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || "Request failed");
-  }
-  return data;
-}
+const request = createRequest("/auth");
 
 export const api = {
   login: (username: string, password: string) =>

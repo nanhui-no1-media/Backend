@@ -1,27 +1,6 @@
-function getCSRFToken(): string {
-  const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : "";
-}
+import { createRequest } from "./shared";
 
-const BASE = "/messaging";
-
-async function request(path: string, options: RequestInit = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      "X-CSRFToken": getCSRFToken(),
-      ...options.headers,
-    },
-    credentials: "include",
-  });
-  if (res.status === 204) return null;
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.detail || data.error || "请求失败");
-  }
-  return data;
-}
+const request = createRequest("/messaging");
 
 export const messagingApi = {
   listConversations: (params?: Record<string, string>) => {
@@ -39,4 +18,6 @@ export const messagingApi = {
     request("/conversations/start_private/", { method: "POST", body: JSON.stringify({ user_id: userId }) }),
   getTaskConversation: (taskId: number) =>
     request("/conversations/get_task_conversation/", { method: "POST", body: JSON.stringify({ task_id: taskId }) }),
+  getProposalConversation: (proposalId: number) =>
+    request("/conversations/get_proposal_conversation/", { method: "POST", body: JSON.stringify({ proposal_id: proposalId }) }),
 };

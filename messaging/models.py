@@ -8,12 +8,17 @@ class Conversation(models.Model):
     TYPE_CHOICES = [
         ("task", "任务讨论"),
         ("private", "私人对话"),
+        ("proposal", "申报讨论"),
     ]
 
     conversation_type = models.CharField("类型", max_length=10, choices=TYPE_CHOICES)
     task = models.ForeignKey(
         "tasks.Task", on_delete=models.CASCADE,
         null=True, blank=True, related_name="conversations", verbose_name="关联任务",
+    )
+    proposal = models.ForeignKey(
+        "proposals.Proposal", on_delete=models.CASCADE,
+        null=True, blank=True, related_name="conversations", verbose_name="关联申报",
     )
     participants = models.ManyToManyField(
         settings.AUTH_USER_MODEL, related_name="conversations", verbose_name="参与者",
@@ -30,6 +35,8 @@ class Conversation(models.Model):
     def __str__(self):
         if self.conversation_type == "task" and self.task:
             return f"任务讨论: {self.task.title}"
+        if self.conversation_type == "proposal" and self.proposal:
+            return f"申报讨论: {self.proposal.title}"
         return f"私人会话 ({self.pk})"
 
 

@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'accounts',
     'tasks',
     'messaging',
+    'proposals',
     'exam_board',
 ]
 
@@ -156,6 +157,10 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_THROTTLE_RATES': {
+        # 匿名意见反馈/举报：每个 IP 每天 10 条
+        'feedback_anon': '10/day',
+    },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_FILTER_BACKENDS': [
