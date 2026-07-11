@@ -1,7 +1,8 @@
 import json
-from django.test import TestCase, Client
+from django.test import TestCase, Client, RequestFactory
 from django.contrib.auth.models import User
 from .models import UserSession
+from .utils import get_client_ip, parse_user_agent, record_user_session
 
 
 class LoginViewTest(TestCase):
@@ -208,3 +209,73 @@ class UserSessionModelTest(TestCase):
     def test_str_contains_username(self):
         s = UserSession.objects.create(user=self.user, session_key="abcdef0123456789")
         self.assertIn("u", str(s))
+
+
+class ParseUserAgentTest(TestCase):
+    def test_desktop_chrome_windows(self):
+        ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        dtype, dname = parse_user_agent(ua)
+        self.assertEqual(dtype, "Desktop")
+        self.assertIn("Chrome", dname)
+        self.assertIn("Windows", dname)
+
+    def test_mobile_iphone(self):
+        ua = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+              "AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1")
+        dtype, dname = parse_user_agent(ua)
+        self.assertEqual(dtype, "Mobile")
+        self.assertIn("iOS", dname)
+
+    def test_tablet_ipad(self):
+        ua = ("Mozilla/5.0 (iPad; CPU OS 16_0 like Mac OS X) "
+              "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1")
+        dtype, _ = parse_user_agent(ua)
+        self.assertEqual(dtype, "Tablet")
+
+    def test_bot(self):
+        dtype, _ = parse_user_agent("Mozilla/5.0 (compatible; Googlebot/2.1; +http://google.com/bot.html)")
+        self.assertEqual(dtype, "Bot")
+
+    def test_empty(self):
+        self.assertEqual(parse_user_agent(""), ("Unknown", ""))
+
+
+class GetClientIpTest(TestCase):
+    def test_remote_addr(self):
+        req = RequestFactory().get("/", REMOTE_ADDR="1.2.3.4")
+        self.assertEqual(get_client_ip(req), "1.2.3.4")
+
+
+class RecordUserSessionTest(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.user = User.objects.create_user(username="u", password="p")
+
+    def _req(self):
+        return self.factory.get(
+            "/",
+            REMOTE_ADDR="9.9.9.9",
+            HTTP_USER_AGENT="Mozilla/5.0 (Windows NT 10.0) Chrome/120.0",
+        )
+
+    def test_creates_current_row(self):
+        record_user_session(self._req(), self.user, "keyA")
+        s = UserSession.objects.get(session_key="keyA")
+        self.assertTrue(s.is_current)
+        self.assertEqual(s.ip_address, "9.9.9.9")
+        self.assertEqual(s.device_type, "Desktop")
+
+    def test_second_login_supersedes_first(self):
+        record_user_session(self._req(), self.user, "keyA")
+        record_user_session(self._req(), self.user, "keyB")
+        self.assertEqual(UserSession.objects.filter(user=self.user).count(), 1)
+        current = UserSession.objects.get(user=self.user)
+        self.assertEqual(current.session_key, "keyB")
+        self.assertTrue(current.is_current)
+
+    def test_same_key_updates_in_place(self):
+        record_user_session(self._req(), self.user, "keyA")
+        record_user_session(self._req(), self.user, "keyA")
+        self.assertEqual(UserSession.objects.filter(session_key="keyA").count(), 1)
+        self.assertTrue(UserSession.objects.get(session_key="keyA").is_current)
