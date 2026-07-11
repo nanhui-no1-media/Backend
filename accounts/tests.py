@@ -279,3 +279,36 @@ class RecordUserSessionTest(TestCase):
         record_user_session(self._req(), self.user, "keyA")
         self.assertEqual(UserSession.objects.filter(session_key="keyA").count(), 1)
         self.assertTrue(UserSession.objects.get(session_key="keyA").is_current)
+
+
+class LoginSignalIntegrationTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="u", email="u@e.com", password="secret123")
+
+    def test_login_creates_user_session(self):
+        c = Client()
+        c.login(username="u", password="secret123")
+        s = UserSession.objects.get(user=self.user)
+        self.assertTrue(s.is_current)
+        self.assertTrue(s.session_key)
+
+    def test_login_records_device_info(self):
+        c = Client()
+        c.post(
+            "/auth/login/",
+            data=json.dumps({"username": "u", "password": "secret123"}),
+            content_type="application/json",
+            REMOTE_ADDR="1.2.3.4",
+            HTTP_USER_AGENT="Mozilla/5.0 (Windows NT 10.0) Chrome/120.0",
+        )
+        s = UserSession.objects.get(user=self.user)
+        self.assertEqual(s.ip_address, "1.2.3.4")
+        self.assertEqual(s.device_type, "Desktop")
+        self.assertIn("Chrome", s.device_name)
+
+    def test_second_device_login_leaves_single_current_row(self):
+        a = Client()
+        a.login(username="u", password="secret123")
+        b = Client()
+        b.login(username="u", password="secret123")
+        self.assertEqual(UserSession.objects.filter(user=self.user, is_current=True).count(), 1)
