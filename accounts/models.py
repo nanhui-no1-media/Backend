@@ -24,3 +24,22 @@ class Profile(models.Model):
 
     def __str__(self):
         return f"{self.user.username}'s profile"
+
+
+class UserSession(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="login_sessions")
+    session_key = models.CharField(max_length=40, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True, default="")
+    device_type = models.CharField(max_length=16, default="Unknown")
+    device_name = models.CharField(max_length=128, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_current = models.BooleanField(default=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["user", "is_current"])]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        state = "current" if self.is_current else "old"
+        return f"{self.user.username} @ {self.session_key[:8]} ({state})"

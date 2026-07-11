@@ -1,6 +1,7 @@
 import json
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
+from .models import UserSession
 
 
 class LoginViewTest(TestCase):
@@ -192,3 +193,18 @@ class PasswordResetConfirmViewTest(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 400)
+
+
+class UserSessionModelTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="u", password="p")
+
+    def test_create_session_defaults(self):
+        s = UserSession.objects.create(user=self.user, session_key="abc")
+        self.assertTrue(s.is_current)
+        self.assertEqual(s.device_type, "Unknown")
+        self.assertEqual(s.device_name, "")
+
+    def test_str_contains_username(self):
+        s = UserSession.objects.create(user=self.user, session_key="abcdef0123456789")
+        self.assertIn("u", str(s))
