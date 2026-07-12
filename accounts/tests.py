@@ -312,3 +312,49 @@ class LoginSignalIntegrationTest(TestCase):
         b = Client()
         b.login(username="u", password="secret123")
         self.assertEqual(UserSession.objects.filter(user=self.user, is_current=True).count(), 1)
+
+
+class SingleSessionMiddlewareTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="u", email="u@e.com", password="secret123")
+
+    def _login(self):
+        c = Client()
+        c.login(username="u", password="secret123")
+        return c
+
+    def test_first_device_can_access(self):
+        a = self._login()
+        self.assertEqual(a.get("/auth/me/").status_code, 200)
+
+    def test_superseded_device_gets_401_with_takeover(self):
+        a = self._login()
+        b = Client()
+        b.post(
+            "/auth/login/",
+            data=json.dumps({"username": "u", "password": "secret123"}),
+            content_type="application/json",
+            HTTP_USER_AGENT="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari",
+        )
+        resp = a.get("/auth/me/")
+        self.assertEqual(resp.status_code, 401)
+        data = resp.json()
+        self.assertEqual(data["reason"], "session_superseded")
+        self.assertEqual(data["takeover"]["device_type"], "Mobile")
+        self.assertIn("iOS", data["takeover"]["device_name"])
+        self.assertIn("time", data["takeover"])
+
+    def test_new_device_can_access_after_takeover(self):
+        a = self._login()
+        b = self._login()
+        self.assertEqual(b.get("/auth/me/").status_code, 200)
+
+    def test_anonymous_request_passes_through(self):
+        # /auth/me/ is login_required → anonymous gets 302, not a 500 from the middleware
+        self.assertEqual(Client().get("/auth/me/").status_code, 302)
+
+    def test_pre_feature_session_is_adopted(self):
+        a = self._login()
+        UserSession.objects.all().delete()  # simulate a session that predates this feature
+        self.assertEqual(a.get("/auth/me/").status_code, 200)
+        self.assertTrue(UserSession.objects.filter(user=self.user, is_current=True).exists())
