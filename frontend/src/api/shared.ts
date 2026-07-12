@@ -1,10 +1,23 @@
 // 各 api 模块共用的请求工具。
 //
-// 每个 api 模块（client / tasks / messaging / proposals）原先各自复制了一份
-// getCSRFToken + request 样板。这里抽出统一的实现：CSRF 头、FormData 自动识别、
-// 204 空响应处理、统一的错误信息提取。
-//
-// 用法：const request = createRequest("/tasks");  → 绑定到各自前缀的请求函数。
+// CSRF 头、FormData 自动识别、204 空响应处理、统一的错误信息提取。
+// 另外拦截 401 + reason=session_superseded（其他设备登录挤下线），
+// 触发由 SessionGuard 注册的回调以弹出提示。
+
+export interface SupersedeTakeover {
+  device_name?: string;
+  device_type?: string;
+  ip?: string | null;
+  time?: string;
+}
+
+type SupersedeHandler = (takeover: SupersedeTakeover) => void;
+
+let supersedeHandler: SupersedeHandler | null = null;
+
+export function setSupersedeHandler(fn: SupersedeHandler | null) {
+  supersedeHandler = fn;
+}
 
 export function getCSRFToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/);
@@ -25,6 +38,10 @@ export function createRequest(base: string) {
     });
     if (res.status === 204) return null as T;
     const data = await res.json();
+    if (res.status === 401 && data?.reason === "session_superseded") {
+      // 被新设备挤下线：触发回调弹窗（幂等由 SessionGuard 保证），随后照常抛错
+      supersedeHandler?.(data.takeover ?? {});
+    }
     if (!res.ok) {
       const err = new Error(data.detail || data.error || "请求失败") as Error & { status: number };
       err.status = res.status;
