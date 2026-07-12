@@ -1,7 +1,8 @@
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SessionGuard from "./components/SessionGuard";
+import { api } from "./api/client";
 
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
@@ -21,6 +22,12 @@ function Loading() {
 }
 
 export default function App() {
+  // 启动时拉取一次 CSRF cookie。开发态 webpack 直接服务模板、不经 Django 渲染，
+  // 无法靠 {% csrf_token %} 下发 cookie，故显式请求该端点，避免匿名 POST 被 403。
+  useEffect(() => {
+    api.getCsrf().catch(() => {});
+  }, []);
+
   return (
     <HashRouter>
       <SessionGuard>

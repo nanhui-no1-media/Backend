@@ -15,6 +15,9 @@ export const api = {
   me: () =>
     request("/me/"),
 
+  getCsrf: () =>
+    request("/csrf/"),
+
   passwordReset: (email: string) =>
     request("/password-reset/", { method: "POST", body: JSON.stringify({ email }) }),
 

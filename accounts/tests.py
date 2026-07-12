@@ -53,6 +53,39 @@ class LoginViewTest(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class CsrfCookieViewTest(TestCase):
+    """GET /auth/csrf/ 显式下发 csrftoken cookie。
+
+    生产环境由 Django 渲染 dist/index.html（含 {% csrf_token %}）下发 cookie；
+    但开发态 webpack 直接服务模板，{% csrf_token %} 只是字面文本、不会下发 cookie，
+    导致全新访客 POST /auth/login/ 收到 403。此端点把 cookie 下发与 HTML 渲染解耦。
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="testuser", password="secret123")
+
+    def test_csrf_endpoint_sets_cookie(self):
+        c = Client(enforce_csrf_checks=True)
+        response = c.get("/auth/csrf/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("csrftoken", response.cookies)
+
+    def test_login_after_csrf_prime_does_not_403(self):
+        # enforce_csrf_checks=True 复现真实浏览器：无 csrftoken cookie 时 POST 会被 403
+        c = Client(enforce_csrf_checks=True)
+        c.get("/auth/csrf/")  # 显式下发 cookie
+        token_cookie = c.cookies.get("csrftoken")
+        token = token_cookie.value if token_cookie else ""
+        response = c.post(
+            "/auth/login/",
+            data=json.dumps({"username": "testuser", "password": "secret123"}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=token,
+        )
+        self.assertNotEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 200)
+
+
 class LogoutViewTest(TestCase):
     def setUp(self):
         self.client = Client()
