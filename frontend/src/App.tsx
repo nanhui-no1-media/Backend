@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import ProtectedRoute from "./components/ProtectedRoute";
+import SessionGuard from "./components/SessionGuard";
 
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
@@ -22,6 +23,7 @@ function Loading() {
 export default function App() {
   return (
     <HashRouter>
+      <SessionGuard>
       <Suspense fallback={<Loading />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -42,6 +44,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
+      </SessionGuard>
     </HashRouter>
   );
 }
