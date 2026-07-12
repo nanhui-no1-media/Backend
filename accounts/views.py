@@ -1,6 +1,7 @@
 import json
 from django.conf import settings
 from django.http import JsonResponse
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 from django.contrib.auth import authenticate, login, logout as auth_logout
 from django.contrib.auth.decorators import login_required
@@ -52,6 +53,17 @@ def login_view(request):
     login(request, user)
     return JsonResponse({"user": {"id": user.id, "username": user.username, "email": user.email}})
 
+
+
+@ensure_csrf_cookie
+def csrf_token_view(request):
+    """显式下发 csrftoken cookie。
+
+    供前端 SPA 启动时请求一次。开发态 webpack 直接服务模板、不经 Django 渲染，
+    无法靠 {% csrf_token %} 下发 cookie；此端点把 cookie 下发与 HTML 渲染解耦，
+    避免全新访客的匿名 POST（登录、找回密码等）被 403。
+    """
+    return JsonResponse({"detail": "CSRF cookie set"})
 
 
 @require_POST
