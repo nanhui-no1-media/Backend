@@ -358,3 +358,23 @@ class SingleSessionMiddlewareTest(TestCase):
         UserSession.objects.all().delete()  # simulate a session that predates this feature
         self.assertEqual(a.get("/auth/me/").status_code, 200)
         self.assertTrue(UserSession.objects.filter(user=self.user, is_current=True).exists())
+
+
+class CrossUserReloginTest(TestCase):
+    def test_second_user_login_on_same_session_records_row(self):
+        # Same Client (same cookie jar) simulates one browser where user A didn't log out
+        # before user B signs in. Django's login() takes the flush() branch here.
+        User.objects.create_user(username="aaa", password="secret123")
+        User.objects.create_user(username="bbb", password="secret123")
+        c = Client()
+        c.login(username="aaa", password="secret123")
+        # Now sign in as bbb on the SAME client (no logout in between):
+        c.login(username="bbb", password="secret123")
+        bbb = User.objects.get(username="bbb")
+        # B must have a current UserSession row:
+        self.assertTrue(
+            UserSession.objects.filter(user=bbb, is_current=True).exists(),
+            "second-user login on a shared session did not record a UserSession row",
+        )
+        # And B must be able to access an authenticated view (not kicked):
+        self.assertEqual(c.get("/auth/me/").status_code, 200)
