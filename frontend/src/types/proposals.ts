@@ -139,3 +139,13 @@ export const VOTE_CHOICE_COLORS: Record<VoteChoice, string> = {
   oppose: "#ef4444",
   abstain: "#6b7280",
 };
+
+// cobalt 徽章类（用于活动详情页）
+export const PROPOSAL_STATUS_BADGE_CLASS: Record<ProposalStatus, string> = {
+  voting: "badge-brand",
+  pending_approval: "badge-warning",
+  returned: "badge-danger",
+  approved: "badge-success",
+  rejected: "badge-neutral",
+  withdrawn: "badge-neutral",
+};
