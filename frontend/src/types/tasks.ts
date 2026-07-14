@@ -134,3 +134,20 @@ export const STATUS_COLORS: Record<TaskStatus, string> = {
   completed: "#10b981",
   cancelled: "#9ca3af",
 };
+
+// cobalt 徽章/圆点类（用于详情页；列表页可后续迁移）
+export const STATUS_BADGE_CLASS: Record<TaskStatus, string> = {
+  pending: "badge-neutral",
+  in_progress: "badge-brand",
+  reviewing: "badge-warning",
+  review: "badge-brand",
+  completed: "badge-success",
+  cancelled: "badge-neutral",
+};
+
+export const PRIORITY_DOT_CLASS: Record<TaskPriority, string> = {
+  low: "is-low",
+  medium: "is-medium",
+  high: "is-high",
+  urgent: "is-urgent",
+};
