@@ -1,0 +1,16 @@
+/* AppShell — cobalt.css 无 .footer，此处补页脚 + flex 布局胶水 */
+.appshell { min-height: 100vh; display: flex; flex-direction: column; }
+.appshell .page { flex: 1 0 auto; }
+
+.footer { background: var(--brand-900); color: oklch(1 0 0 / .78); margin-top: var(--s-16); }
+.footer-inner { max-width: var(--container); margin: 0 auto; padding: var(--s-16) var(--s-6) var(--s-8); display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: var(--s-8); }
+.footer h5 { font-family: var(--font-display); color: #fff; font-size: 14px; margin-bottom: var(--s-4); letter-spacing: .02em; }
+.footer a { display: block; color: oklch(1 0 0 / .68); font-size: 13px; padding: 4px 0; cursor: pointer; }
+.footer a:hover { color: var(--brand-300); }
+.footer-brand { display: flex; align-items: center; gap: var(--s-3); margin-bottom: var(--s-4); }
+.footer-brand img { width: 36px; height: 36px; border-radius: var(--r-pill); background: #fff; padding: 2px; }
+.footer-brand b { font-family: var(--font-display); color: #fff; font-size: 16px; }
+.footer-note { font-size: 12px; color: oklch(1 0 0 / .5); line-height: 1.7; }
+.footer-bottom { border-top: 1px solid oklch(1 0 0 / .12); padding: var(--s-5) var(--s-6); text-align: center; font-size: 12px; color: oklch(1 0 0 / .45); font-family: var(--font-mono); }
+@media (max-width: 1024px) { .footer-inner { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .footer-inner { grid-template-columns: 1fr; gap: var(--s-6); } }
