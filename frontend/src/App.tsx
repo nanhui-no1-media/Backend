@@ -2,9 +2,9 @@ import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { lazy, Suspense, useEffect } from "react";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SessionGuard from "./components/SessionGuard";
+import LoginModalProvider from "./components/LoginModalProvider";
 import { api } from "./api/client";
 
-const LoginPage = lazy(() => import("./pages/LoginPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
 const HomePage = lazy(() => import("./pages/HomePage"));
@@ -30,10 +30,10 @@ export default function App() {
 
   return (
     <HashRouter>
+      <LoginModalProvider>
       <SessionGuard>
       <Suspense fallback={<Loading />}>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/profile" element={<ProfilePage />} />
@@ -52,6 +52,7 @@ export default function App() {
         </Routes>
       </Suspense>
       </SessionGuard>
+      </LoginModalProvider>
     </HashRouter>
   );
 }

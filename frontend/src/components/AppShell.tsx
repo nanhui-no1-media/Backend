@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { useLoginModal } from "./LoginModalProvider";
 import "./AppShell.css";
 
 interface AppShellUser {
@@ -48,6 +49,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [bellOpen, setBellOpen] = useState(false);
   const userWrap = useRef<HTMLDivElement>(null);
   const bellWrap = useRef<HTMLDivElement>(null);
+  const { openLogin } = useLoginModal();
 
   useEffect(() => {
     api.me()
@@ -83,7 +85,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const isActive = (p: string) =>
     p === "/" ? location.pathname === "/" : location.pathname.startsWith(p);
   const logout = async () => {
-    try { await api.logout(); } finally { navigate("/login"); }
+    try { await api.logout(); } finally { navigate("/"); }
   };
   const name = profile.nickname || user?.username || "";
   const initial = (user?.username || "?").charAt(0).toUpperCase();
@@ -105,7 +107,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </nav>
           <div className="topnav-actions">
             <div className="act-guest">
-              <button className="btn btn-primary btn-sm" onClick={() => go("/login")}>登录</button>
+              <button className="btn btn-primary btn-sm" onClick={() => openLogin()}>登录</button>
             </div>
             <div className="act-user">
               <div className="bell-wrap" ref={bellWrap}>
@@ -171,7 +173,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <button className="sheet-item" type="button" onClick={logout}>退出登录</button>
             </>
           ) : (
-            <button className="sheet-item" type="button" onClick={() => go("/login")}>登录</button>
+            <button className="sheet-item" type="button" onClick={() => openLogin()}>登录</button>
           )}
         </div>
       </header>
@@ -204,7 +206,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div>
             <h5>账户</h5>
-            <a href="#" onClick={(e) => { e.preventDefault(); go("/login"); }}>登录</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); openLogin(); }}>登录</a>
           </div>
         </div>
         <div className="footer-bottom tnum">© 2026 上海市南汇第一中学 · 传媒社 · 信息组</div>

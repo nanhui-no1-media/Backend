@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { useLoginModal } from "../components/LoginModalProvider";
 import "./ProfilePage.css";
 
 interface ProfileData {
@@ -31,6 +32,7 @@ export default function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { openLogin } = useLoginModal();
 
   // Form state
   const [nickname, setNickname] = useState("");
@@ -56,7 +58,7 @@ export default function ProfilePage() {
         setGender(data.profile.gender);
         setBio(data.profile.bio);
       })
-      .catch(() => navigate("/login"))
+      .catch(() => openLogin())
       .finally(() => setLoading(false));
   }, [navigate]);
 

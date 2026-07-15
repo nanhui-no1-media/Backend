@@ -4,11 +4,13 @@ import { messagingApi } from "../api/messaging";
 import { api } from "../api/client";
 import { Conversation, Message, TaskUser } from "../types/tasks";
 import Avatar from "../components/Avatar";
+import { useLoginModal } from "../components/LoginModalProvider";
 import "./MessagePage.css";
 
 export default function MessagePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { openLogin } = useLoginModal();
   const [user, setUser] = useState<TaskUser | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
@@ -20,7 +22,7 @@ export default function MessagePage() {
   useEffect(() => {
     api.me()
       .then((d) => setUser({ ...d.user, avatar: d.profile.avatar, nickname: d.profile.nickname }))
-      .catch(() => navigate("/login"));
+      .catch(() => openLogin());
   }, [navigate]);
 
   useEffect(() => {
