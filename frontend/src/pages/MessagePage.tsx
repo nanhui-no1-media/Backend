@@ -4,8 +4,9 @@ import { messagingApi } from "../api/messaging";
 import { api } from "../api/client";
 import { Conversation, Message, TaskUser } from "../types/tasks";
 import Avatar from "../components/Avatar";
+import AppShell from "../components/AppShell";
 import { useLoginModal } from "../components/LoginModalProvider";
-import "./MessagePage.css";
+import "../styles/messages.css";
 
 export default function MessagePage() {
   const { id } = useParams<{ id: string }>();
@@ -23,7 +24,7 @@ export default function MessagePage() {
     api.me()
       .then((d) => setUser({ ...d.user, avatar: d.profile.avatar, nickname: d.profile.nickname }))
       .catch(() => openLogin());
-  }, [navigate]);
+  }, [openLogin]);
 
   useEffect(() => {
     messagingApi.listConversations()
@@ -81,104 +82,112 @@ export default function MessagePage() {
       : undefined;
 
   return (
-    <div className="msg-page">
-      <div className="msg-container">
-        {/* Sidebar */}
-        <div className="msg-sidebar">
-          <div className="msg-sidebar-header">
-            <button className="task-back" onClick={() => navigate("/")}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
-              </svg>
-              返回
-            </button>
-            <h2 className="msg-sidebar-title">站内通信</h2>
+    <AppShell>
+      <div className="page-head">
+        <div className="container">
+          <nav className="breadcrumb">
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
+            <span className="sep">/</span>
+            <span>站内通信</span>
+          </nav>
+          <div className="page-head-row">
+            <h1>站内通信</h1>
           </div>
-          <div className="msg-list">
-            {conversations.length === 0 ? (
-              <div className="msg-empty-sidebar">暂无会话</div>
-            ) : (
-              conversations.map((conv) => (
-                <button
-                  key={conv.id}
-                  className={`msg-list-item${activeConv?.id === conv.id ? " active" : ""}`}
-                  onClick={() => selectConversation(conv)}
-                >
-                  <div className="msg-list-title">{getConvTitle(conv)}</div>
-                  <div className="msg-list-preview">
-                    {conv.last_message?.content?.slice(0, 40) || "暂无消息"}
-                  </div>
-                  {conv.unread_count > 0 && (
-                    <span className="msg-badge">{conv.unread_count}</span>
+        </div>
+      </div>
+
+      <div className="container">
+        <div className="msg-layout">
+          {/* 左：会话列表 */}
+          <div className="msg-side">
+            <div className="msg-side-head">会话</div>
+            <div className="msg-list">
+              {conversations.length === 0 ? (
+                <div className="msg-list-empty">暂无会话</div>
+              ) : (
+                conversations.map((conv) => (
+                  <button
+                    key={conv.id}
+                    className={`msg-list-item${activeConv?.id === conv.id ? " active" : ""}`}
+                    onClick={() => selectConversation(conv)}
+                  >
+                    <div className="ml-top">
+                      <span className="ml-title">{getConvTitle(conv)}</span>
+                      <span className="ml-meta">
+                        {conv.unread_count > 0 && (
+                          <span className="msg-badge">{conv.unread_count}</span>
+                        )}
+                        <span className="ml-type">
+                          {conv.conversation_type === "task" ? "任务" : "私信"}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="ml-preview">
+                      {conv.last_message?.content?.slice(0, 40) || "暂无消息"}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* 右：消息线程 */}
+          <div className="msg-thread">
+            {activeConv ? (
+              <>
+                <div className="msg-thread-head">
+                  {activeOther && <Avatar user={activeOther} size="md" />}
+                  <h3>{getConvTitle(activeConv)}</h3>
+                  <span className="mt-count">{activeConv.participants.length} 人</span>
+                </div>
+                <div className="msg-bubbles">
+                  {messages.length === 0 ? (
+                    <div className="msg-empty">暂无消息，开始聊天吧</div>
+                  ) : (
+                    messages.map((m) => (
+                      <div
+                        key={m.id}
+                        className={`msg-bubble${m.sender.id === user?.id ? " mine" : ""}`}
+                      >
+                        {m.sender.id !== user?.id && (
+                          <div className="mb-author">
+                            <Avatar user={m.sender} />
+                            {m.sender.nickname || m.sender.username}
+                          </div>
+                        )}
+                        <div className="mb-content">{m.content}</div>
+                        <div className="mb-time">
+                          {new Date(m.created_at).toLocaleString("zh-CN")}
+                        </div>
+                      </div>
+                    ))
                   )}
-                  <span className="msg-list-type">
-                    {conv.conversation_type === "task" ? "任务" : "私信"}
-                  </span>
-                </button>
-              ))
+                  <div ref={msgEndRef} />
+                </div>
+                <div className="msg-input">
+                  <input
+                    className="input"
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="输入消息，@用户名 提及他人..."
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  />
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleSend}
+                    disabled={!input.trim() || sending}
+                  >
+                    {sending ? "..." : "发送"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="msg-empty">选择一个会话开始聊天</div>
             )}
           </div>
         </div>
-
-        {/* Main */}
-        <div className="msg-main">
-          {activeConv ? (
-            <>
-              <div className="msg-main-header">
-                {activeOther && <Avatar user={activeOther} size="md" />}
-                <h3>{getConvTitle(activeConv)}</h3>
-                <span className="msg-participant-count">
-                  {activeConv.participants.length} 人
-                </span>
-              </div>
-              <div className="msg-messages">
-                {messages.length === 0 ? (
-                  <div className="msg-empty-main">暂无消息，开始聊天吧</div>
-                ) : (
-                  messages.map((m) => (
-                    <div
-                      key={m.id}
-                      className={`msg-bubble${m.sender.id === user?.id ? " mine" : ""}`}
-                    >
-                      {m.sender.id !== user?.id && (
-                        <div className="msg-bubble-author user-with-avatar">
-                          <Avatar user={m.sender} />
-                          {m.sender.nickname || m.sender.username}
-                        </div>
-                      )}
-                      <div className="msg-bubble-content">{m.content}</div>
-                      <div className="msg-bubble-time">
-                        {new Date(m.created_at).toLocaleString("zh-CN")}
-                      </div>
-                    </div>
-                  ))
-                )}
-                <div ref={msgEndRef} />
-              </div>
-              <div className="msg-input-area">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="输入消息，@用户名 提及他人..."
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                />
-                <button
-                  className="task-btn-primary"
-                  onClick={handleSend}
-                  disabled={!input.trim() || sending}
-                >
-                  {sending ? "..." : "发送"}
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="msg-empty-main">
-              <p>选择一个会话开始聊天</p>
-            </div>
-          )}
-        </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
