@@ -125,7 +125,7 @@ export default function ProposalListPage() {
     const total = p.vote_summary ? (p.vote_summary.approve + p.vote_summary.oppose + p.vote_summary.abstain) : 0;
     const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
     return (
-      <a key={p.id} className="prop-card" onClick={() => navigate(`/activity/${p.id}`)}>
+      <a key={p.id} className="prop-card" href="#" onClick={(e) => { e.preventDefault(); navigate(`/activity/${p.id}`); }}>
         <div className="pc-title">{p.title}</div>
         <div className="pc-meta">
           <span className={"badge " + PROPOSAL_STATUS_BADGE_CLASS[p.status]}>{PROPOSAL_STATUS_LABELS[p.status]}</span>
@@ -167,7 +167,7 @@ export default function ProposalListPage() {
           <span className="tnum">{new Date(p.created_at).toLocaleDateString("zh-CN")}</span>
         </div>
         {(p.status === "returned" || p.status === "rejected") && p.reject_reason && (
-          <div className="pc-reason">
+          <div className={"pc-reason" + (p.status === "returned" ? " warn" : "")}>
             <b>{p.status === "returned" ? "打回理由" : "拒绝理由"}：</b>{p.reject_reason}
           </div>
         )}

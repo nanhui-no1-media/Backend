@@ -125,7 +125,7 @@ export default function TaskListPage() {
             </div>
           ) : (
             tasks.map((task) => (
-              <a key={task.id} className="task-card" onClick={() => navigate(`/tasks/${task.id}`)}>
+              <a key={task.id} className="task-card" href="#" onClick={(e) => { e.preventDefault(); navigate(`/tasks/${task.id}`); }}>
                 <div className="tc-left">
                   <span className={"prio-dot " + PRIORITY_DOT_CLASS[task.priority]} title={"优先级：" + (PRIORITY_LABELS[task.priority] || "")} />
                   <div className="tc-info">
