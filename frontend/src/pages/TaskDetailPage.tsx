@@ -5,11 +5,13 @@ import { messagingApi } from "../api/messaging";
 import { api } from "../api/client";
 import {
   TaskDetail, Message,
-  STATUS_LABELS, PRIORITY_LABELS, PRIORITY_COLORS, STATUS_COLORS,
+  STATUS_LABELS, PRIORITY_LABELS,
+  STATUS_BADGE_CLASS, PRIORITY_DOT_CLASS,
 } from "../types/tasks";
 import RichTextEditor from "../components/RichTextEditor";
 import Avatar from "../components/Avatar";
-import "./TaskDetailPage.css";
+import AppShell from "../components/AppShell";
+import "../styles/detail.css";
 
 export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -216,203 +218,145 @@ export default function TaskDetailPage() {
   const canCancel = task && task.status !== "completed" && task.status !== "cancelled" && (!!isCreator || isPresident);
   const pendingClaims = task?.claim_requests.filter((c) => c.status === "pending") || [];
 
-  if (loading) return <div className="task-page"><div className="task-loading">加载中...</div></div>;
-  if (error && !task) return <div className="task-page"><div className="task-loading">{error}</div></div>;
-  if (!task) return <div className="task-page"><div className="task-loading">任务不存在</div></div>;
+  if (loading) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中...</p></div></AppShell>;
+  if (error && !task) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">{error}</p></div></AppShell>;
+  if (!task) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">任务不存在</p></div></AppShell>;
 
   return (
-    <div className="task-page">
-      <div className="task-detail-container">
-        <div className="task-detail-header">
-          <button className="task-back" onClick={() => navigate("/tasks")}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
-            </svg>
-            任务列表
-          </button>
-          {task.status === "pending" && (
-            <button className="task-btn-secondary" onClick={() => navigate(`/tasks/${task.id}/edit`)}>
-              编辑
-            </button>
-          )}
+    <AppShell>
+      <div className="page-head">
+        <div className="container detail-container">
+          <nav className="breadcrumb">
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
+            <span className="sep">/</span>
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/tasks"); }}>任务</a>
+            <span className="sep">/</span>
+            <span>{task.title}</span>
+          </nav>
+          <div className="detail-head-row">
+            <div className="detail-head-main">
+              <span className={"prio-dot " + PRIORITY_DOT_CLASS[task.priority]}
+                    title={"优先级：" + PRIORITY_LABELS[task.priority]} />
+              <h1 className="detail-title">{task.title}</h1>
+              <span className={"badge " + STATUS_BADGE_CLASS[task.status]}>
+                <span className="badge-dot" />{STATUS_LABELS[task.status]}
+              </span>
+            </div>
+            <div className="detail-head-actions">
+              {task.status === "pending" && (
+                <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/tasks/${task.id}/edit`)}>编辑</button>
+              )}
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate("/tasks")}>返回列表</button>
+            </div>
+          </div>
+          <p className="detail-sub">
+            {PRIORITY_LABELS[task.priority]} · 创建人 {task.creator.nickname || task.creator.username}
+            {" · 负责人 "}{task.assignee ? (task.assignee.nickname || task.assignee.username) : "未分配"}
+            {" · "}{formatDate(task.created_at)}
+          </p>
         </div>
+      </div>
 
-        {error && <div className="task-error">{error}</div>}
-
-        <div className="task-detail-title-row">
-          <h1 className="task-detail-title">{task.title}</h1>
-          <span
-            className="task-status-badge"
-            style={{
-              backgroundColor: STATUS_COLORS[task.status] + "18",
-              color: STATUS_COLORS[task.status],
-              fontSize: "14px",
-              padding: "6px 14px",
-              borderRadius: "8px",
-              fontWeight: 600,
-            }}
-          >
-            {STATUS_LABELS[task.status]}
-          </span>
-        </div>
+      <div className="container detail-container detail-body">
+        {error && <div className="alert alert-danger">{error}</div>}
 
         {task.status === "in_progress" && task.reject_reason && (
-          <div
-            style={{
-              backgroundColor: "#fef3c7",
-              color: "#92400e",
-              border: "1px solid #f59e0b",
-              borderRadius: "8px",
-              padding: "10px 14px",
-              margin: "12px 0",
-              fontSize: "14px",
-              lineHeight: 1.5,
-            }}
-          >
-            ⚠ 此任务已被打回：{task.reject_reason}
-          </div>
+          <div className="alert alert-warning"><b>此任务已被打回：</b>{task.reject_reason}</div>
         )}
 
-        <div className="task-detail-meta">
-          <div className="meta-item">
-            <span className="meta-label">优先级</span>
-            <span style={{ color: PRIORITY_COLORS[task.priority] }}>{PRIORITY_LABELS[task.priority]}</span>
-          </div>
-          <div className="meta-item">
-            <span className="meta-label">创建人</span>
-            <span className="user-with-avatar"><Avatar user={task.creator} />{task.creator.nickname || task.creator.username}</span>
-          </div>
-          <div className="meta-item">
-            <span className="meta-label">负责人</span>
-            <span className="user-with-avatar">{task.assignee && <Avatar user={task.assignee} />}{task.assignee?.nickname || task.assignee?.username || "未分配"}</span>
-          </div>
-          <div className="meta-item">
-            <span className="meta-label">创建时间</span>
-            <span>{new Date(task.created_at).toLocaleString("zh-CN")}</span>
-          </div>
-        </div>
-
-        {/* Action buttons */}
         {(canComplete || canReviewCompletion || canCancel) && (
-          <div className="task-actions-row">
+          <div className="detail-actions">
             {canComplete && (
-              <button className="task-btn-primary" onClick={handleComplete} disabled={actionLoading}>
-                {actionLoading ? "处理中..." : "提交验收"}
+              <button className="btn btn-primary" onClick={handleComplete} disabled={actionLoading}>
+                {actionLoading ? "处理中…" : "提交验收"}
               </button>
             )}
             {canReviewCompletion && (
               <>
-                <button className="task-btn-primary" onClick={handleApproveCompletion} disabled={actionLoading}>
-                  {actionLoading ? "处理中..." : "通过验收"}
-                </button>
-                <button className="task-btn-cancel" onClick={() => setShowRejectForm(true)} disabled={actionLoading}>
-                  打回
-                </button>
+                <button className="btn btn-primary" onClick={handleApproveCompletion} disabled={actionLoading}>通过验收</button>
+                <button className="btn btn-ghost" onClick={() => setShowRejectForm(true)} disabled={actionLoading}>打回</button>
               </>
             )}
             {canCancel && (
-              <button className="task-btn-cancel" onClick={handleCancel} disabled={actionLoading}>
-                取消任务
-              </button>
+              <button className="btn btn-ghost" onClick={handleCancel} disabled={actionLoading}>取消任务</button>
             )}
           </div>
         )}
 
         {showRejectForm && canReviewCompletion && (
-          <div className="task-detail-section">
-            <h3>打回理由</h3>
-            <div className="claim-form">
-              <textarea
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="说明打回原因，告知负责人需返工的内容..."
-                rows={3}
-              />
-              <button className="task-btn-primary" onClick={handleRejectCompletion} disabled={actionLoading}>
-                {actionLoading ? "处理中..." : "确认打回"}
+          <div className="card card-pad detail-section">
+            <h3 className="section-h">打回理由</h3>
+            <textarea className="textarea" value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      placeholder="说明打回原因，告知负责人需返工的内容..." rows={3} />
+            <div className="detail-row">
+              <button className="btn btn-primary" onClick={handleRejectCompletion} disabled={actionLoading}>
+                {actionLoading ? "处理中…" : "确认打回"}
               </button>
-              <button
-                className="task-btn-secondary"
-                onClick={() => { setShowRejectForm(false); setRejectReason(""); }}
-                disabled={actionLoading}
-              >
-                取消
-              </button>
+              <button className="btn btn-ghost"
+                      onClick={() => { setShowRejectForm(false); setRejectReason(""); }}
+                      disabled={actionLoading}>取消</button>
             </div>
           </div>
         )}
 
         {task.tags.length > 0 && (
-          <div className="task-detail-tags">
+          <div className="detail-tags">
             {task.tags.map((t) => (
-              <span key={t.id} className="task-tag" style={{ backgroundColor: t.color + "18", color: t.color }}>
-                {t.name}
-              </span>
+              <span key={t.id} className="tag-mini" style={{ backgroundColor: t.color + "1a", color: t.color }}>{t.name}</span>
             ))}
           </div>
         )}
 
+        <div className="card card-pad detail-section">
+          <h3 className="section-h">描述</h3>
+          {task.description ? (
+            <RichTextEditor content={task.description} editable={false} />
+          ) : (
+            <p className="empty-text">暂无描述</p>
+          )}
+        </div>
+
         {task.collaborators.length > 0 && (
-          <div className="task-detail-section">
-            <h3>协作者</h3>
-            <div className="collaborator-list">
+          <div className="card card-pad detail-section">
+            <h3 className="section-h">协作者</h3>
+            <div className="chip-row">
               {task.collaborators.map((u) => (
-                <span key={u.id} className="collaborator-chip user-with-avatar">
-                  <Avatar user={u} />
-                  {u.nickname || u.username}
+                <span key={u.id} className="user-chip-inline">
+                  <Avatar user={u} size="sm" />{u.nickname || u.username}
                 </span>
               ))}
             </div>
           </div>
         )}
 
-        <div className="task-detail-section">
-          <h3>描述</h3>
-          <div className="task-description">
-            {task.description ? (
-              <RichTextEditor content={task.description} editable={false} />
-            ) : (
-              <p className="task-empty-text">暂无描述</p>
-            )}
-          </div>
-        </div>
-
         {canClaim && (
-          <div className="task-detail-section">
-            <h3>认领任务</h3>
-            <div className="claim-form">
-              <textarea
-                value={claimReason}
-                onChange={(e) => setClaimReason(e.target.value)}
-                placeholder="说明你想认领此任务的理由..."
-                rows={2}
-              />
-              <button className="task-btn-primary" onClick={handleClaim} disabled={claiming}>
-                {claiming ? "提交中..." : "申请认领"}
-              </button>
-            </div>
+          <div className="card card-pad detail-section">
+            <h3 className="section-h">认领任务</h3>
+            <textarea className="textarea" value={claimReason}
+                      onChange={(e) => setClaimReason(e.target.value)}
+                      placeholder="说明你想认领此任务的理由..." rows={2} />
+            <button className="btn btn-primary" onClick={handleClaim} disabled={claiming}>
+              {claiming ? "提交中…" : "申请认领"}
+            </button>
           </div>
         )}
 
         {(!!isCreator || isPresident) && pendingClaims.length > 0 && (
-          <div className="task-detail-section">
-            <h3>认领请求 ({pendingClaims.length})</h3>
+          <div className="card card-pad detail-section">
+            <h3 className="section-h">认领请求 ({pendingClaims.length})</h3>
             <div className="claim-list">
               {pendingClaims.map((cr) => (
                 <div key={cr.id} className="claim-item">
-                  <div className="claim-header">
-                    <Avatar user={cr.claimant} />
+                  <div className="claim-head">
+                    <Avatar user={cr.claimant} size="sm" />
                     <strong>{cr.claimant.nickname || cr.claimant.username}</strong>
                     <span className="claim-time">{new Date(cr.created_at).toLocaleString("zh-CN")}</span>
                   </div>
                   {cr.reason && <div className="claim-reason">{cr.reason}</div>}
-                  <div className="claim-actions">
-                    <button className="task-btn-primary task-btn-sm" onClick={() => handleApproveClaim(cr.id)} disabled={actionLoading}>
-                      批准
-                    </button>
-                    <button className="task-btn-secondary task-btn-sm" onClick={() => handleRejectClaim(cr.id)} disabled={actionLoading}>
-                      拒绝
-                    </button>
+                  <div className="detail-row">
+                    <button className="btn btn-primary btn-sm" onClick={() => handleApproveClaim(cr.id)} disabled={actionLoading}>批准</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => handleRejectClaim(cr.id)} disabled={actionLoading}>拒绝</button>
                   </div>
                 </div>
               ))}
@@ -420,53 +364,42 @@ export default function TaskDetailPage() {
           </div>
         )}
 
-        <div className="task-detail-section">
-          <div className="section-header">
-            <h3>附件 ({task.attachments.length})</h3>
-            <button className="task-btn-sm" onClick={() => fileInputRef.current?.click()}>
-              + 上传
-            </button>
+        <div className="card card-pad detail-section">
+          <div className="section-head-row">
+            <h3 className="section-h">附件 ({task.attachments.length})</h3>
+            <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()}>+ 上传</button>
             <input ref={fileInputRef} type="file" onChange={handleFileUpload} style={{ display: "none" }} />
           </div>
           {task.attachments.length > 0 ? (
-            <div className="attachment-list">
+            <div className="att-list">
               {task.attachments.map((att) => (
-                <div key={att.id} className="attachment-item">
-                  <span className={`attachment-icon att-${att.file_type}`}>
-                    {att.file_type === "image" ? "IMG" :
-                     att.file_type === "video" ? "VID" :
-                     att.file_type === "document" ? "DOC" :
-                     att.file_type === "archive" ? "ZIP" : "FILE"}
+                <div key={att.id} className="att-item">
+                  <span className="att-icon">
+                    {att.file_type === "image" ? "IMG" : att.file_type === "video" ? "VID" :
+                     att.file_type === "document" ? "DOC" : att.file_type === "archive" ? "ZIP" : "FILE"}
                   </span>
-                  <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="attachment-name">
-                    {att.file_name}
-                  </a>
-                  <span className="attachment-size">{formatSize(att.file_size)}</span>
-                  <button className="attachment-delete" onClick={() => handleDeleteAttachment(att.id)} title="删除">x</button>
+                  <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="att-name">{att.file_name}</a>
+                  <span className="att-size">{formatSize(att.file_size)}</span>
+                  <button className="att-del" onClick={() => handleDeleteAttachment(att.id)} title="删除">✕</button>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="task-empty-text">暂无附件</p>
+            <p className="empty-text">暂无附件</p>
           )}
         </div>
 
-        <div className="task-detail-section">
-          <h3>讨论 ({messages.length})</h3>
+        <div className="card card-pad detail-section">
+          <h3 className="section-h">讨论 ({messages.length})</h3>
           {conversationId && (
             <div className="comment-input">
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="输入消息，使用 @用户名 提及他人..."
-                rows={3}
-              />
-              <button
-                className="task-btn-primary"
-                onClick={handleSendMessage}
-                disabled={!message.trim() || messageSubmitting}
-              >
-                {messageSubmitting ? "发送中..." : "发送"}
+              <textarea className="textarea" value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        placeholder="输入消息，使用 @用户名 提及他人..." rows={3} />
+              <button className="btn btn-primary"
+                      onClick={handleSendMessage}
+                      disabled={!message.trim() || messageSubmitting}>
+                {messageSubmitting ? "发送中…" : "发送"}
               </button>
             </div>
           )}
@@ -474,7 +407,7 @@ export default function TaskDetailPage() {
             <div className="comment-list">
               {messages.map((m) => (
                 <div key={m.id} className="comment-item">
-                  <div className="comment-header">
+                  <div className="comment-head">
                     <Avatar user={m.sender} size="md" />
                     <strong>{m.sender.nickname || m.sender.username}</strong>
                     <span className="comment-time">{new Date(m.created_at).toLocaleString("zh-CN")}</span>
@@ -484,10 +417,10 @@ export default function TaskDetailPage() {
               ))}
             </div>
           ) : (
-            <p className="task-empty-text">暂无讨论</p>
+            <p className="empty-text">暂无讨论</p>
           )}
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
