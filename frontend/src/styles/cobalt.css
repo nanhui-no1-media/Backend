@@ -253,6 +253,17 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 .alert-danger { background: var(--danger-bg); color: var(--danger); }
 .alert svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
 
+/* 投票比例条（活动详情全宽 / 列表迷你共用基元；尺寸由各页覆盖）
+   详情页：detail.css 不再重定义，沿用此默认（width:100% max-width:340px height:8px）
+   列表页：list.css 的 .vote .votebar 覆盖为 140px×7px */
+.votebar { display: flex; height: 8px; width: 100%; max-width: 340px; border-radius: var(--r-pill); overflow: hidden; background: var(--surface-2); }
+.votebar i { display: block; height: 100%; }
+.votebar i.app { background: var(--success); }
+.votebar i.opp { background: var(--danger); }
+.votebar i.abs { background: var(--line-2); }
+.vote-num { display: inline-flex; gap: var(--s-4); font-size: 13px; font-family: var(--font-mono); }
+.vote-num .app { color: var(--success); } .vote-num .opp { color: var(--danger); } .vote-num .abs { color: var(--faint); }
+
 /* 看板娘栏（诚实占位，不伪造立绘） */
 .mascot-rail { display: flex; flex-direction: column; gap: var(--s-4); position: sticky; top: calc(var(--nav-h) + var(--s-5)); }
 .mascot-frame {

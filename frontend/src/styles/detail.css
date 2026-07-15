@@ -67,16 +67,10 @@
 .comment-time { font-size:12px; color: var(--faint); font-family: var(--font-mono); }
 .comment-content { font-size:14px; color: var(--ink-900); line-height:1.6; }
 
-/* 投票（活动详情，取自原型 activity.html） */
+/* 投票（活动详情，取自原型 activity.html）
+   .votebar / .vote-num 基元已上移到 cobalt.css（与列表页共用）；此处仅保留详情专属样式。 */
 .vote-deadline { font-size:13px; color: var(--muted); background: var(--bg-soft); border-radius: var(--r-md); padding: var(--s-3) var(--s-4); }
 .vote-deadline strong { color: var(--brand-700); }
-.votebar { display:flex; height:8px; width:100%; max-width:340px; border-radius: var(--r-pill); overflow:hidden; background: var(--surface-2); }
-.votebar i { display:block; height:100%; }
-.votebar i.app { background: var(--success); }
-.votebar i.opp { background: var(--danger); }
-.votebar i.abs { background: var(--line-2); }
-.vote-num { display:inline-flex; gap: var(--s-4); font-size:13px; font-family: var(--font-mono); }
-.vote-num .app { color: var(--success); } .vote-num .opp { color: var(--danger); } .vote-num .abs { color: var(--faint); }
 .vote-actions { display:flex; gap: var(--s-2); flex-wrap:wrap; }
 .vote-btn.approve { background: var(--success); color:#fff; }
 .vote-btn.oppose { background: var(--danger); color:#fff; }
