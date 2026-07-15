@@ -1,0 +1,81 @@
+/* home.css — 首页专属（取自原型 index.html <style id="page-home">）
+   hero / quick-strip / home-grid / activity-grid / rail-card。
+   顶栏与页脚由 AppShell 提供；mascot-rail / .eq / --rail-w 来自 cobalt.css。
+   不建新闻区（应用无 /news 路由）。 */
+
+/* ── Hero ── */
+.hero {
+  position: relative; overflow: hidden; color: #fff;
+  background:
+    radial-gradient(60% 120% at 88% 0%, oklch(0.72 0.145 250 / .55) 0%, transparent 60%),
+    linear-gradient(135deg, var(--brand-900) 0%, var(--brand-800) 55%, var(--brand-700) 100%);
+}
+.hero::before { /* 社徽圆弧呼应 */
+  content: ""; position: absolute; right: -120px; top: -120px; width: 420px; height: 420px;
+  border: 1px solid oklch(1 0 0 / .14); border-radius: var(--r-pill);
+}
+.hero::after {
+  content: ""; position: absolute; right: -60px; top: -60px; width: 300px; height: 300px;
+  border: 1px solid oklch(1 0 0 / .10); border-radius: var(--r-pill);
+}
+.hero-inner { position: relative; max-width: var(--container); margin: 0 auto; padding: var(--s-20) var(--s-6) var(--s-16); }
+.hero-badge {
+  display: inline-flex; align-items: center; gap: var(--s-2); padding: 5px 12px 5px 10px;
+  background: oklch(1 0 0 / .10); border: 1px solid oklch(1 0 0 / .22); border-radius: var(--r-pill);
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em; color: oklch(0.93 0.04 247);
+}
+.hero-badge .eq { color: var(--brand-300); height: 12px; }
+.hero h1 { font-size: clamp(34px, 5.4vw, 60px); line-height: 1.1; margin: var(--s-5) 0 var(--s-4); font-weight: 800; letter-spacing: -.01em; }
+.hero h1 .accent { color: var(--brand-300); }
+.hero-sub { font-size: clamp(15px, 1.6vw, 18px); color: oklch(1 0 0 / .78); max-width: 46ch; line-height: 1.7; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: var(--s-3); margin-top: var(--s-8); }
+.hero-actions .btn-primary { background: #fff; color: var(--brand-800); }
+.hero-actions .btn-primary:hover { background: var(--brand-50); color: var(--brand-900); }
+.hero-actions .btn-ghost { color: #fff; border-color: oklch(1 0 0 / .28); }
+.hero-actions .btn-ghost:hover { background: oklch(1 0 0 / .10); border-color: oklch(1 0 0 / .5); color: #fff; }
+
+/* 快速入口条 */
+.quick-strip { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-6); }
+.quick-strip a { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: var(--r-pill); font-size: 13px; color: oklch(1 0 0 / .82); background: oklch(1 0 0 / .07); border: 1px solid oklch(1 0 0 / .14); transition: background var(--dur-1); cursor: pointer; }
+.quick-strip a:hover { background: oklch(1 0 0 / .16); color: #fff; }
+.quick-strip svg { width: 14px; height: 14px; opacity: .8; }
+
+/* 首页两栏 */
+.home-grid { display: grid; grid-template-columns: var(--rail-w) 1fr; gap: var(--s-8); align-items: start; padding: var(--s-12) 0 var(--s-16); }
+.home-main { min-width: 0; display: flex; flex-direction: column; gap: var(--s-16); }
+
+/* 社团动态卡片 */
+.activity-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-5); }
+.activity-card .card-cover { aspect-ratio: 16/10; }
+.activity-card .card-cover .cat { position: absolute; left: var(--s-3); top: var(--s-3); z-index: 2; }
+.activity-card .cover-emoji { font-size: 42px; line-height: 1; position: relative; z-index: 1; opacity: .9; }
+.activity-card h3 { font-size: 16px; line-height: 1.45; margin: var(--s-3) 0 var(--s-3); }
+.activity-card .card-foot { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--muted); }
+.activity-card .card-foot .date { font-family: var(--font-mono); }
+
+/* section 链接（全部动态） */
+.section-link { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--brand-600); cursor: pointer; }
+.section-link:hover { color: var(--brand-700); }
+.section-link svg { width: 15px; height: 15px; }
+
+/* 侧栏小卡 */
+.rail-card { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-5); }
+.rail-card h4 { font-size: 14px; margin-bottom: var(--s-3); display: flex; align-items: center; gap: var(--s-2); }
+.rail-card h4 .bar { width: 3px; height: 14px; border-radius: var(--r-pill); background: var(--brand-700); }
+.stat-row { display: flex; align-items: baseline; justify-content: space-between; padding: var(--s-2) 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+.stat-row:last-child { border-bottom: none; }
+.stat-row .k { color: var(--muted); }
+.stat-row .v { font-family: var(--font-mono); font-weight: 600; color: var(--fg); }
+.rail-actions { display: flex; flex-direction: column; gap: var(--s-2); }
+.rail-actions .btn { justify-content: flex-start; }
+
+@media (max-width: 1024px) {
+  .activity-grid { grid-template-columns: repeat(2, 1fr); }
+  .home-grid { grid-template-columns: 1fr; }
+  .mascot-rail { position: static; flex-direction: row; flex-wrap: wrap; }
+  .mascot-rail > * { flex: 1 1 220px; }
+  .mascot-frame { aspect-ratio: 16/9; }
+}
+@media (max-width: 640px) {
+  .activity-grid { grid-template-columns: 1fr; }
+}
