@@ -8,7 +8,8 @@ import {
   ACTIVITY_TYPE_LABELS,
 } from "../types/proposals";
 import RichTextEditor from "../components/RichTextEditor";
-import "./Proposals.css";
+import AppShell from "../components/AppShell";
+import "../styles/form.css";
 
 export default function ProposalFormPage() {
   const { id } = useParams<{ id: string }>();
@@ -83,135 +84,115 @@ export default function ProposalFormPage() {
   };
 
   if (loading) {
-    return <div className="proposal-page"><div className="proposal-loading">加载中...</div></div>;
+    return (
+      <AppShell>
+        <div className="container" style={{ paddingTop: "var(--s-12)" }}>
+          <p className="muted">加载中…</p>
+        </div>
+      </AppShell>
+    );
   }
 
   if (blocked) {
     return (
-      <div className="proposal-page">
-        <div className="proposal-form-container">
-          <div className="proposal-error">该申报当前状态不可编辑（仅「已打回」的活动申报可修改）</div>
-          <button className="proposal-btn-secondary" onClick={() => navigate(`/activity/${id}`)}>
-            返回详情
-          </button>
+      <AppShell>
+        <div className="container" style={{ paddingTop: "var(--s-12)", paddingBottom: "var(--s-16)" }}>
+          <div className="form-card">
+            <div className="card card-pad">
+              <div className="alert alert-warning" style={{ marginBottom: "var(--s-4)" }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></svg>
+                <span>该申报当前状态不可编辑（仅「已打回」的活动申报可修改）。</span>
+              </div>
+              <button className="btn btn-primary" onClick={() => navigate(`/activity/${id}`)}>返回详情</button>
+            </div>
+          </div>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
   return (
-    <div className="proposal-page">
-      <div className="proposal-form-container">
-        <div className="proposal-detail-header">
-          <button className="proposal-back" onClick={() => navigate(id ? `/activity/${id}` : "/activity")}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
-            </svg>
-            {isEdit ? "返回详情" : "返回列表"}
-          </button>
+    <AppShell>
+      <div className="page-head">
+        <div className="container">
+          <nav className="breadcrumb">
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
+            <span className="sep">/</span>
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>活动申报</a>
+            <span className="sep">/</span>
+            <span>{isEdit ? "编辑" : "新建"}</span>
+          </nav>
+          <div className="page-head-row">
+            <h1>{isEdit ? "修改活动申报" : "新建活动申报"}</h1>
+          </div>
         </div>
+      </div>
 
-        <h1 className="proposal-form-title">{isEdit ? "修改活动申报" : "新建活动申报"}</h1>
-
-        {error && <div className="proposal-error">{error}</div>}
-
-        <form onSubmit={handleSubmit} className="proposal-form">
-          <div className="form-field">
-            <label>标题 *</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="活动名称"
-              maxLength={200}
-              required
-            />
-          </div>
-
-          <div className="form-field">
-            <label>详细说明</label>
-            <RichTextEditor
-              content={description}
-              onChange={setDescription}
-              placeholder="活动背景、目的、流程、预期效果..."
-            />
-          </div>
-
-          <div className="form-row">
-            <div className="form-field">
-              <label>活动类型</label>
-              <select value={activityType} onChange={(e) => setActivityType(e.target.value as ActivityType | "")}>
-                <option value="">请选择</option>
-                {(Object.keys(ACTIVITY_TYPE_LABELS) as ActivityType[]).map((k) => (
-                  <option key={k} value={k}>{ACTIVITY_TYPE_LABELS[k]}</option>
-                ))}
-              </select>
-            </div>
-            <div className="form-field">
-              <label>拟办日期</label>
-              <input
-                type="date"
-                value={plannedDate}
-                onChange={(e) => setPlannedDate(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-field">
-              <label>地点</label>
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="活动地点"
-                maxLength={200}
-              />
-            </div>
-            <div className="form-field">
-              <label>预计参与人数</label>
-              <input
-                type="number"
-                min={0}
-                value={expectedParticipants}
-                onChange={(e) => setExpectedParticipants(e.target.value)}
-                placeholder="如 30"
-              />
-            </div>
-          </div>
-
-          <div className="form-field">
-            <label>预算（元）</label>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={budget}
-              onChange={(e) => setBudget(e.target.value)}
-              placeholder="预计花费"
-            />
-          </div>
-
-          {!isEdit && (
-            <div className="proposal-empty-text">
-              提交后将进入为期 3 天的投票阶段，到期自动进入待社长审批。
+      <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
+        <div className="form-card">
+          {error && (
+            <div className="alert alert-danger" style={{ marginBottom: "var(--s-4)" }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
+              <span>{error}</span>
             </div>
           )}
 
-          <div className="form-actions">
-            <button
-              type="button"
-              className="proposal-btn-secondary"
-              onClick={() => navigate(id ? `/activity/${id}` : "/activity")}
-            >
-              取消
-            </button>
-            <button type="submit" className="proposal-btn-primary" disabled={saving}>
-              {saving ? "保存中..." : isEdit ? "保存修改" : "提交并开始投票"}
-            </button>
-          </div>
-        </form>
+          <form onSubmit={handleSubmit} className="card card-pad form-stack">
+            <div className="field">
+              <label className="label">标题 <span className="hint">*</span></label>
+              <input className="input" type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="活动名称" maxLength={200} required />
+            </div>
+
+            <div className="field">
+              <label className="label">详细说明</label>
+              <RichTextEditor content={description} onChange={setDescription} placeholder="活动背景、目的、流程、预期效果..." />
+            </div>
+
+            <div className="form-grid">
+              <div className="field">
+                <label className="label">活动类型</label>
+                <select className="select" value={activityType} onChange={(e) => setActivityType(e.target.value as ActivityType | "")}>
+                  <option value="">请选择</option>
+                  {(Object.keys(ACTIVITY_TYPE_LABELS) as ActivityType[]).map((k) => (
+                    <option key={k} value={k}>{ACTIVITY_TYPE_LABELS[k]}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label className="label">拟办日期</label>
+                <input className="input" type="date" value={plannedDate} onChange={(e) => setPlannedDate(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="form-grid">
+              <div className="field">
+                <label className="label">地点</label>
+                <input className="input" type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="活动地点" maxLength={200} />
+              </div>
+              <div className="field">
+                <label className="label">预计参与人数</label>
+                <input className="input" type="number" min={0} value={expectedParticipants} onChange={(e) => setExpectedParticipants(e.target.value)} placeholder="如 30" />
+              </div>
+            </div>
+
+            <div className="field">
+              <label className="label">预算（元）</label>
+              <input className="input" type="number" min={0} step="0.01" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="预计花费" />
+            </div>
+
+            {!isEdit && (
+              <div className="form-notice">提交后将进入为期 3 天的投票阶段，到期自动进入待社长审批。</div>
+            )}
+
+            <div className="form-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => navigate(id ? `/activity/${id}` : "/activity")}>取消</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? "保存中…" : isEdit ? "保存修改" : "提交并开始投票"}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
