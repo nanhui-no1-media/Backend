@@ -12,6 +12,7 @@ import TaskTimeline from "../components/TaskTimeline";
 import TaskGantt from "../components/TaskGantt";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
+import { useLoginModal } from "../components/LoginModalProvider";
 
 interface User {
   id: number;
@@ -22,6 +23,7 @@ interface User {
 
 export default function TaskListPage() {
   const navigate = useNavigate();
+  const { openLogin } = useLoginModal();
   const [user, setUser] = useState<User | null>(null);
   const [tasks, setTasks] = useState<TaskListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +35,7 @@ export default function TaskListPage() {
   useEffect(() => {
     api.me()
       .then((d) => setUser({ ...d.user, avatar: d.profile.avatar, nickname: d.profile.nickname }))
-      .catch(() => navigate("/login"));
+      .catch(() => openLogin());
   }, [navigate]);
 
   useEffect(() => {

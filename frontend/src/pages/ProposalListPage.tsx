@@ -14,6 +14,7 @@ import {
 } from "../types/proposals";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
+import { useLoginModal } from "../components/LoginModalProvider";
 import "../styles/list.css";
 
 interface CurrentUser {
@@ -24,6 +25,7 @@ interface CurrentUser {
 
 export default function ProposalListPage() {
   const navigate = useNavigate();
+  const { openLogin } = useLoginModal();
   // undefined = 解析中, null = 未登录（匿名）
   const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
   const [proposals, setProposals] = useState<ProposalListItem[]>([]);
@@ -264,7 +266,7 @@ export default function ProposalListPage() {
           <div className="alert alert-info" style={{ alignItems: "center" }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v4h1" /></svg>
             <span style={{ flex: 1 }}><strong>登录后可查看和参与活动申报、投票</strong></span>
-            <button className="btn btn-primary btn-sm" onClick={() => navigate("/login")}>去登录</button>
+            <button className="btn btn-primary btn-sm" onClick={() => openLogin()}>去登录</button>
           </div>
         ) : (
           <>

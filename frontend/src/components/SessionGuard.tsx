@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState, ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
 
 import { setSupersedeHandler, SupersedeTakeover } from "../api/shared";
 import { api } from "../api/client";
 import SessionSupersedeModal from "./SessionSupersedeModal";
+import { useLoginModal } from "./LoginModalProvider";
 
 const POLL_INTERVAL_MS = 60000;
 
 export default function SessionGuard({ children }: { children: ReactNode }) {
   const [takeover, setTakeover] = useState<SupersedeTakeover | null>(null);
-  const navigate = useNavigate();
   const intervalRef = useRef<number | null>(null);
+  const { openLogin } = useLoginModal();
 
   useEffect(() => {
     setSupersedeHandler((t) => {
@@ -33,7 +33,7 @@ export default function SessionGuard({ children }: { children: ReactNode }) {
 
   function handleConfirm() {
     setTakeover(null);
-    navigate("/login", { replace: true });
+    openLogin();
   }
 
   return (
