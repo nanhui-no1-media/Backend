@@ -77,7 +77,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const go = (path: string) => {
     setDrawerOpen(false); setUserOpen(false); setBellOpen(false);
-    if (path.startsWith("http") || path.endsWith("/")) window.location.href = path;
+    if (path.startsWith("http") || path === "/admin/") window.location.href = path;
     else navigate(path);
   };
   const isActive = (p: string) =>
