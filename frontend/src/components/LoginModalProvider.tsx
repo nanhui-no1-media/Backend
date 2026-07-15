@@ -4,8 +4,11 @@ import LoginModal from "./LoginModal";
 interface LoginModalCtx {
   openLogin: (redirectTo?: string) => void;
   closeLogin: () => void;
-  /** 每次成功登录后自增；受保护路由可依赖它重新校验会话。 */
-  loginNonce: number;
+  /** 登录或登出后自增；AppShell / HomePage / 受保护路由据此重新校验会话，
+   *  避免「在同一页登出后不重挂导致本地 user 状态过期」的问题。 */
+  authNonce: number;
+  /** 通知认证态发生变化（当前仅 AppShell 登出时调用；登录由 LoginModal 经 onLoggedIn 触发）。 */
+  notifyAuthChange: () => void;
 }
 
 const Ctx = createContext<LoginModalCtx | null>(null);
@@ -24,17 +27,19 @@ export function useLoginModal(): LoginModalCtx {
 export default function LoginModalProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [redirectTo, setRedirectTo] = useState<string | undefined>(undefined);
-  const [loginNonce, setLoginNonce] = useState(0);
+  const [authNonce, setAuthNonce] = useState(0);
 
   const openLogin = useCallback((to?: string) => {
     setRedirectTo(to);
     setOpen(true);
   }, []);
   const closeLogin = useCallback(() => setOpen(false), []);
-  const onLoggedIn = useCallback(() => setLoginNonce((n) => n + 1), []);
+  const notifyAuthChange = useCallback(() => setAuthNonce((n) => n + 1), []);
+  // 登录成功信号：自增 authNonce（关闭弹窗与跳转仍由 LoginModal 自行处理）
+  const onLoggedIn = notifyAuthChange;
 
   return (
-    <Ctx.Provider value={{ openLogin, closeLogin, loginNonce }}>
+    <Ctx.Provider value={{ openLogin, closeLogin, authNonce, notifyAuthChange }}>
       {children}
       <LoginModal open={open} redirectTo={redirectTo} onClose={closeLogin} onLoggedIn={onLoggedIn} />
     </Ctx.Provider>

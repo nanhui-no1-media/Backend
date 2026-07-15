@@ -49,7 +49,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [bellOpen, setBellOpen] = useState(false);
   const userWrap = useRef<HTMLDivElement>(null);
   const bellWrap = useRef<HTMLDivElement>(null);
-  const { openLogin } = useLoginModal();
+  const { openLogin, authNonce, notifyAuthChange } = useLoginModal();
 
   useEffect(() => {
     api.me()
@@ -58,7 +58,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         setProfile(d.profile ?? {});
       })
       .catch(() => setUser(null));
-  }, []);
+  }, [authNonce]);
 
   // 用 body.is-authed 驱动 cobalt 的 .act-guest/.act-user 显隐
   useEffect(() => {
@@ -85,7 +85,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const isActive = (p: string) =>
     p === "/" ? location.pathname === "/" : location.pathname.startsWith(p);
   const logout = async () => {
-    try { await api.logout(); } finally { navigate("/"); }
+    setDrawerOpen(false); setUserOpen(false); setBellOpen(false);
+    try { await api.logout(); } finally {
+      // 通知认证态变化：同页（如首页）不重挂时，顶栏与本页 user 状态仍能立即刷新为游客
+      notifyAuthChange();
+      navigate("/");
+    }
   };
   const name = profile.nickname || user?.username || "";
   const initial = (user?.username || "?").charAt(0).toUpperCase();
