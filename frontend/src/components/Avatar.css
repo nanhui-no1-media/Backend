@@ -6,7 +6,7 @@
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
-  background: linear-gradient(135deg, var(--brand, #e85d4a), #f4a261);
+  background: linear-gradient(135deg, var(--brand-600), var(--brand-400));
   color: #fff;
   font-weight: 700;
   line-height: 1;
