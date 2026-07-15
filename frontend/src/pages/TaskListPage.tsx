@@ -3,13 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { taskApi } from "../api/tasks";
 import {
-  TaskListItem, TaskStatus, TaskPriority,
-  STATUS_LABELS, PRIORITY_LABELS, PRIORITY_COLORS, STATUS_COLORS,
+  TaskListItem,
+  STATUS_LABELS, PRIORITY_LABELS,
+  STATUS_BADGE_CLASS, PRIORITY_DOT_CLASS,
 } from "../types/tasks";
-import "./TaskListPage.css";
+import "../styles/list.css";
 import TaskTimeline from "../components/TaskTimeline";
 import TaskGantt from "../components/TaskGantt";
 import Avatar from "../components/Avatar";
+import AppShell from "../components/AppShell";
 
 interface User {
   id: number;
@@ -51,138 +53,108 @@ export default function TaskListPage() {
     return new Date(d).toLocaleDateString("zh-CN");
   };
 
-
   if (loading) {
-    return <div className="task-page"><div className="task-loading">加载中...</div></div>;
+    return (
+      <AppShell>
+        <div className="container" style={{ padding: "var(--s-16) 0" }}>
+          <p className="muted">加载中…</p>
+        </div>
+      </AppShell>
+    );
   }
 
   return (
-    <div className="task-page">
-      <div className="task-container">
-        {/* Header */}
-        <div className="task-header">
-          <button className="task-back" onClick={() => navigate("/")}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
-            </svg>
-            返回
-          </button>
-          <h1 className="task-title">任务列表</h1>
-          <div className="task-view-toggle">
-            <button
-              className={`task-view-btn${viewMode === "list" ? " active" : ""}`}
-              onClick={() => setViewMode("list")}
-            >
-              列表
-            </button>
-            <button
-              className={`task-view-btn${viewMode === "timeline" ? " active" : ""}`}
-              onClick={() => setViewMode("timeline")}
-            >
-              时间线
-            </button>
-            <button
-              className={`task-view-btn${viewMode === "gantt" ? " active" : ""}`}
-              onClick={() => setViewMode("gantt")}
-            >
-              甘特图
+    <AppShell>
+      <div className="page-head">
+        <div className="container">
+          <nav className="breadcrumb">
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
+            <span className="sep">/</span>
+            <span>任务</span>
+          </nav>
+          <div className="page-head-row">
+            <div>
+              <h1>任务</h1>
+              <p className="section-sub">社团拍摄、剪辑、文案与运营任务看板。</p>
+            </div>
+            <button className="btn btn-primary" onClick={() => navigate("/tasks/new")}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+              新建任务
             </button>
           </div>
-          <button className="task-btn-primary" onClick={() => navigate("/tasks/new")}>
-            + 新建任务
-          </button>
         </div>
+      </div>
 
-        {/* Filters */}
-        <div className="task-filters">
-          <input
-            type="text"
-            className="task-search"
-            placeholder="搜索任务..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="task-select">
-            <option value="">全部状态</option>
-            {Object.entries(STATUS_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
-          <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="task-select">
+      <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
+        {/* 工具条：搜索 + 优先级 + 视图切换 */}
+        <div className="task-toolbar">
+          <div className="input-affix search-affix">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>
+            <input className="input" type="search" placeholder="搜索任务…" aria-label="搜索任务" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <select className="select" aria-label="优先级" value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
             <option value="">全部优先级</option>
             {Object.entries(PRIORITY_LABELS).map(([k, v]) => (
               <option key={k} value={k}>{v}</option>
             ))}
           </select>
+          <div className="spacer" />
+          <div className="seg" role="tablist" aria-label="视图">
+            {(["list", "timeline", "gantt"] as const).map((m) => (
+              <button key={m} className="seg-btn" type="button" aria-selected={viewMode === m} onClick={() => setViewMode(m)}>
+                {m === "list" ? "列表" : m === "timeline" ? "时间线" : "甘特图"}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* View Content */}
+        {/* 状态筛选 chip 行 */}
+        <div className="filter-bar" role="tablist" aria-label="任务状态">
+          <button className="chip" aria-pressed={statusFilter === ""} onClick={() => setStatusFilter("")}>全部</button>
+          {Object.entries(STATUS_LABELS).map(([k, v]) => (
+            <button key={k} className="chip" aria-pressed={statusFilter === k} onClick={() => setStatusFilter(k)}>{v}</button>
+          ))}
+        </div>
+
+        {/* 视图内容 */}
         {viewMode === "list" && (
           tasks.length === 0 ? (
             <div className="task-empty">
               <p>暂无任务</p>
-              <button className="task-btn-primary" onClick={() => navigate("/tasks/new")}>创建第一个任务</button>
+              <button className="btn btn-primary" onClick={() => navigate("/tasks/new")}>创建第一个任务</button>
             </div>
           ) : (
-            <div className="task-list">
-              {tasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="task-card"
-                  onClick={() => navigate(`/tasks/${task.id}`)}
-                >
-                  <div className="task-card-left">
-                    <span
-                      className="task-priority-dot"
-                      style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
-                    />
-                    <div className="task-card-info">
-                      <div className="task-card-title">{task.title}</div>
-                      <div className="task-card-meta">
-                        <span
-                          className="task-status-badge"
-                          style={{
-                            backgroundColor: STATUS_COLORS[task.status] + "18",
-                            color: STATUS_COLORS[task.status],
-                          }}
-                        >
-                          {STATUS_LABELS[task.status]}
-                        </span>
-                        {task.reject_reason && (
-                          <span
-                            className="task-status-badge"
-                            style={{ backgroundColor: "#fef3c7", color: "#92400e" }}
-                          >
-                            被打回
-                          </span>
-                        )}
-                        {task.tags.map((t) => (
-                          <span key={t.id} className="task-tag" style={{ backgroundColor: t.color + "18", color: t.color }}>
-                            {t.name}
-                          </span>
-                        ))}
-                        <span className="task-meta-text user-with-avatar">
-                          {task.assignee && <Avatar user={task.assignee} />}
-                          {task.assignee?.nickname || task.assignee?.username || "未分配"}
-                        </span>
-                        {task.attachment_count > 0 && <span className="task-meta-text">{task.attachment_count} 附件</span>}
-                      </div>
+            tasks.map((task) => (
+              <a key={task.id} className="task-card" onClick={() => navigate(`/tasks/${task.id}`)}>
+                <div className="tc-left">
+                  <span className={"prio-dot " + PRIORITY_DOT_CLASS[task.priority]} title={"优先级：" + (PRIORITY_LABELS[task.priority] || "")} />
+                  <div className="tc-info">
+                    <div className="tc-title">{task.title}</div>
+                    <div className="tc-meta">
+                      <span className={"badge " + STATUS_BADGE_CLASS[task.status]}>{STATUS_LABELS[task.status]}</span>
+                      {task.reject_reason && <span className="badge badge-warning">被打回</span>}
+                      {task.tags.map((t) => (
+                        <span key={t.id} className="tag-mini">{t.name}</span>
+                      ))}
+                      <span className="who">
+                        {task.assignee && <Avatar user={task.assignee} />}
+                        {task.assignee?.nickname || task.assignee?.username || "未分配"}
+                      </span>
+                      {task.attachment_count > 0 && <span>{task.attachment_count} 附件</span>}
                     </div>
                   </div>
-                  <div className="task-card-right">
-                    <span className="task-meta-text">{formatDate(task.created_at)}</span>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                      <path d="m9 18 6-6-6-6" />
-                    </svg>
-                  </div>
                 </div>
-              ))}
-            </div>
+                <div className="tc-right">
+                  <span className="date">{formatDate(task.created_at)}</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+                </div>
+              </a>
+            ))
           )
         )}
         {viewMode === "timeline" && <TaskTimeline tasks={tasks} />}
         {viewMode === "gantt" && <TaskGantt tasks={tasks} />}
       </div>
-    </div>
+    </AppShell>
   );
 }
