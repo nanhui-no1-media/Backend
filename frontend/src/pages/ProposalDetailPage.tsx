@@ -9,13 +9,14 @@ import {
   ACTIVITY_TYPE_LABELS,
   FEEDBACK_CATEGORY_LABELS,
   PROPOSAL_STATUS_LABELS,
-  PROPOSAL_STATUS_COLORS,
+  PROPOSAL_STATUS_BADGE_CLASS,
   VOTE_CHOICE_LABELS,
 } from "../types/proposals";
 import type { Message } from "../types/tasks";
 import Avatar from "../components/Avatar";
 import RichTextEditor from "../components/RichTextEditor";
-import "./Proposals.css";
+import AppShell from "../components/AppShell";
+import "../styles/detail.css";
 
 interface CurrentUser {
   id: number;
@@ -207,9 +208,9 @@ export default function ProposalDetailPage() {
     return `剩余 ${Math.floor(h / 24)} 天`;
   };
 
-  if (loading) return <div className="proposal-page"><div className="proposal-loading">加载中...</div></div>;
-  if (error && !proposal) return <div className="proposal-page"><div className="proposal-loading">{error}</div></div>;
-  if (!proposal) return <div className="proposal-page"><div className="proposal-loading">申报不存在或无权查看</div></div>;
+  if (loading) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中...</p></div></AppShell>;
+  if (error && !proposal) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">{error}</p></div></AppShell>;
+  if (!proposal) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">申报不存在或无权查看</p></div></AppShell>;
 
   const p = proposal;
   const summary = {
@@ -224,305 +225,224 @@ export default function ProposalDetailPage() {
   const canWithdraw = isCreator && (p.status === "voting" || p.status === "pending_approval");
   const canManageAttachment = isActivity && (isPresident || isCreator);
 
+  const pct = (n: number, total: number) => (total > 0 ? Math.round((n / total) * 100) : 0) + "%";
+
   return (
-    <div className="proposal-page">
-      <div className="proposal-detail-container">
-        <div className="proposal-detail-header">
-          <button className="proposal-back" onClick={() => navigate("/activity")}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
-            </svg>
-            返回列表
-          </button>
-          {canEdit && (
-            <button className="proposal-btn-secondary" onClick={() => navigate(`/activity/${p.id}/edit`)}>
-              编辑
-            </button>
-          )}
+    <AppShell>
+      <div className="page-head">
+        <div className="container detail-container">
+          <nav className="breadcrumb">
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
+            <span className="sep">/</span>
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>活动申报</a>
+            <span className="sep">/</span>
+            <span>{p.title}</span>
+          </nav>
+          <div className="detail-head-row">
+            <div className="detail-head-main">
+              <h1 className="detail-title">{p.title}</h1>
+              <span className={"badge " + PROPOSAL_STATUS_BADGE_CLASS[p.status]}>
+                <span className="badge-dot" />{PROPOSAL_STATUS_LABELS[p.status]}
+              </span>
+            </div>
+            <div className="detail-head-actions">
+              {canEdit && (
+                <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/activity/${p.id}/edit`)}>编辑</button>
+              )}
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate("/activity")}>返回列表</button>
+            </div>
+          </div>
+          <p className="detail-sub">
+            {isActivity
+              ? (ACTIVITY_TYPE_LABELS[p.activity_type as keyof typeof ACTIVITY_TYPE_LABELS] || "活动")
+              : (FEEDBACK_CATEGORY_LABELS[p.feedback_category as keyof typeof FEEDBACK_CATEGORY_LABELS] || "反馈")}
+            {" · "}{isActivity ? "申报人" : "提交人"} {p.creator ? (p.creator.nickname || p.creator.username) : "匿名"}
+            {" · "}{new Date(p.created_at).toLocaleDateString("zh-CN")}
+            {isActivity && p.status === "voting" && p.voting_end_at ? " · " + formatRemaining(p.voting_end_at) : ""}
+          </p>
         </div>
+      </div>
 
-        {error && <div className="proposal-error">{error}</div>}
-
-        <div className="proposal-detail-title-row">
-          <h1 className="proposal-detail-title">{p.title}</h1>
-          <span
-            className="proposal-status-badge"
-            style={{
-              backgroundColor: (PROPOSAL_STATUS_COLORS[p.status] || "#6b7280") + "18",
-              color: PROPOSAL_STATUS_COLORS[p.status] || "#6b7280",
-              fontSize: "14px",
-              padding: "6px 14px",
-              borderRadius: "8px",
-              fontWeight: 600,
-            }}
-          >
-            {PROPOSAL_STATUS_LABELS[p.status]}
-          </span>
-        </div>
+      <div className="container detail-container detail-body">
+        {error && <div className="alert alert-danger">{error}</div>}
 
         {(p.status === "returned" || p.status === "rejected") && p.reject_reason && (
-          <div className="returned-banner">
-            ⚠ {p.status === "returned" ? "已打回" : "已拒绝"}：{p.reject_reason}
+          <div className="alert alert-danger">
+            <b>{p.status === "returned" ? "已打回" : "已拒绝"}：</b>{p.reject_reason}
           </div>
         )}
 
-        <div className="proposal-detail-meta">
-          {isActivity ? (
-            <div className="meta-item">
-              <span className="meta-label">活动类型</span>
-              <span>{ACTIVITY_TYPE_LABELS[p.activity_type as keyof typeof ACTIVITY_TYPE_LABELS] || "-"}</span>
-            </div>
-          ) : (
-            <div className="meta-item">
-              <span className="meta-label">反馈类别</span>
-              <span>{FEEDBACK_CATEGORY_LABELS[p.feedback_category as keyof typeof FEEDBACK_CATEGORY_LABELS] || "-"}</span>
-            </div>
-          )}
-          <div className="meta-item">
-            <span className="meta-label">{isActivity ? "申报人" : "提交人"}</span>
-            <span className="user-with-avatar">
-              {p.creator ? (
-                <>
-                  <Avatar user={p.creator} />
-                  {p.creator.nickname || p.creator.username}
-                </>
-              ) : "匿名"}
-            </span>
-          </div>
-          {isActivity && (
-            <>
-              <div className="meta-item">
-                <span className="meta-label">拟办日期</span>
-                <span>{p.planned_date || "-"}</span>
-              </div>
-              <div className="meta-item">
-                <span className="meta-label">地点</span>
-                <span>{p.location || "-"}</span>
-              </div>
-              <div className="meta-item">
-                <span className="meta-label">预计人数</span>
-                <span>{p.expected_participants != null ? p.expected_participants : "-"}</span>
-              </div>
-              <div className="meta-item">
-                <span className="meta-label">预算</span>
-                <span>{p.budget != null ? `¥${p.budget}` : "-"}</span>
-              </div>
-            </>
-          )}
-          {!isActivity && p.contact && isPresident && (
-            <div className="meta-item">
-              <span className="meta-label">联系方式</span>
-              <span>{p.contact}</span>
-            </div>
-          )}
-          <div className="meta-item">
-            <span className="meta-label">提交时间</span>
-            <span>{new Date(p.created_at).toLocaleString("zh-CN")}</span>
-          </div>
-          {p.reviewed_by && (
-            <div className="meta-item">
-              <span className="meta-label">审核人</span>
-              <span className="user-with-avatar">
-                <Avatar user={p.reviewed_by} />
-                {p.reviewed_by.nickname || p.reviewed_by.username}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* 操作按钮行 */}
         {(canVote || canApprove || canResubmit || canWithdraw) && (
-          <div className="proposal-actions-row">
+          <div className="detail-actions">
             {canResubmit && (
-              <button className="proposal-btn-primary" onClick={handleResubmit} disabled={actionLoading}>
-                {actionLoading ? "处理中..." : "重新提交（开始投票）"}
+              <button className="btn btn-primary" onClick={handleResubmit} disabled={actionLoading}>
+                {actionLoading ? "处理中…" : "重新提交（开始投票）"}
               </button>
             )}
             {canWithdraw && (
-              <button className="proposal-btn-danger" onClick={handleWithdraw} disabled={actionLoading}>
-                撤回
-              </button>
+              <button className="btn btn-ghost" onClick={handleWithdraw} disabled={actionLoading}>撤回</button>
             )}
             {canApprove && (
               <>
-                <button className="proposal-btn-primary" onClick={handleApprove} disabled={actionLoading}>
-                  {actionLoading ? "处理中..." : "通过"}
+                <button className="btn btn-primary" onClick={handleApprove} disabled={actionLoading}>
+                  {actionLoading ? "处理中…" : "通过"}
                 </button>
-                <button className="proposal-btn-secondary" onClick={() => setShowReasonForm("return")} disabled={actionLoading}>
-                  打回
-                </button>
-                <button className="proposal-btn-danger" onClick={() => setShowReasonForm("reject")} disabled={actionLoading}>
-                  拒绝
-                </button>
+                <button className="btn btn-ghost" onClick={() => setShowReasonForm("return")} disabled={actionLoading}>打回</button>
+                <button className="btn btn-danger" onClick={() => setShowReasonForm("reject")} disabled={actionLoading}>拒绝</button>
               </>
             )}
           </div>
         )}
 
         {showReasonForm && (
-          <div className="reason-form">
-            <h3>{showReasonForm === "return" ? "打回理由" : "拒绝理由"}</h3>
-            <textarea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder={showReasonForm === "return" ? "说明需要修改的内容..." : "说明拒绝原因..."}
-              rows={3}
-            />
-            <div className="reason-form-actions">
-              <button className="proposal-btn-primary" onClick={submitReason} disabled={actionLoading}>
-                {actionLoading ? "处理中..." : `确认${showReasonForm === "return" ? "打回" : "拒绝"}`}
+          <div className="card card-pad detail-section">
+            <h3 className="section-h">{showReasonForm === "return" ? "打回理由" : "拒绝理由"}</h3>
+            <textarea className="textarea" value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder={showReasonForm === "return" ? "说明需要修改的内容..." : "说明拒绝原因..."}
+                      rows={3} />
+            <div className="detail-row">
+              <button className="btn btn-primary" onClick={submitReason} disabled={actionLoading}>
+                {actionLoading ? "处理中…" : `确认${showReasonForm === "return" ? "打回" : "拒绝"}`}
               </button>
-              <button
-                className="proposal-btn-secondary"
-                onClick={() => { setShowReasonForm(null); setReason(""); }}
-                disabled={actionLoading}
-              >
-                取消
-              </button>
+              <button className="btn btn-ghost"
+                      onClick={() => { setShowReasonForm(null); setReason(""); }}
+                      disabled={actionLoading}>取消</button>
             </div>
           </div>
         )}
 
-        {/* 描述 */}
-        <div className="proposal-detail-section">
-          <h3>详细说明</h3>
+        <div className="card card-pad detail-section">
+          <h3 className="section-h">基本信息</h3>
+          <div className="meta-grid">
+            {isActivity ? (
+              <>
+                <div className="meta-cell"><span className="meta-k">活动类型</span><span className="meta-v">{ACTIVITY_TYPE_LABELS[p.activity_type as keyof typeof ACTIVITY_TYPE_LABELS] || "-"}</span></div>
+                <div className="meta-cell"><span className="meta-k">拟办日期</span><span className="meta-v">{p.planned_date || "-"}</span></div>
+                <div className="meta-cell"><span className="meta-k">地点</span><span className="meta-v">{p.location || "-"}</span></div>
+                <div className="meta-cell"><span className="meta-k">预计人数</span><span className="meta-v">{p.expected_participants != null ? p.expected_participants : "-"}</span></div>
+                <div className="meta-cell"><span className="meta-k">预算</span><span className="meta-v">{p.budget != null ? `¥${p.budget}` : "-"}</span></div>
+              </>
+            ) : (
+              <>
+                <div className="meta-cell"><span className="meta-k">反馈类别</span><span className="meta-v">{FEEDBACK_CATEGORY_LABELS[p.feedback_category as keyof typeof FEEDBACK_CATEGORY_LABELS] || "-"}</span></div>
+                <div className="meta-cell"><span className="meta-k">提交人</span><span className="meta-v">匿名</span></div>
+                {!isActivity && p.contact && isPresident && (
+                  <div className="meta-cell"><span className="meta-k">联系方式</span><span className="meta-v">{p.contact}</span></div>
+                )}
+              </>
+            )}
+            <div className="meta-cell"><span className="meta-k">提交时间</span><span className="meta-v">{new Date(p.created_at).toLocaleString("zh-CN")}</span></div>
+            {p.reviewed_by && (
+              <div className="meta-cell">
+                <span className="meta-k">审核人</span>
+                <span className="meta-v user-with-avatar"><Avatar user={p.reviewed_by} size="sm" />{p.reviewed_by.nickname || p.reviewed_by.username}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="card card-pad detail-section">
+          <h3 className="section-h">详细说明</h3>
           {p.description ? (
             isActivity ? (
-              <div className="proposal-description rich">
-                <RichTextEditor content={p.description} editable={false} />
-              </div>
+              <RichTextEditor content={p.description} editable={false} />
             ) : (
-              <div className="proposal-description">{p.description}</div>
+              <div className="plain-text">{p.description}</div>
             )
           ) : (
-            <p className="proposal-empty-text">暂无说明</p>
+            <p className="empty-text">暂无说明</p>
           )}
         </div>
 
-        {/* 投票区（仅活动申报） */}
         {isActivity && (
-          <div className="proposal-detail-section">
-            <h3>投票</h3>
-            <div className="vote-box">
-              {p.status === "voting" && (
-                <div className="vote-deadline">
-                  投票进行中，<strong>{formatRemaining(p.voting_end_at)}</strong>（公开实名，每人一次，不可修改；结果仅供参考，社长最终决定）
-                </div>
-              )}
-              {p.status !== "voting" && (
-                <div className="vote-deadline">投票已结束（共 {p.votes.length} 票）</div>
-              )}
-
-              <div className="vote-summary">
-                <div className="vote-summary-item">
-                  <span className="vote-summary-num approve">{summary.approve}</span>
-                  <span className="vote-summary-label">赞成</span>
-                </div>
-                <div className="vote-summary-item">
-                  <span className="vote-summary-num oppose">{summary.oppose}</span>
-                  <span className="vote-summary-label">反对</span>
-                </div>
-                <div className="vote-summary-item">
-                  <span className="vote-summary-num abstain">{summary.abstain}</span>
-                  <span className="vote-summary-label">弃权</span>
-                </div>
-              </div>
-
-              {canVote ? (
-                <div className="vote-actions">
-                  <button className="vote-btn approve" onClick={() => handleVote("approve")} disabled={actionLoading}>
-                    {VOTE_CHOICE_LABELS.approve}
-                  </button>
-                  <button className="vote-btn oppose" onClick={() => handleVote("oppose")} disabled={actionLoading}>
-                    {VOTE_CHOICE_LABELS.oppose}
-                  </button>
-                  <button className="vote-btn abstain" onClick={() => handleVote("abstain")} disabled={actionLoading}>
-                    {VOTE_CHOICE_LABELS.abstain}
-                  </button>
-                </div>
-              ) : p.my_vote ? (
-                <div className="vote-cast-hint">
-                  你已投：<strong>{VOTE_CHOICE_LABELS[p.my_vote]}</strong>（不可修改）
-                </div>
-              ) : p.status === "voting" ? (
-                <div className="vote-cast-hint proposal-empty-text">登录后可参与投票</div>
-              ) : null}
-
-              {p.votes.length > 0 && (
-                <div className="vote-list">
-                  {p.votes.map((v) => (
-                    <div key={v.id} className="vote-item">
-                      <Avatar user={v.voter} />
-                      <span>{v.voter.nickname || v.voter.username}</span>
-                      <span className={`vote-item-choice ${v.vote_choice}`}>
-                        {VOTE_CHOICE_LABELS[v.vote_choice]}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+          <div className="card card-pad detail-section">
+            <h3 className="section-h">投票</h3>
+            <div className="vote-deadline">
+              {p.status === "voting"
+                ? <>投票进行中，<strong>{formatRemaining(p.voting_end_at)}</strong>（公开实名，每人一次，不可修改；结果仅供参考，社长最终决定）</>
+                : <>投票已结束（共 {p.votes.length} 票）</>}
             </div>
+            <div className="votebar">
+              <i className="app" style={{ width: pct(summary.approve, p.votes.length) }} />
+              <i className="opp" style={{ width: pct(summary.oppose, p.votes.length) }} />
+              <i className="abs" style={{ width: pct(summary.abstain, p.votes.length) }} />
+            </div>
+            <div className="vote-num">
+              <span className="app">赞成 {summary.approve}</span>
+              <span className="opp">反对 {summary.oppose}</span>
+              <span className="abs">弃权 {summary.abstain}</span>
+            </div>
+            {canVote ? (
+              <div className="vote-actions">
+                <button className="btn vote-btn approve" onClick={() => handleVote("approve")} disabled={actionLoading}>{VOTE_CHOICE_LABELS.approve}</button>
+                <button className="btn vote-btn oppose" onClick={() => handleVote("oppose")} disabled={actionLoading}>{VOTE_CHOICE_LABELS.oppose}</button>
+                <button className="btn vote-btn abstain" onClick={() => handleVote("abstain")} disabled={actionLoading}>{VOTE_CHOICE_LABELS.abstain}</button>
+              </div>
+            ) : p.my_vote ? (
+              <div className="vote-cast-hint">你已投：<strong>{VOTE_CHOICE_LABELS[p.my_vote]}</strong>（不可修改）</div>
+            ) : p.status === "voting" ? (
+              <div className="empty-text">登录后可参与投票</div>
+            ) : null}
+            {p.votes.length > 0 && (
+              <div className="vote-list">
+                {p.votes.map((v) => (
+                  <div key={v.id} className="vote-item">
+                    <Avatar user={v.voter} size="sm" />
+                    <span className="vote-name">{v.voter.nickname || v.voter.username}</span>
+                    <span className={"vote-choice " + v.vote_choice}>{VOTE_CHOICE_LABELS[v.vote_choice]}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* 附件（仅活动申报；反馈为匿名无附件） */}
         {isActivity && (
-          <div className="proposal-detail-section">
-            <div className="section-header">
-              <h3>附件 ({p.attachments.length})</h3>
+          <div className="card card-pad detail-section">
+            <div className="section-head-row">
+              <h3 className="section-h">附件 ({p.attachments.length})</h3>
               {canManageAttachment && (
                 <>
-                  <button className="proposal-btn-secondary proposal-btn-sm" onClick={() => fileInputRef.current?.click()}>
-                    + 上传
-                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()}>+ 上传</button>
                   <input ref={fileInputRef} type="file" onChange={handleFileUpload} style={{ display: "none" }} />
                 </>
               )}
             </div>
             {p.attachments.length > 0 ? (
-              <div className="attachment-list">
+              <div className="att-list">
                 {p.attachments.map((att) => (
-                  <div key={att.id} className="attachment-item">
-                    <span className="attachment-icon">
-                      {att.file_type === "image" ? "IMG" :
-                       att.file_type === "video" ? "VID" :
-                       att.file_type === "document" ? "DOC" :
-                       att.file_type === "archive" ? "ZIP" : "FILE"}
+                  <div key={att.id} className="att-item">
+                    <span className="att-icon">
+                      {att.file_type === "image" ? "IMG" : att.file_type === "video" ? "VID" :
+                       att.file_type === "document" ? "DOC" : att.file_type === "archive" ? "ZIP" : "FILE"}
                     </span>
-                    <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="attachment-name">
-                      {att.file_name}
-                    </a>
-                    <span className="attachment-size">{formatSize(att.file_size)}</span>
+                    <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="att-name">{att.file_name}</a>
+                    <span className="att-size">{formatSize(att.file_size)}</span>
                     {canManageAttachment && (
-                      <button className="attachment-delete" onClick={() => handleDeleteAttachment(att.id)} title="删除">✕</button>
+                      <button className="att-del" onClick={() => handleDeleteAttachment(att.id)} title="删除">✕</button>
                     )}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="proposal-empty-text">暂无附件</p>
+              <p className="empty-text">暂无附件</p>
             )}
           </div>
         )}
 
-        {/* 讨论（仅活动申报） */}
         {isActivity && (
-          <div className="proposal-detail-section">
-            <h3>讨论 ({messages.length})</h3>
+          <div className="card card-pad detail-section">
+            <h3 className="section-h">讨论 ({messages.length})</h3>
             {conversationId && (
               <div className="comment-input">
-                <textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="输入消息，使用 @用户名 提及他人..."
-                  rows={3}
-                />
-                <button
-                  className="proposal-btn-primary proposal-btn-sm"
-                  onClick={handleSendMessage}
-                  disabled={!message.trim() || messageSending}
-                >
-                  {messageSending ? "发送中..." : "发送"}
+                <textarea className="textarea" value={message}
+                          onChange={(e) => setMessage(e.target.value)}
+                          placeholder="输入消息，使用 @用户名 提及他人..." rows={3} />
+                <button className="btn btn-primary btn-sm"
+                        onClick={handleSendMessage}
+                        disabled={!message.trim() || messageSending}>
+                  {messageSending ? "发送中…" : "发送"}
                 </button>
               </div>
             )}
@@ -530,7 +450,7 @@ export default function ProposalDetailPage() {
               <div className="comment-list">
                 {messages.map((m) => (
                   <div key={m.id} className="comment-item">
-                    <div className="comment-header">
+                    <div className="comment-head">
                       <Avatar user={m.sender} size="md" />
                       <strong>{m.sender.nickname || m.sender.username}</strong>
                       <span className="comment-time">{new Date(m.created_at).toLocaleString("zh-CN")}</span>
@@ -540,11 +460,11 @@ export default function ProposalDetailPage() {
                 ))}
               </div>
             ) : (
-              <p className="proposal-empty-text">暂无讨论</p>
+              <p className="empty-text">暂无讨论</p>
             )}
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }
