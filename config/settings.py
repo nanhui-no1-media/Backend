@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'messaging',
     'proposals',
     'exam_board',
+    'news',
 ]
 
 MIDDLEWARE = [

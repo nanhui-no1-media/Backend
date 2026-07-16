@@ -27,8 +27,9 @@ urlpatterns = [
     path('messaging/', include('messaging.urls')),
     path('proposals/', include('proposals.urls')),
     path('exam_board/', include('exam_board.urls')),
+    path('news/', include('news.urls')),
     path('', TemplateView.as_view(template_name='index.html'), name='home'),
-    re_path(r'^(?!static/|admin/|auth/|tasks/|media/|messaging/|proposals/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
+    re_path(r'^(?!static/|admin/|auth/|tasks/|media/|messaging/|proposals/|news/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
 ]
 
 if settings.DEBUG:
