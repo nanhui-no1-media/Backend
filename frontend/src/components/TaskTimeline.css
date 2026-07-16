@@ -1,113 +1,57 @@
-.timeline {
-  position: relative;
-  padding-left: 28px;
-}
+/* TaskTimeline.css — 任务时间线视图（cobalt）
+   自包含：仅依赖全局 cobalt.css（.badge / token）。
+   .prio-dot / .tag-mini 与 detail.css 同名同值，但在此就地（限定在 .timeline 下）
+   重新声明——因详情页 detail.css 属另一懒加载分块，不随本视图加载。
+   轨道圆点按任务状态着色（颜色由组件内联 cobalt token 给出）。 */
 
+.timeline { position: relative; padding-left: 28px; padding-top: var(--s-2); }
 .timeline::before {
-  content: "";
-  position: absolute;
-  left: 11px;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--border, #e5e8ec);
+  content: ""; position: absolute; left: 11px; top: 10px; bottom: 10px;
+  width: 2px; background: var(--line);
 }
 
-.timeline-item {
-  position: relative;
-  padding-bottom: 24px;
-  cursor: pointer;
-}
+.timeline-item { position: relative; padding-bottom: var(--s-4); cursor: pointer; }
+.timeline-item:last-child { padding-bottom: 0; }
 
-.timeline-item:last-child {
-  padding-bottom: 0;
-}
-
-.timeline-dot-wrapper {
-  position: absolute;
-  left: -28px;
-  top: 8px;
-  width: 24px;
-  display: flex;
-  justify-content: center;
-}
-
+.timeline-dot-wrap { position: absolute; left: -28px; top: 12px; width: 24px; display: flex; justify-content: center; }
 .timeline-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 2px var(--border, #e5e8ec);
-  z-index: 1;
+  width: 12px; height: 12px; border-radius: var(--r-pill);
+  border: 2px solid var(--bg); box-shadow: 0 0 0 2px var(--line); z-index: 1;
 }
-
-.timeline-dot.pulse {
-  animation: timeline-pulse 2s ease-in-out infinite;
-}
-
-@keyframes timeline-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px var(--border, #e5e8ec); }
-  50% { box-shadow: 0 0 0 4px var(--brand, #e85d4a); }
+.timeline-dot.pulse { animation: tl-pulse 2s var(--ease) infinite; }
+@keyframes tl-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--line); }
+  50% { box-shadow: 0 0 0 5px var(--brand-200); }
 }
 
 .timeline-card {
-  background: #fff;
-  border: 1px solid var(--border, #e5e8ec);
-  border-radius: 10px;
-  padding: 14px 18px;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md);
+  padding: var(--s-3) var(--s-4);
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
+.timeline-item:hover .timeline-card { border-color: var(--brand-200); box-shadow: var(--sh-1); transform: translateY(-1px); }
 
-.timeline-item:hover .timeline-card {
-  box-shadow: 0 4px 12px rgba(26, 27, 46, 0.06);
-  border-color: var(--brand, #e85d4a);
+.timeline-card-head { display: flex; align-items: center; gap: var(--s-2); margin-bottom: 6px; }
+.timeline-card-head .tc-title {
+  font-size: 14.5px; font-weight: 600; color: var(--fg);
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.timeline-card-head .badge { flex-shrink: 0; font-size: 11.5px; }
 
-.timeline-card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
+/* 优先级圆点（就地声明，限定 .timeline 以避免依赖 detail.css） */
+.timeline .prio-dot { width: 10px; height: 10px; border-radius: var(--r-pill); flex-shrink: 0; box-shadow: 0 0 0 3px var(--bg); }
+.timeline .prio-dot.is-urgent { background: var(--danger); }
+.timeline .prio-dot.is-high { background: var(--warning); }
+.timeline .prio-dot.is-medium { background: var(--brand-500); }
+.timeline .prio-dot.is-low { background: var(--ink-400); }
 
-.timeline-priority-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
+/* 标签（就地声明，与 detail.css 同名同值） */
+.timeline .tag-mini { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: var(--r-xs); font-size: 11.5px; background: var(--brand-50); color: var(--brand-700); }
 
-.timeline-card-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text, #1a1b2e);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.timeline-card-meta { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; margin-bottom: 4px; }
+.timeline-assignee { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+/* 提高特异性以压过 Avatar.css 的 .avatar.avatar--sm */
+.timeline .timeline-assignee .avatar { width: 18px; height: 18px; font-size: 9px; }
 
-.timeline-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 4px;
-}
-
-.timeline-meta-text {
-  font-size: 12px;
-  color: var(--text-sec, #6b7280);
-}
-
-.timeline-duration {
-  font-size: 12px;
-  color: var(--text-sec, #6b7280);
-}
-
-.timeline-empty {
-  text-align: center;
-  padding: 60px 0;
-  color: var(--text-sec, #6b7280);
-}
+.timeline-duration { font-size: 12px; color: var(--faint); font-family: var(--font-mono); }
+.timeline-empty { text-align: center; padding: var(--s-16) 0; color: var(--faint); }
