@@ -16,6 +16,9 @@ const MessagePage = lazy(() => import("./pages/MessagePage"));
 const ProposalListPage = lazy(() => import("./pages/ProposalListPage"));
 const ProposalFormPage = lazy(() => import("./pages/ProposalFormPage"));
 const ProposalDetailPage = lazy(() => import("./pages/ProposalDetailPage"));
+const NewsListPage = lazy(() => import("./pages/NewsListPage"));
+const NewsDetailPage = lazy(() => import("./pages/NewsDetailPage"));
+const NewsFormPage = lazy(() => import("./pages/NewsFormPage"));
 
 function Loading() {
   return <div style={{ textAlign: "center", padding: "80px 0", color: "#6b7280" }}>加载中...</div>;
@@ -47,6 +50,10 @@ export default function App() {
           <Route path="/activity/new" element={<ProtectedRoute><ProposalFormPage /></ProtectedRoute>} />
           <Route path="/activity/:id" element={<ProtectedRoute><ProposalDetailPage /></ProtectedRoute>} />
           <Route path="/activity/:id/edit" element={<ProtectedRoute><ProposalFormPage /></ProtectedRoute>} />
+          <Route path="/news" element={<NewsListPage />} />
+          <Route path="/news/new" element={<ProtectedRoute><NewsFormPage /></ProtectedRoute>} />
+          <Route path="/news/:id" element={<NewsDetailPage />} />
+          <Route path="/news/:id/edit" element={<ProtectedRoute><NewsFormPage /></ProtectedRoute>} />
           <Route path="/" element={<HomePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

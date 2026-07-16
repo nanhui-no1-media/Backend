@@ -50,7 +50,7 @@ module.exports = {
     hot: true,
     historyApiFallback: { index: "/static/index.html" },
     proxy: [
-      { context: ["/auth", "/admin", "/media", "/tasks", "/messaging", "/proposals"], target: "http://localhost:8000" },
+      { context: ["/auth", "/admin", "/media", "/tasks", "/messaging", "/proposals", "/news"], target: "http://localhost:8000" },
     ],
   },
 };

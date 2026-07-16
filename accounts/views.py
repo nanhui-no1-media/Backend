@@ -14,6 +14,7 @@ from django.core.mail import send_mail
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .models import Profile
 from tasks.permissions import is_president
+from news.permissions import is_info_group
 
 
 def _json_body(request):
@@ -139,6 +140,7 @@ def _profile_response(user, profile):
             "username": user.username,
             "email": user.email,
             "is_president": is_president(user),
+            "is_info_group": is_info_group(user),
         },
         "profile": {
             "avatar": profile.avatar.url if profile.avatar else None,

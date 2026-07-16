@@ -9,6 +9,7 @@ interface AppShellUser {
   username: string;
   email: string;
   is_president?: boolean;
+  is_info_group?: boolean;
 }
 interface AppShellProfile {
   nickname?: string;
@@ -17,6 +18,7 @@ interface AppShellProfile {
 
 const NAV: { label: string; path: string }[] = [
   { label: "主页", path: "/" },
+  { label: "新闻", path: "/news" },
   { label: "活动申报", path: "/activity" },
   { label: "任务", path: "/tasks" },
 ];
@@ -201,6 +203,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <div>
             <h5>栏目</h5>
             <a href="#" onClick={(e) => { e.preventDefault(); go("/"); }}>主页</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); go("/news"); }}>新闻</a>
             <a href="#" onClick={(e) => { e.preventDefault(); go("/activity"); }}>活动申报</a>
             <a href="#" onClick={(e) => { e.preventDefault(); go("/tasks"); }}>任务</a>
           </div>
