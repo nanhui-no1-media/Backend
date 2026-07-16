@@ -1,9 +1,10 @@
 import { useNavigate } from "react-router-dom";
 import {
   TaskListItem,
+  TaskStatus,
   STATUS_LABELS,
-  STATUS_COLORS,
-  PRIORITY_COLORS,
+  STATUS_BADGE_CLASS,
+  PRIORITY_DOT_CLASS,
 } from "../types/tasks";
 import "./TaskTimeline.css";
 import Avatar from "./Avatar";
@@ -11,6 +12,16 @@ import Avatar from "./Avatar";
 interface Props {
   tasks: TaskListItem[];
 }
+
+// 轨道圆点按状态着色（cobalt token；cobalt 调色板无紫色，reviewing/review 均映射为 warning）
+const STATUS_DOT: Record<TaskStatus, string> = {
+  pending: "var(--ink-400)",
+  in_progress: "var(--brand-600)",
+  reviewing: "var(--warning)",
+  review: "var(--warning)",
+  completed: "var(--success)",
+  cancelled: "var(--ink-400)",
+};
 
 function formatShortDate(d: string) {
   return new Date(d).toLocaleDateString("zh-CN", {
@@ -34,7 +45,6 @@ export default function TaskTimeline({ tasks }: Props) {
   return (
     <div className="timeline">
       {sorted.map((task) => {
-        const color = STATUS_COLORS[task.status];
         const isActive = task.status === "in_progress" || task.status === "review";
 
         let durationText: string;
@@ -53,42 +63,27 @@ export default function TaskTimeline({ tasks }: Props) {
             className="timeline-item"
             onClick={() => navigate(`/tasks/${task.id}`)}
           >
-            <div className="timeline-dot-wrapper">
+            <div className="timeline-dot-wrap">
               <span
                 className={`timeline-dot${isActive ? " pulse" : ""}`}
-                style={{ backgroundColor: color }}
+                style={{ backgroundColor: STATUS_DOT[task.status] }}
               />
             </div>
             <div className="timeline-card">
-              <div className="timeline-card-header">
-                <span
-                  className="timeline-priority-dot"
-                  style={{ backgroundColor: PRIORITY_COLORS[task.priority] }}
-                />
-                <span className="timeline-card-title">{task.title}</span>
-                <span
-                  className="task-status-badge"
-                  style={{
-                    backgroundColor: color + "18",
-                    color: color,
-                  }}
-                >
+              <div className="timeline-card-head">
+                <span className={"prio-dot " + PRIORITY_DOT_CLASS[task.priority]} />
+                <span className="tc-title">{task.title}</span>
+                <span className={"badge " + STATUS_BADGE_CLASS[task.status]}>
                   {STATUS_LABELS[task.status]}
                 </span>
               </div>
               <div className="timeline-card-meta">
-                <span className="timeline-meta-text user-with-avatar">
+                <span className="timeline-assignee">
                   {task.assignee && <Avatar user={task.assignee} />}
                   {task.assignee?.nickname || task.assignee?.username || "未分配"}
                 </span>
                 {task.tags.map((t) => (
-                  <span
-                    key={t.id}
-                    className="task-tag"
-                    style={{ backgroundColor: t.color + "18", color: t.color }}
-                  >
-                    {t.name}
-                  </span>
+                  <span key={t.id} className="tag-mini">{t.name}</span>
                 ))}
               </div>
               <div className="timeline-duration">{durationText}</div>

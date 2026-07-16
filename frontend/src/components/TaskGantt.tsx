@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Gantt from "frappe-gantt";
-import { TaskListItem, STATUS_COLORS, STATUS_LABELS } from "../types/tasks";
+import { TaskListItem, STATUS_LABELS } from "../types/tasks";
 import "./TaskGantt.css";
 
 interface Props {
@@ -15,6 +15,21 @@ const STATUS_ORDER: Record<string, number> = {
   completed: 3,
   cancelled: 4,
 };
+
+// 甘特条/图例颜色取自 cobalt token（cobalt 无紫色，reviewing/review 均映射 warning）
+const STATUS_TOKEN: Record<string, string> = {
+  pending: "--ink-400",
+  in_progress: "--brand-600",
+  reviewing: "--warning",
+  review: "--warning",
+  completed: "--success",
+  cancelled: "--ink-400",
+};
+
+function tokenColor(token: string): string {
+  if (typeof window === "undefined") return "";
+  return getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+}
 
 function statusToProgress(status: string): number {
   if (status === "completed") return 100;
@@ -31,6 +46,7 @@ export default function TaskGantt({ tasks }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const ganttRef = useRef<Gantt | null>(null);
   const tasksRef = useRef<TaskListItem[]>([]);
+  const [viewMode, setViewMode] = useState<string>("Day");
 
   const sorted = [...tasks].sort((a, b) => {
     const sa = STATUS_ORDER[a.status] ?? 99;
@@ -84,9 +100,9 @@ export default function TaskGantt({ tasks }: Props) {
     const bars = svgRef.current.querySelectorAll(".bar-wrapper");
     bars.forEach((bar, i) => {
       if (i < taskList.length) {
-        const color = STATUS_COLORS[taskList[i].status];
+        const color = tokenColor(STATUS_TOKEN[taskList[i].status] || "--ink-400");
         const barEl = bar.querySelector(".bar") as SVGElement;
-        if (barEl) {
+        if (barEl && color) {
           barEl.setAttribute("fill", color);
           barEl.setAttribute("style", `fill: ${color};`);
         }
@@ -95,6 +111,7 @@ export default function TaskGantt({ tasks }: Props) {
   };
 
   const handleViewModeChange = (mode: string) => {
+    setViewMode(mode);
     if (ganttRef.current) {
       ganttRef.current.change_view_mode(mode);
       applyBarColors(tasksRef.current);
@@ -111,7 +128,7 @@ export default function TaskGantt({ tasks }: Props) {
         {["Day", "Week", "Month"].map((mode) => (
           <button
             key={mode}
-            className="gantt-mode-btn active"
+            className={"gantt-mode-btn" + (viewMode === mode ? " active" : "")}
             onClick={() => handleViewModeChange(mode)}
           >
             {{ Day: "日", Week: "周", Month: "月" }[mode]}
@@ -123,7 +140,7 @@ export default function TaskGantt({ tasks }: Props) {
           <span key={s} className="gantt-legend-item">
             <span
               className="gantt-legend-dot"
-              style={{ backgroundColor: STATUS_COLORS[s] }}
+              style={{ backgroundColor: `var(${STATUS_TOKEN[s]})` }}
             />
             {STATUS_LABELS[s]}
           </span>
