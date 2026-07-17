@@ -129,3 +129,79 @@ a.news-item:hover h3 { color: var(--brand-700); }
   .prose { font-size: 16px; }
   .related-grid { grid-template-columns: 1fr; }
 }
+
+/* ===== 撰写 / 编辑（专注写作式 composer） ===== */
+/* 单列、居中、略窄于列表，突出标题与正文；黏性工具栏吸附顶栏下方（见 RichTextEditor.css）。 */
+.compose { max-width: 820px; margin: 0 auto; padding-top: var(--s-6); }
+
+.compose-notice { align-items: center; }
+.compose-notice .alert-link {
+  margin-left: auto;
+  background: none; border: none; padding: 0;
+  color: var(--brand-700); font-weight: 600; font-size: 13px;
+  cursor: pointer; text-decoration: underline;
+}
+
+.compose-title {
+  width: 100%;
+  border: none; border-bottom: 1px solid var(--line);
+  background: transparent; outline: none;
+  font-family: var(--font-display);
+  font-size: clamp(26px, 3vw, 34px);
+  font-weight: 700;
+  color: var(--fg);
+  padding: var(--s-3) 0 var(--s-4);
+  margin: var(--s-4) 0 var(--s-5);
+}
+.compose-title::placeholder { color: var(--faint); }
+
+/* 元信息行：分类 / 状态 / 封面 */
+.compose-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-4);
+  margin-bottom: var(--s-5);
+}
+.compose-pill { display: inline-flex; align-items: center; gap: var(--s-2); }
+.compose-pill .cp-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+
+.compose-cover {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  height: 36px; padding: 0 var(--s-3);
+  border: 1px dashed var(--line); border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  cursor: pointer; overflow: hidden;
+  transition: border-color var(--dur-1), background var(--dur-1);
+}
+.compose-cover:hover { border-color: var(--brand-400); background: var(--bg); }
+.compose-cover img { height: 30px; width: 48px; object-fit: cover; border-radius: var(--r-sm); }
+.compose-cover .cc-empty { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--muted); }
+
+/* 富文本编辑器（RichTextEditor）直接位于元信息行下方，无需额外外壳 */
+
+/* 更多设置：摘要 / 标签 / 头条 */
+.compose-extras {
+  display: flex; flex-direction: column; gap: var(--s-5);
+  margin-top: var(--s-6); padding-top: var(--s-6);
+  border-top: 1px solid var(--line);
+}
+
+/* 底部操作条：常驻视口底部，便于长文随时发布 */
+.compose-foot {
+  position: sticky; bottom: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s-4); flex-wrap: wrap;
+  margin-top: var(--s-6);
+  padding: var(--s-4) var(--s-5);
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.compose-stat { display: flex; align-items: center; gap: var(--s-4); font-size: 13px; color: var(--muted); }
+.compose-stat b { color: var(--fg); }
+.cs-saved { display: inline-flex; align-items: center; gap: 4px; color: var(--success, #16a34a); font-weight: 600; }
+.compose-actions { display: flex; gap: var(--s-3); }
+
+@media (max-width: 640px) {
+  .compose-foot { position: static; }
+}
+

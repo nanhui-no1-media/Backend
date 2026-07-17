@@ -1,167 +1,170 @@
+/* RichTextEditor.css — TipTap 富文本编辑器（cobalt token）
+   设计：黏性工具栏吸附在站点顶栏下方（topnav 为 position:sticky, height:var(--nav-h)），
+   大尺寸写作区（min-height 由 prop 注入 --rte-min-height），动作按钮（图片/链接/导入 Word）靠右。 */
+
 .rte-wrapper {
-  border: 1px solid var(--border, #e5e8ec);
-  border-radius: 8px;
-  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  /* 不设 overflow:hidden：否则会切断黏性工具栏 */
 }
 
+/* —— 工具栏（黏性） —— */
 .rte-toolbar {
+  position: sticky;
+  top: var(--nav-h);
+  z-index: 40; /* 低于 topnav(100)，让顶栏始终覆盖在工具栏之上 */
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 8px 10px;
-  background: #f9fafb;
-  border-bottom: 1px solid var(--border, #e5e8ec);
   flex-wrap: wrap;
+  gap: var(--s-1);
+  padding: var(--s-2) var(--s-3);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+  border-top-left-radius: var(--r-lg);
+  border-top-right-radius: var(--r-lg);
 }
 
-.rte-group {
-  display: flex;
-  gap: 2px;
-}
+.rte-group { display: flex; gap: 2px; align-items: center; }
 
 .rte-divider {
   width: 1px;
   height: 20px;
-  background: var(--border, #e5e8ec);
-  margin: 0 6px;
+  background: var(--line);
+  margin: 0 var(--s-2);
 }
+
+.rte-spacer { flex: 1; }
 
 .rte-btn {
-  padding: 4px 8px;
+  padding: 5px 9px;
   border: none;
   background: transparent;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text, #1a1b2e);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink-700);
   white-space: nowrap;
-  transition: background 0.15s;
+  transition: background var(--dur-1), color var(--dur-1);
 }
+.rte-btn:hover { background: var(--bg-soft); color: var(--fg); }
+.rte-btn.active { background: var(--brand-600); color: #fff; }
 
-.rte-btn:hover {
-  background: #e5e8ec;
+/* 动作类按钮（图片 / 链接 / 导入 Word）：带图标，视觉上与格式按钮区分 */
+.rte-actions { gap: var(--s-2); }
+.rte-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-700);
+  transition: background var(--dur-1), border-color var(--dur-1), color var(--dur-1);
 }
+.rte-action:hover:not(:disabled) { background: var(--bg); border-color: var(--brand-300); color: var(--brand-700); }
+.rte-action:disabled { opacity: .6; cursor: progress; }
+.rte-action svg { flex: none; }
 
-.rte-btn.active {
-  background: var(--brand, #e85d4a);
-  color: #fff;
-}
-
+/* —— 写作区 —— */
 .rte-content .tiptap {
-  min-height: 200px;
-  max-height: 500px;
-  overflow-y: auto;
-  padding: 16px;
+  min-height: var(--rte-min-height, 320px);
+  padding: var(--s-6) var(--s-7);
   outline: none;
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--text, #1a1b2e);
+  font-size: 16px;
+  line-height: 1.85;
+  color: var(--fg);
 }
-
-.rte-content .tiptap:focus {
-  outline: none;
-}
+.rte-content .tiptap:focus { outline: none; }
 
 .rte-content .tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
-  color: var(--text-muted, #9ca3af);
+  color: var(--faint);
   pointer-events: none;
   height: 0;
 }
 
-.rte-content .tiptap h1 { font-size: 1.6em; font-weight: 700; margin: 0.5em 0 0.3em; }
-.rte-content .tiptap h2 { font-size: 1.3em; font-weight: 600; margin: 0.5em 0 0.3em; }
-.rte-content .tiptap h3 { font-size: 1.1em; font-weight: 600; margin: 0.4em 0 0.2em; }
-.rte-content .tiptap blockquote {
-  border-left: 3px solid var(--brand, #e85d4a);
-  padding-left: 12px;
-  margin: 8px 0;
-  color: var(--text-sec, #6b7280);
-}
-.rte-content .tiptap code {
-  background: #f1f5f9;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.9em;
-  font-family: "SF Mono", "Fira Code", monospace;
-}
-.rte-content .tiptap pre {
-  background: #1e293b;
-  color: #e2e8f0;
-  padding: 16px;
-  border-radius: 8px;
-  overflow-x: auto;
-  margin: 12px 0;
-}
-.rte-content .tiptap pre code {
-  background: none;
-  color: inherit;
-  padding: 0;
-}
-.rte-content .tiptap ul,
-.rte-content .tiptap ol {
-  padding-left: 24px;
-  margin: 8px 0;
-}
-.rte-content .tiptap ul[data-type="taskList"] {
-  list-style: none;
-  padding-left: 0;
-}
-.rte-content .tiptap ul[data-type="taskList"] li {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 4px 0;
-}
-.rte-content .tiptap ul[data-type="taskList"] li label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+/* 标题 */
+.rte-content .tiptap h1 { font-size: 1.9em; font-weight: 700; line-height: 1.3; margin: .6em 0 .3em; }
+.rte-content .tiptap h2 { font-size: 1.5em; font-weight: 700; line-height: 1.3; margin: .6em 0 .3em; }
+.rte-content .tiptap h3 { font-size: 1.25em; font-weight: 700; line-height: 1.35; margin: .5em 0 .25em; }
+.rte-content .tiptap h4 { font-size: 1.1em;  font-weight: 700; margin: .5em 0 .25em; }
+.rte-content .tiptap h5 { font-size: 1em;    font-weight: 700; margin: .5em 0 .2em; }
+.rte-content .tiptap h6 { font-size: .9em;   font-weight: 700; color: var(--muted); margin: .5em 0 .2em; }
+.rte-content .tiptap :first-child { margin-top: 0; }
+
+.rte-content .tiptap a {
+  color: var(--brand-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--brand-200);
   cursor: pointer;
 }
-.rte-content .tiptap hr {
-  border: none;
-  border-top: 1px solid var(--border, #e5e8ec);
-  margin: 16px 0;
-}
-.rte-content .tiptap table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 12px 0;
-}
-.rte-content .tiptap table td,
-.rte-content .tiptap table th {
-  border: 1px solid var(--border, #e5e8ec);
-  padding: 8px 12px;
-  text-align: left;
-}
-.rte-content .tiptap table th {
-  background: #f9fafb;
-  font-weight: 600;
-}
-.rte-content .tiptap img {
-  max-width: 100%;
-  border-radius: 8px;
+
+.rte-content .tiptap blockquote {
+  border-left: 3px solid var(--brand-500);
+  padding: 2px var(--s-4);
+  margin: var(--s-4) 0;
+  color: var(--muted);
+  font-style: italic;
 }
 
-.rte-readonly .tiptap {
-  padding: 0;
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--text, #1a1b2e);
+.rte-content .tiptap code {
+  background: var(--bg-soft);
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  font-size: .88em;
+  font-family: var(--font-mono);
 }
-.rte-readonly .tiptap h1,
-.rte-readonly .tiptap h2,
-.rte-readonly .tiptap h3,
-.rte-readonly .tiptap blockquote,
-.rte-readonly .tiptap pre,
-.rte-readonly .tiptap ul,
-.rte-readonly .tiptap ol,
-.rte-readonly .tiptap table,
-.rte-readonly .tiptap img,
-.rte-readonly .tiptap code,
-.rte-readonly .tiptap hr {
-  /* same styles as editable */
+.rte-content .tiptap pre {
+  background: var(--ink-900);
+  color: #e2e8f0;
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  overflow-x: auto;
+  margin: var(--s-4) 0;
+  font-size: .9em;
 }
+.rte-content .tiptap pre code { background: none; color: inherit; padding: 0; }
+
+.rte-content .tiptap ul,
+.rte-content .tiptap ol { padding-left: 1.4em; margin: var(--s-3) 0; }
+.rte-content .tiptap ul { list-style: disc; }
+.rte-content .tiptap ol { list-style: decimal; }
+
+.rte-content .tiptap ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.rte-content .tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: var(--s-2); margin: 4px 0; }
+.rte-content .tiptap ul[data-type="taskList"] li > label { display: flex; align-items: center; cursor: pointer; }
+.rte-content .tiptap ul[data-type="taskList"] li > div { flex: 1; }
+.rte-content .tiptap ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--faint); text-decoration: line-through; }
+
+.rte-content .tiptap hr { border: none; border-top: 1px solid var(--line); margin: var(--s-5) 0; }
+
+.rte-content .tiptap table { border-collapse: collapse; width: 100%; margin: var(--s-4) 0; }
+.rte-content .tiptap table td,
+.rte-content .tiptap table th { border: 1px solid var(--line); padding: var(--s-2) var(--s-3); text-align: left; }
+.rte-content .tiptap table th { background: var(--bg-soft); font-weight: 600; }
+
+.rte-content .tiptap img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-md);
+  margin: var(--s-3) 0;
+}
+
+/* —— 错误提示 —— */
+.rte-err { padding: var(--s-2) var(--s-4) var(--s-3); font-size: 13px; color: var(--danger, #c0392b); }
+
+/* —— 隐藏文件输入 —— */
+.rte-file { display: none; }
+
+/* —— 只读渲染（NewsDetailPage 等不再用本组件；保留 ProposalForm 等可能的只读场景） —— */
+.rte-readonly .tiptap { padding: 0; font-size: 15px; line-height: 1.8; color: var(--fg); }

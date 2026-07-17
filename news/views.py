@@ -1,5 +1,9 @@
+import os
+import uuid
+
+from django.core.files.storage import default_storage
 from django.db.models import F
-from rest_framework import viewsets
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -12,6 +16,15 @@ from .serializers import NewsDetailSerializer, NewsListSerializer, NewsTagSerial
 
 # 公开（匿名可访问）的 action
 PUBLIC_ACTIONS = frozenset({"list", "retrieve", "featured", "hot", "tags"})
+
+# 正文内嵌图片上限（文章配图，比 2MB 头像略宽）
+_CONTENT_IMAGE_MAX_SIZE = 5 * 1024 * 1024
+_CONTENT_IMAGE_TYPES = ("image/jpeg", "image/png", "image/gif", "image/webp")
+
+
+def _content_image_path(filename):
+    ext = os.path.splitext(filename)[1]
+    return f"news_content_images/{uuid.uuid4().hex}{ext}"
 
 
 class NewsViewSet(viewsets.ModelViewSet):
@@ -41,6 +54,23 @@ class NewsViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
+
+    @action(detail=False, methods=["post"], url_path="upload_image")
+    def upload_image(self, request):
+        """正文内嵌图片上传（仅信息组）：返回 {url}。
+        供编辑器「插入图片」与 Word 导入时的内嵌图片共同使用。"""
+        file = request.FILES.get("image")
+        if not file:
+            return Response({"detail": "请选择图片。"}, status=status.HTTP_400_BAD_REQUEST)
+        if file.size > _CONTENT_IMAGE_MAX_SIZE:
+            return Response({"detail": "图片不能超过 5MB。"}, status=status.HTTP_400_BAD_REQUEST)
+        if file.content_type not in _CONTENT_IMAGE_TYPES:
+            return Response(
+                {"detail": "仅支持 JPG、PNG、GIF、WebP 格式。"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        path = default_storage.save(_content_image_path(file.name), file)
+        return Response({"url": request.build_absolute_uri(default_storage.url(path))})
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
