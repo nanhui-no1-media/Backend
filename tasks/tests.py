@@ -8,7 +8,7 @@ from .models import Task
 
 
 def make_president(user):
-    """把用户加入「社长」组，使其通过 is_president()。"""
+    """把用户加入「社长」组（默认组已被迁移授予 manage_tasks 等权限）。"""
     group, _ = Group.objects.get_or_create(name="社长")
     user.groups.add(group)
     return user
