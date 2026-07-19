@@ -18,7 +18,7 @@ const fmtDate = (d: string | null) => {
   return `${dt.getFullYear()}.${p(dt.getMonth() + 1)}.${p(dt.getDate())}`;
 };
 
-interface Me { is_info_group?: boolean }
+interface Me { can_manage_news?: boolean }
 
 export default function NewsListPage() {
   const navigate = useNavigate();
@@ -35,7 +35,7 @@ export default function NewsListPage() {
 
   // 公开页：匿名也可读，故 me() 失败静默（不弹登录）
   useEffect(() => {
-    api.me().then((d: any) => setMe({ is_info_group: d.user?.is_info_group })).catch(() => {});
+    api.me().then((d: any) => setMe({ can_manage_news: d.user?.permissions?.can_manage_news })).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -91,7 +91,7 @@ export default function NewsListPage() {
               <h1>新闻</h1>
               <p className="section-sub">社团公告、活动回顾、社员作品与通知。</p>
             </div>
-            {me?.is_info_group && (
+            {me?.can_manage_news && (
               <button className="btn btn-primary" onClick={() => navigate("/news/new")}>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
                 写新闻

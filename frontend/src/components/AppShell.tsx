@@ -8,8 +8,6 @@ interface AppShellUser {
   id: number;
   username: string;
   email: string;
-  is_president?: boolean;
-  is_info_group?: boolean;
 }
 interface AppShellProfile {
   nickname?: string;
