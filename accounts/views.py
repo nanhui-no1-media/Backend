@@ -13,8 +13,6 @@ from django.core.mail import send_mail
 
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .models import Profile
-from tasks.permissions import is_president
-from news.permissions import is_info_group
 
 
 def _json_body(request):
@@ -133,14 +131,26 @@ def _get_or_create_profile(user):
     return profile
 
 
+def _capabilities(user):
+    """前端能力契约：由 has_perm 派生的语义化布尔（解耦权限代号）。"""
+    return {
+        "can_manage_news": user.has_perm("news.add_news"),
+        "can_manage_tasks": user.has_perm("tasks.manage_tasks"),
+        "can_assign_task": user.has_perm("tasks.assign_task"),
+        "can_manage_tags": user.has_perm("tasks.manage_tags"),
+        "can_approve_proposals": user.has_perm("proposals.approve_proposal"),
+        "can_change_proposals": user.has_perm("proposals.change_proposal"),
+        "can_view_feedback": user.has_perm("proposals.view_feedback"),
+    }
+
+
 def _profile_response(user, profile):
     return {
         "user": {
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "is_president": is_president(user),
-            "is_info_group": is_info_group(user),
+            "permissions": _capabilities(user),
         },
         "profile": {
             "avatar": profile.avatar.url if profile.avatar else None,
