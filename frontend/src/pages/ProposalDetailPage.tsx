@@ -20,7 +20,9 @@ import "../styles/detail.css";
 
 interface CurrentUser {
   id: number;
-  is_president?: boolean;
+  can_approve_proposals?: boolean;
+  can_change_proposals?: boolean;
+  can_view_feedback?: boolean;
 }
 
 export default function ProposalDetailPage() {
@@ -46,7 +48,12 @@ export default function ProposalDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    api.me().then((d) => setCurrentUser({ id: d.user.id, is_president: d.user.is_president })).catch(() => {});
+    api.me().then((d) => setCurrentUser({
+      id: d.user.id,
+      can_approve_proposals: d.user.permissions?.can_approve_proposals,
+      can_change_proposals: d.user.permissions?.can_change_proposals,
+      can_view_feedback: d.user.permissions?.can_view_feedback
+    })).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -76,7 +83,9 @@ export default function ProposalDetailPage() {
     setProposal(p);
   };
 
-  const isPresident = !!currentUser?.is_president;
+  const canApproveProposals = !!currentUser?.can_approve_proposals;
+  const canChangeProposals = !!currentUser?.can_change_proposals;
+  const canViewFeedback = !!currentUser?.can_view_feedback;
   const isCreator = !!proposal && !!currentUser && proposal.creator?.id === currentUser.id;
   const isActivity = proposal?.proposal_type === "activity";
 
@@ -219,11 +228,11 @@ export default function ProposalDetailPage() {
     abstain: p.votes.filter((v) => v.vote_choice === "abstain").length,
   };
   const canVote = isActivity && p.status === "voting" && currentUser && p.my_vote === null;
-  const canApprove = isPresident && p.status === "pending_approval";
-  const canEdit = isActivity && p.status === "returned" && (isCreator || isPresident);
-  const canResubmit = isActivity && p.status === "returned" && (isCreator || isPresident);
+  const canApprove = canApproveProposals && p.status === "pending_approval";
+  const canEdit = isActivity && p.status === "returned" && (isCreator || canChangeProposals);
+  const canResubmit = isActivity && p.status === "returned" && (isCreator || canChangeProposals);
   const canWithdraw = isCreator && (p.status === "voting" || p.status === "pending_approval");
-  const canManageAttachment = isActivity && (isPresident || isCreator);
+  const canManageAttachment = isActivity && (canChangeProposals || isCreator);
 
   const pct = (n: number, total: number) => (total > 0 ? Math.round((n / total) * 100) : 0) + "%";
 
@@ -327,7 +336,7 @@ export default function ProposalDetailPage() {
               <>
                 <div className="meta-cell"><span className="meta-k">反馈类别</span><span className="meta-v">{FEEDBACK_CATEGORY_LABELS[p.feedback_category as keyof typeof FEEDBACK_CATEGORY_LABELS] || "-"}</span></div>
                 <div className="meta-cell"><span className="meta-k">提交人</span><span className="meta-v">匿名</span></div>
-                {!isActivity && p.contact && isPresident && (
+                {!isActivity && p.contact && canViewFeedback && (
                   <div className="meta-cell"><span className="meta-k">联系方式</span><span className="meta-v">{p.contact}</span></div>
                 )}
               </>

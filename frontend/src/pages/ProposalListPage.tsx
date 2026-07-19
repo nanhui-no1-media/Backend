@@ -20,7 +20,7 @@ import "../styles/list.css";
 interface CurrentUser {
   id: number;
   username: string;
-  is_president?: boolean;
+  can_view_feedback?: boolean;
 }
 
 export default function ProposalListPage() {
@@ -47,19 +47,19 @@ export default function ProposalListPage() {
 
   useEffect(() => {
     api.me()
-      .then((d) => setUser({ id: d.user.id, username: d.user.username, is_president: d.user.is_president }))
+      .then((d) => setUser({ id: d.user.id, username: d.user.username, can_view_feedback: d.user.permissions?.can_view_feedback }))
       .catch(() => setUser(null));
   }, []);
 
-  const isPresident = !!user?.is_president;
+  const canViewFeedback = !!user?.can_view_feedback;
   const isLoggedIn = !!user;
 
   // 非社长不可看反馈 tab，自动回到活动
   useEffect(() => {
-    if (isLoggedIn && !isPresident && typeFilter === "feedback") {
+    if (isLoggedIn && !canViewFeedback && typeFilter === "feedback") {
       setTypeFilter("activity");
     }
-  }, [isLoggedIn, isPresident, typeFilter]);
+  }, [isLoggedIn, canViewFeedback, typeFilter]);
 
   // 匿名用户默认展开反馈表单
   useEffect(() => {
@@ -102,7 +102,7 @@ export default function ProposalListPage() {
       setFbDesc("");
       setFbContact("");
       setFbCategory("suggestion");
-      if (isPresident && typeFilter === "feedback") setReloadKey((k) => k + 1);
+      if (canViewFeedback && typeFilter === "feedback") setReloadKey((k) => k + 1);
       setTimeout(() => setFbSuccess(false), 5000);
     } catch (err: any) {
       setError(err.status === 429
@@ -273,11 +273,11 @@ export default function ProposalListPage() {
             <div className="prop-tabs">
               <div className="seg" role="tablist" aria-label="申报类型">
                 <button className="seg-btn" type="button" aria-selected={typeFilter === "activity"} onClick={() => setTypeFilter("activity")}>活动申报</button>
-                {isPresident && (
+                {canViewFeedback && (
                   <button className="seg-btn" type="button" aria-selected={typeFilter === "feedback"} onClick={() => setTypeFilter("feedback")}>意见反馈</button>
                 )}
               </div>
-              {isPresident && (
+              {canViewFeedback && (
                 <span className="lock-note">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
                   意见反馈仅社长可见
