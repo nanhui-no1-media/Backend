@@ -26,13 +26,13 @@ export default function TaskDetailPage() {
   const [claimReason, setClaimReason] = useState("");
   const [claiming, setClaiming] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState<{ id: number; is_president?: boolean } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: number; can_manage_tasks?: boolean } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
 
   useEffect(() => {
-    api.me().then((d) => setCurrentUser({ id: d.user.id, is_president: d.user.is_president })).catch(() => {});
+    api.me().then((d) => setCurrentUser({ id: d.user.id, can_manage_tasks: d.user.permissions?.can_manage_tasks })).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -210,12 +210,12 @@ export default function TaskDetailPage() {
   };
 
   const isCreator = task && currentUser && task.creator.id === currentUser.id;
-  const isPresident = !!currentUser?.is_president;
+  const canManageTasks = !!currentUser?.can_manage_tasks;
   const isAssignee = task && currentUser && task.assignee?.id === currentUser.id;
   const canClaim = task && !task.assignee && currentUser && task.creator.id !== currentUser.id && task.status === "pending";
-  const canComplete = task && task.status === "in_progress" && (!!isAssignee || isPresident);
-  const canReviewCompletion = task && task.status === "reviewing" && (!!isCreator || isPresident);
-  const canCancel = task && task.status !== "completed" && task.status !== "cancelled" && (!!isCreator || isPresident);
+  const canComplete = task && task.status === "in_progress" && (!!isAssignee || canManageTasks);
+  const canReviewCompletion = task && task.status === "reviewing" && (!!isCreator || canManageTasks);
+  const canCancel = task && task.status !== "completed" && task.status !== "cancelled" && (!!isCreator || canManageTasks);
   const pendingClaims = task?.claim_requests.filter((c) => c.status === "pending") || [];
 
   if (loading) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中...</p></div></AppShell>;
@@ -342,7 +342,7 @@ export default function TaskDetailPage() {
           </div>
         )}
 
-        {(!!isCreator || isPresident) && pendingClaims.length > 0 && (
+        {(!!isCreator || canManageTasks) && pendingClaims.length > 0 && (
           <div className="card card-pad detail-section">
             <h3 className="section-h">认领请求 ({pendingClaims.length})</h3>
             <div className="claim-list">
