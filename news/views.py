@@ -5,13 +5,12 @@ from django.core.files.storage import default_storage
 from django.db.models import F
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import DjangoModelPermissionsOrAnonReadOnly
 from rest_framework.response import Response
 
 from tasks.models import Tag
 
 from .models import News
-from .permissions import CanManageNews
 from .serializers import NewsDetailSerializer, NewsListSerializer, NewsTagSerializer
 
 # 公开（匿名可访问）的 action
@@ -28,7 +27,7 @@ def _content_image_path(filename):
 
 
 class NewsViewSet(viewsets.ModelViewSet):
-    """新闻：公开读（已发布），「信息组」/ 超管可写。"""
+    """新闻：公开读（已发布），有 news 写权限者（信息组）可写。"""
 
     filterset_fields = ["category", "featured", "is_published"]
     search_fields = ["title", "summary", "content"]
@@ -48,9 +47,9 @@ class NewsViewSet(viewsets.ModelViewSet):
         return NewsDetailSerializer
 
     def get_permissions(self):
-        if self.action in PUBLIC_ACTIONS:
-            return [AllowAny()]
-        return [IsAuthenticated(), CanManageNews()]
+        # 公开读（GET：list/retrieve/featured/hot/tags）匿名可读；
+        # 写（POST/PUT/PATCH/DELETE：create/update/destroy/upload_image）按 news 模型权限校验。
+        return [DjangoModelPermissionsOrAnonReadOnly()]
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
