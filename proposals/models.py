@@ -81,6 +81,10 @@ class Proposal(models.Model):
         verbose_name = "申报"
         verbose_name_plural = "申报"
         ordering = ["-created_at"]
+        permissions = [
+            ("approve_proposal", "可审批申报"),
+            ("view_feedback", "可查看意见反馈/举报"),
+        ]
 
     def __str__(self):
         return f"{self.get_proposal_type_display()}: {self.title}"

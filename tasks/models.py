@@ -19,6 +19,9 @@ class Tag(models.Model):
         verbose_name = "标签"
         verbose_name_plural = "标签"
         ordering = ["name"]
+        permissions = [
+            ("manage_tags", "可管理标签"),
+        ]
 
     def __str__(self):
         return self.name
@@ -71,6 +74,10 @@ class Task(models.Model):
         verbose_name = "任务"
         verbose_name_plural = "任务"
         ordering = ["-created_at"]
+        permissions = [
+            ("manage_tasks", "可管理/审批任意任务"),
+            ("assign_task", "可直接指派任务"),
+        ]
 
     def __str__(self):
         return self.title
