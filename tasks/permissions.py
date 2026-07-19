@@ -1,12 +1,4 @@
-from django.contrib.auth.models import User
 from rest_framework import permissions
-
-PRESIDENT_GROUP = "社长"
-
-
-def is_president(user: User) -> bool:
-    """[过渡] 等价 has_perm('tasks.manage_tasks')；Task 9 删除。"""
-    return bool(user and user.is_authenticated and user.has_perm("tasks.manage_tasks"))
 
 
 class CanCreateTask(permissions.BasePermission):
