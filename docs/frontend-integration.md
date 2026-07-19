@@ -106,7 +106,15 @@ fetch("/auth/profile/update/", {
     "id": 1,
     "username": "admin",
     "email": "admin@example.com",
-    "is_president": true
+    "permissions": {
+      "can_manage_news": false,
+      "can_manage_tasks": true,
+      "can_assign_task": true,
+      "can_manage_tags": true,
+      "can_approve_proposals": true,
+      "can_change_proposals": true,
+      "can_view_feedback": true
+    }
   },
   "profile": {
     "avatar": "/media/avatars/photo.jpg",
@@ -118,7 +126,7 @@ fetch("/auth/profile/update/", {
 }
 ```
 
-其中 `avatar`、`birthday` 等可选字段未设置时为 `null`，`gender` 取值为 `"M"`（男）、`"F"`（女）、`"O"`（其他）或空字符串。`user.is_president` 为布尔值，表示当前用户是否属于「社长」组（见「任务系统 · 权限模型」）。
+其中 `avatar`、`birthday` 等可选字段未设置时为 `null`，`gender` 取值为 `"M"`（男）、`"F"`（女）、`"O"`（其他）或空字符串。`user.permissions` 为能力字典（7 项语义化布尔，由后端 `user.has_perm(...)` 派生）：`can_manage_news` / `can_manage_tasks` / `can_assign_task` / `can_manage_tags` / `can_approve_proposals` / `can_change_proposals` / `can_view_feedback`。前端据此门禁 UI（写新闻、任务流转、申报审批/编辑、查看反馈等），实际操作仍由后端按权限校验（见「任务系统 · 权限模型」）。
 
 ### 列表查询（分页 / 过滤 / 搜索 / 排序）
 
@@ -311,17 +319,16 @@ const initial = displayName.charAt(0).toUpperCase();
 
 ### 权限模型
 
-- **社长**：用户组「社长」成员，拥有任务系统全部管理权限（指派、审批、编辑标签、删任意附件等）。
 - **任意登录用户**：查看所有任务、创建任务、申请认领、在自己参与的会话中发消息。
-- **任务编辑/删除**：仅当 `pending`，且为创建人或社长。
-- **认领审批 / 验收 / 取消**：创建人或社长。
-- **直接指派 `assign`**：仅社长。
-- **附件上传**：`in_progress` 前仅创建者；`in_progress` 期间创建者/负责人/协作者；社长始终。
-- **附件删除**：上传者、创建人或社长。
-- **标签写**：仅社长（读：任意登录用户）。
+- **任务编辑/删除**：仅当 `pending`，且为创建人或持 `tasks.manage_tasks`。
+- **认领审批 / 验收 / 取消**：创建人或持 `tasks.manage_tasks`。
+- **直接指派 `assign`**：持 `tasks.assign_task`。
+- **附件上传**：`in_progress` 前仅创建者；`in_progress` 期间创建者/负责人/协作者；持 `tasks.manage_tasks` 始终。
+- **附件删除**：上传者、创建人或持 `tasks.manage_tasks`。
+- **标签写**：持 `tasks.manage_tags`（读：任意登录用户）。
 - **消息**：仅会话参与者。
 
-> `/auth/me/` 返回 `user.is_president`（布尔），前端可据此预判当前用户是否为社长、显示对应操作 UI（审批 / 验收 / 取消等）。实际操作仍由后端校验、失败返回 403，前端应同时兜底。注意：该字段只在当前用户接口出现，任务 / 消息里引用的**其他**用户（`SimpleUserSerializer`）不含此字段。
+> 角色已由「组名硬编码」改为 Django Permission：**信息组**（默认组）承载 `news` 增删改；**社长**（默认组）承载 `tasks.manage_tasks / assign_task / manage_tags` 与 `proposals.approve_proposal / view_feedback / change_proposal`。`/auth/me/` 返回 `user.permissions`（能力字典），前端据此预判当前用户可执行的操作、显示对应 UI（审批 / 验收 / 取消等）。实际操作仍由后端按 `has_perm` 校验、失败返回 403，前端应同时兜底。注意：能力字典只在当前用户接口出现，任务 / 消息里引用的**其他**用户（`SimpleUserSerializer`）不含此字段。可在 Django admin 用「组管理」调整权限束。
 
 ### 标签接口 `/tasks/tags/`
 

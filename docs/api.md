@@ -56,7 +56,15 @@ GET /auth/me/
     "id": 1,
     "username": "admin",
     "email": "admin@example.com",
-    "is_president": true
+    "permissions": {
+      "can_manage_news": false,
+      "can_manage_tasks": true,
+      "can_assign_task": true,
+      "can_manage_tags": true,
+      "can_approve_proposals": true,
+      "can_change_proposals": true,
+      "can_view_feedback": true
+    }
   },
   "profile": {
     "avatar": "/media/avatars/photo.jpg",
@@ -123,7 +131,15 @@ GET /auth/profile/
     "id": 1,
     "username": "admin",
     "email": "admin@example.com",
-    "is_president": true
+    "permissions": {
+      "can_manage_news": false,
+      "can_manage_tasks": true,
+      "can_assign_task": true,
+      "can_manage_tags": true,
+      "can_approve_proposals": true,
+      "can_change_proposals": true,
+      "can_view_feedback": true
+    }
   },
   "profile": {
     "avatar": "/media/avatars/photo.jpg",
