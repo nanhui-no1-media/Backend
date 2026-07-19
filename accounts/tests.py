@@ -121,19 +121,31 @@ class MeViewTest(TestCase):
         response = self.client.get("/auth/me/")
         self.assertEqual(response.status_code, 302)
 
-    def test_me_is_president_false_for_normal_user(self):
+    def test_me_permissions_all_false_for_normal_user(self):
         self.client.login(username="testuser", password="secret123")
-        data = self.client.get("/auth/me/").json()
-        self.assertIn("is_president", data["user"])
-        self.assertIs(data["user"]["is_president"], False)
+        perms = self.client.get("/auth/me/").json()["user"]["permissions"]
+        self.assertFalse(any(perms.values()))
 
-    def test_me_is_president_true_for_president(self):
+    def test_me_permissions_for_info_group(self):
+        from django.contrib.auth.models import Group
+        grp, _ = Group.objects.get_or_create(name="信息组")
+        self.user.groups.add(grp)
+        self.client.login(username="testuser", password="secret123")
+        perms = self.client.get("/auth/me/").json()["user"]["permissions"]
+        self.assertTrue(perms["can_manage_news"])
+        self.assertFalse(perms["can_manage_tasks"])
+
+    def test_me_permissions_for_president(self):
         from django.contrib.auth.models import Group
         grp, _ = Group.objects.get_or_create(name="社长")
         self.user.groups.add(grp)
         self.client.login(username="testuser", password="secret123")
-        data = self.client.get("/auth/me/").json()
-        self.assertIs(data["user"]["is_president"], True)
+        perms = self.client.get("/auth/me/").json()["user"]["permissions"]
+        self.assertTrue(perms["can_manage_tasks"])
+        self.assertTrue(perms["can_approve_proposals"])
+        self.assertTrue(perms["can_change_proposals"])
+        self.assertTrue(perms["can_view_feedback"])
+        self.assertFalse(perms["can_manage_news"])
 
 
 class PasswordResetViewTest(TestCase):
