@@ -9,8 +9,6 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import serializers as drf_serializers
 
-from tasks.permissions import is_president
-
 from .models import Proposal, ProposalAttachment, Vote
 from .notifications import notify_proposal_event
 from .permissions import (
@@ -104,8 +102,8 @@ class ProposalViewSet(viewsets.ModelViewSet):
         transition_overdue_proposals()
         qs = super().get_queryset()
         user = self.request.user
-        # 反馈/举报仅社长可见；其余成员只看得到活动申报
-        if not user.is_authenticated or not is_president(user):
+        # 反馈/举报仅有 view_feedback 权限者可见；其余成员只看得到活动申报
+        if not user.is_authenticated or not user.has_perm("proposals.view_feedback"):
             qs = qs.filter(proposal_type="activity")
         return qs
 
@@ -310,7 +308,7 @@ class ProposalViewSet(viewsets.ModelViewSet):
             return Response({"detail": "附件不存在"}, status=status.HTTP_404_NOT_FOUND)
         can_delete = (
             attachment.uploaded_by == request.user
-            or is_president(request.user)
+            or request.user.has_perm("proposals.change_proposal")
             or proposal.creator == request.user
         )
         if not can_delete:
