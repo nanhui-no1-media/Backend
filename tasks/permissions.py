@@ -5,7 +5,8 @@ PRESIDENT_GROUP = "社长"
 
 
 def is_president(user: User) -> bool:
-    return user.groups.filter(name=PRESIDENT_GROUP).exists()
+    # 角色→权限：社长默认组被授予 tasks.manage_tasks；直接授予该权限亦生效。
+    return bool(user and user.is_authenticated and user.has_perm("tasks.manage_tasks"))
 
 
 class CanCreateTask(permissions.BasePermission):
