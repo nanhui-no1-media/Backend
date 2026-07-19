@@ -6,8 +6,6 @@
 """
 from django.contrib.auth.models import User
 
-from tasks.permissions import PRESIDENT_GROUP
-
 EVENT_TEXT = {
     "created_activity": "📌 新活动申报「{title}」已发起投票，请大家在 3 天内投票。",
     "created_feedback": "📌 新意见反馈「{title}」已提交，请社长审批。",
@@ -20,8 +18,13 @@ EVENT_TEXT = {
 }
 
 
-def _presidents():
-    return list(User.objects.filter(groups__name=PRESIDENT_GROUP, is_active=True))
+def _proposal_approvers():
+    """所有「持有 approve_proposal 权限」的活跃用户（含非社长组直接授权者）。"""
+    return list(User.objects.filter(
+        is_active=True,
+        groups__permissions__codename="approve_proposal",
+        groups__permissions__content_type__app_label="proposals",
+    ).distinct())
 
 
 def _ensure_conversation(proposal):
@@ -33,7 +36,7 @@ def _ensure_conversation(proposal):
         proposal=proposal,
     )
     participant_ids = {proposal.creator_id}
-    for p in _presidents():
+    for p in _proposal_approvers():
         participant_ids.add(p.pk)
     conversation.participants.set(participant_ids)
     return conversation
