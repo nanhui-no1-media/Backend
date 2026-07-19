@@ -60,7 +60,7 @@ export default function NewsFormPage() {
   // 载入：先尝试恢复本地草稿（新建模式），再异步拉取编辑目标
   useEffect(() => {
     api.me()
-      .then((d: any) => setAllowed(!!d.user?.is_info_group))
+      .then((d: any) => setAllowed(!!d.user?.permissions?.can_manage_news))
       .catch(() => setAllowed(false));
     taskApi.listTags().then((t: any) => setTags(t.results || t)).catch(() => {});
 
