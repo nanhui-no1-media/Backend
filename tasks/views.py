@@ -17,7 +17,6 @@ from .permissions import (
     CanModifyTask,
     CanUploadAttachment,
     CanViewTask,
-    is_president,
 )
 from .serializers import (
     AttachmentSerializer,
@@ -104,7 +103,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     def approve_claim(self, request, pk=None):
         """批准认领请求"""
         task = self.get_object()
-        if task.creator != request.user and not is_president(request.user):
+        if task.creator != request.user and not request.user.has_perm("tasks.manage_tasks"):
             return Response({"detail": "只有创建者或社长可以审批"}, status=status.HTTP_403_FORBIDDEN)
         claim_id = request.data.get("claim_id")
         if not claim_id:
@@ -128,7 +127,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     def reject_claim(self, request, pk=None):
         """拒绝认领请求"""
         task = self.get_object()
-        if task.creator != request.user and not is_president(request.user):
+        if task.creator != request.user and not request.user.has_perm("tasks.manage_tasks"):
             return Response({"detail": "只有创建者或社长可以审批"}, status=status.HTTP_403_FORBIDDEN)
         claim_id = request.data.get("claim_id")
         if not claim_id:
@@ -154,7 +153,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         task = self.get_object()
         if task.status != "in_progress":
             return Response({"detail": "只有进行中的任务可以提交验收"}, status=status.HTTP_400_BAD_REQUEST)
-        if task.assignee != request.user and not is_president(request.user):
+        if task.assignee != request.user and not request.user.has_perm("tasks.manage_tasks"):
             return Response({"detail": "只有负责人或社长可以提交验收"}, status=status.HTTP_403_FORBIDDEN)
         task.status = "reviewing"
         task.reject_reason = ""
@@ -165,7 +164,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     def approve_completion(self, request, pk=None):
         """通过验收：发起人/社长确认，任务完成"""
         task = self.get_object()
-        if task.creator != request.user and not is_president(request.user):
+        if task.creator != request.user and not request.user.has_perm("tasks.manage_tasks"):
             return Response({"detail": "只有创建者或社长可以审批"}, status=status.HTTP_403_FORBIDDEN)
         if task.status != "reviewing":
             return Response({"detail": "只有待验收的任务可以审批"}, status=status.HTTP_400_BAD_REQUEST)
@@ -178,7 +177,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     def reject_completion(self, request, pk=None):
         """打回：发起人/社长打回待验收任务，返回进行中（assignee 不变，记录打回理由）"""
         task = self.get_object()
-        if task.creator != request.user and not is_president(request.user):
+        if task.creator != request.user and not request.user.has_perm("tasks.manage_tasks"):
             return Response({"detail": "只有创建者或社长可以审批"}, status=status.HTTP_403_FORBIDDEN)
         if task.status != "reviewing":
             return Response({"detail": "只有待验收的任务可以打回"}, status=status.HTTP_400_BAD_REQUEST)
@@ -196,7 +195,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         task = self.get_object()
         if task.status == "completed":
             return Response({"detail": "已完成的任务不能取消"}, status=status.HTTP_400_BAD_REQUEST)
-        if task.creator != request.user and not is_president(request.user):
+        if task.creator != request.user and not request.user.has_perm("tasks.manage_tasks"):
             return Response({"detail": "只有创建者或社长可以取消"}, status=status.HTTP_403_FORBIDDEN)
         task.status = "cancelled"
         task.save(update_fields=["status", "updated_at"])
@@ -270,7 +269,7 @@ class TaskViewSet(viewsets.ModelViewSet):
 
         can_delete = (
             attachment.uploaded_by == request.user
-            or is_president(request.user)
+            or request.user.has_perm("tasks.manage_tasks")
             or task.creator == request.user
         )
         if not can_delete:
