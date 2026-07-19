@@ -7,9 +7,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from tasks.models import Task
-from tasks.permissions import is_president
 
 from proposals.models import Proposal
+from proposals.notifications import proposal_approvers
 
 from .models import Conversation, Message, MessageReadStatus
 from .permissions import IsConversationParticipant
@@ -123,7 +123,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
         # 检查用户是否有权限查看此任务
         user = request.user
-        if not is_president(user):
+        if not user.has_perm("tasks.manage_tasks"):
             if task.creator != user and task.assignee != user and not task.collaborators.filter(pk=user.pk).exists():
                 return Response({"detail": "无权访问此任务"}, status=status.HTTP_403_FORBIDDEN)
 
@@ -138,7 +138,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
             participant_ids.add(task.assignee_id)
         for cid in task.collaborators.values_list("id", flat=True):
             participant_ids.add(cid)
-        if is_president(user):
+        if user.has_perm("tasks.manage_tasks"):
             participant_ids.add(user.pk)
         # 请求者也需要加入
         participant_ids.add(user.pk)
@@ -158,9 +158,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
             return Response({"detail": "申报不存在"}, status=status.HTTP_404_NOT_FOUND)
 
         user = request.user
-        # 反馈/举报仅社长可见；活动申报对所有登录用户开放
+        # 反馈/举报仅有 view_feedback 权限者可见；活动申报对所有登录用户开放
         if proposal.proposal_type == "feedback":
-            if not is_president(user):
+            if not user.has_perm("proposals.view_feedback"):
                 return Response({"detail": "无权访问"}, status=status.HTTP_403_FORBIDDEN)
         if not user.is_authenticated:
             return Response({"detail": "请先登录"}, status=status.HTTP_401_UNAUTHORIZED)
@@ -169,13 +169,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
             conversation_type="proposal",
             proposal=proposal,
         )
-        # 参与者：创建人 + 全体社长 + 当前请求者
+        # 参与者：创建人 + 全体 approve_proposal 持有者 + 当前请求者
         participant_ids = set()
         if proposal.creator_id is not None:
             participant_ids.add(proposal.creator_id)
-        participant_ids.update(
-            User.objects.filter(groups__name="社长", is_active=True).values_list("id", flat=True)
-        )
+        participant_ids.update(p.pk for p in proposal_approvers())
         participant_ids.add(user.pk)
         conversation.participants.set(participant_ids)
         return Response(ConversationSerializer(conversation, context={"request": request}).data)

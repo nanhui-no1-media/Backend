@@ -18,7 +18,7 @@ EVENT_TEXT = {
 }
 
 
-def _proposal_approvers():
+def proposal_approvers():
     """所有「持有 approve_proposal 权限」的活跃用户（含非社长组直接授权者）。"""
     return list(User.objects.filter(
         is_active=True,
@@ -36,7 +36,7 @@ def _ensure_conversation(proposal):
         proposal=proposal,
     )
     participant_ids = {proposal.creator_id}
-    for p in _proposal_approvers():
+    for p in proposal_approvers():
         participant_ids.add(p.pk)
     conversation.participants.set(participant_ids)
     return conversation
