@@ -36,7 +36,7 @@ class News(models.Model):
     )
 
     featured = models.BooleanField("头条", default=False)
-    views = models.PositiveIntegerField("阅读量", default=0)
+    views = models.PositiveIntegerField("阅读人数", default=0)
     is_published = models.BooleanField("已发布", default=True)
     published_at = models.DateTimeField("发布时间", null=True, blank=True)
 
@@ -50,3 +50,27 @@ class News(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class NewsView(models.Model):
+    """单条新闻的去重阅读记录。
+
+    reader_key 统一登录 / 匿名两种情况：登录用户 = ``"user:{pk}"``，
+    匿名 = ``"ip:{sha256(REMOTE_ADDR)}"``（存 hash 不存明文 IP）。
+    ``News.views`` 是去重后的累计读者数缓存。
+    """
+
+    news = models.ForeignKey(
+        News, on_delete=models.CASCADE, related_name="view_records",
+        verbose_name="新闻",
+    )
+    reader_key = models.CharField("读者标识", max_length=80)
+    viewed_at = models.DateTimeField("阅读时间", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "阅读记录"
+        verbose_name_plural = "阅读记录"
+        unique_together = ["news", "reader_key"]
+
+    def __str__(self):
+        return f"{self.news_id}:{self.reader_key}"
