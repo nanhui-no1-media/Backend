@@ -12,7 +12,8 @@
 /* —— 工具栏（黏性） —— */
 .rte-toolbar {
   position: sticky;
-  top: var(--nav-h);
+  /* 与顶栏留出呼吸距离，避免滚动黏住时工具栏与站点顶栏零间距贴死 */
+  top: calc(var(--nav-h) + var(--s-3));
   z-index: 40; /* 低于 topnav(100)，让顶栏始终覆盖在工具栏之上 */
   display: flex;
   align-items: center;
