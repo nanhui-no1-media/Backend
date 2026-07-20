@@ -1,8 +1,15 @@
-from django.contrib.auth.models import Group, User
-from django.test import TestCase
+from datetime import timedelta
+
+from django.contrib.auth.models import AnonymousUser, Group, User
+from django.test import TestCase, RequestFactory
+from django.utils import timezone
 from rest_framework.test import APIClient
 
+from proposals.models import Proposal
+from tasks.models import Task
+
 from .models import News
+from .feed import build_feed
 
 
 def _info(user):
@@ -108,3 +115,120 @@ class NewsOverviewTest(TestCase):
         User.objects.create_user(username="ghost", password="x", is_active=False)
         resp = self.client.get("/news/news/overview/")
         self.assertEqual(resp.data["members"], 2)
+
+
+class FeedTest(TestCase):
+    """build_feed：可见性 / 排序 / 打散 / 公开投影 / limit / 空态。"""
+
+    def setUp(self):
+        self.rf = RequestFactory()
+        self.author = _info(User.objects.create_user(username="info", password="x"))
+        self.member = User.objects.create_user(username="member", password="x")
+        self.anon = self.rf.get("/news/news/feed/")
+        self.anon.user = AnonymousUser()
+        self.authed = self.rf.get("/news/news/feed/")
+        self.authed.user = self.member
+
+    # ---- fixtures ----
+    @staticmethod
+    def _ts(days_ago):
+        return timezone.now() - timedelta(days=days_ago)
+
+    def _news(self, title, days_ago=0, **kw):
+        kw.setdefault("author", self.author)
+        kw.setdefault("is_published", True)
+        kw["published_at"] = self._ts(days_ago)
+        return News.objects.create(title=title, **kw)
+
+    def _activity(self, title, days_ago=0, **kw):
+        kw.setdefault("proposal_type", "activity")
+        kw.setdefault("status", "approved")
+        kw.setdefault("activity_type", "training")
+        p = Proposal.objects.create(title=title, **kw)
+        Proposal.objects.filter(pk=p.pk).update(approved_at=self._ts(days_ago))  # auto_now/add 之外的字段
+        return p
+
+    def _task(self, title, days_ago=0, **kw):
+        kw.setdefault("creator", self.member)
+        kw.setdefault("status", "in_progress")
+        t = Task.objects.create(title=title, **kw)
+        Task.objects.filter(pk=t.pk).update(updated_at=self._ts(days_ago))  # auto_now 字段需 .update 绕过
+        return t
+
+    @staticmethod
+    def _types(items):
+        return [i["type"] for i in items]
+
+    # ---- cases ----
+    def test_featured_excluded_from_items(self):
+        feat = self._news("feat", days_ago=1, featured=True)
+        other = self._news("other", days_ago=0)
+        data = build_feed(request=self.anon)
+        self.assertEqual(data["featured"]["id"], feat.pk)
+        ids = [i["id"] for i in data["items"]]
+        self.assertIn(other.pk, ids)
+        self.assertNotIn(feat.pk, ids)
+
+    def test_anon_has_news_but_no_tasks(self):
+        self._news("n1", days_ago=1)
+        self._news("n2", days_ago=0)
+        self._task("t", days_ago=0)
+        data = build_feed(request=self.anon)
+        self.assertNotIn("task", self._types(data["items"]))
+        self.assertIn("news", self._types(data["items"]))
+
+    def test_authed_includes_tasks(self):
+        self._news("n1", days_ago=1)
+        self._news("n2", days_ago=0)
+        self._task("t", days_ago=0)
+        data = build_feed(request=self.authed)
+        self.assertIn("task", self._types(data["items"]))
+
+    def test_ordering_desc_by_timestamp(self):
+        self._news("feat", days_ago=10, featured=True)  # 头条，不参与 items
+        self._news("old", days_ago=3)
+        self._news("mid", days_ago=2)
+        self._news("new", days_ago=1)
+        data = build_feed(request=self.anon)
+        self.assertEqual([i["title"] for i in data["items"]], ["new", "mid", "old"])
+
+    def test_diversify_breaks_three_in_a_row(self):
+        self._news("feat", days_ago=10, featured=True)  # 头条锚点，不参与 items（否则最热新闻会被选走，打散无从验证）
+        self._activity("act", days_ago=4)                # 最旧
+        self._news("old", days_ago=3)
+        self._news("mid", days_ago=2)
+        self._news("new", days_ago=1)                    # 排序后 [new,mid,old,act] → 连续 3 新闻需打散
+        types = self._types(build_feed(request=self.anon)["items"])
+        windows = [types[i:i + 3] for i in range(len(types) - 2)]
+        self.assertNotIn(["news", "news", "news"], windows)
+        self.assertEqual(set(types), {"news", "activity"})
+
+    def test_activity_projection_excludes_internal_fields(self):
+        self._activity("act", days_ago=0, budget="1234.56", contact="secret", reject_reason="nope")
+        act = next(i for i in build_feed(request=self.anon)["items"] if i["type"] == "activity")
+        for forbidden in ("budget", "vote_summary", "reject_reason", "contact", "creator", "description"):
+            self.assertNotIn(forbidden, act)
+        self.assertEqual(act["activity_type"], "training")
+        self.assertIn("phase", act)
+
+    def test_limit_truncates(self):
+        for i in range(10):
+            self._news(f"n{i}", days_ago=i)
+        data = build_feed(request=self.anon, limit=4)
+        self.assertLessEqual(len(data["items"]), 4)
+
+    def test_empty_when_no_content(self):
+        data = build_feed(request=self.anon)
+        self.assertIsNone(data["featured"])
+        self.assertEqual(data["items"], [])
+
+    def test_activity_phase_derived_from_planned_date(self):
+        today = timezone.localdate()
+        up = self._activity("up"); Proposal.objects.filter(pk=up.pk).update(planned_date=today + timedelta(days=2))
+        og = self._activity("og"); Proposal.objects.filter(pk=og.pk).update(planned_date=today)
+        ed = self._activity("ed"); Proposal.objects.filter(pk=ed.pk).update(planned_date=today - timedelta(days=2))
+        by_title = {i["title"]: i["phase"]
+                    for i in build_feed(request=self.anon)["items"] if i["type"] == "activity"}
+        self.assertEqual(by_title["up"], "upcoming")
+        self.assertEqual(by_title["og"], "ongoing")
+        self.assertEqual(by_title["ed"], "ended")
