@@ -2,6 +2,7 @@ import hashlib
 import os
 import uuid
 
+from django.contrib.auth.models import User
 from django.core.files.storage import default_storage
 from django.db.models import F
 from rest_framework import status, viewsets
@@ -16,7 +17,7 @@ from .models import News, NewsView
 from .serializers import NewsDetailSerializer, NewsListSerializer, NewsTagSerializer
 
 # 公开（匿名可访问）的 action
-PUBLIC_ACTIONS = frozenset({"list", "retrieve", "featured", "hot", "tags"})
+PUBLIC_ACTIONS = frozenset({"list", "retrieve", "featured", "hot", "tags", "overview"})
 
 # 正文内嵌图片上限（文章配图，比 2MB 头像略宽）
 _CONTENT_IMAGE_MAX_SIZE = 5 * 1024 * 1024
@@ -36,14 +37,14 @@ class NewsViewSet(viewsets.ModelViewSet):
     ordering_fields = ["published_at", "views", "created_at"]
     ordering = ["-published_at"]
 
-    def get_queryset(self):
+    def get_queryset(self): # pyright: ignore[reportIncompatibleMethodOverride]
         qs = News.objects.select_related("author", "author__profile").prefetch_related("tags")
         # 公开读只返回已发布；写操作（信息组）可见全部
         if self.action in PUBLIC_ACTIONS:
             qs = qs.filter(is_published=True)
         return qs
 
-    def get_serializer_class(self):
+    def get_serializer_class(self): # type: ignore
         if self.action == "list":
             return NewsListSerializer
         return NewsDetailSerializer
@@ -110,3 +111,11 @@ class NewsViewSet(viewsets.ModelViewSet):
         """标签云：仅返回被新闻引用过的标签，附新闻数。"""
         qs = Tag.objects.filter(news__isnull=False).distinct()
         return Response(NewsTagSerializer(qs, many=True, context={"request": request}).data)
+
+    @action(detail=False, methods=["get"])
+    def overview(self, request):
+        """社团概览：成员=活跃用户数，作品=已发布新闻数。匿名可读。"""
+        return Response({
+            "members": User.objects.filter(is_active=True).count(),
+            "works": News.objects.filter(is_published=True).count(),
+        })

@@ -84,3 +84,27 @@ class NewsReaderCountTest(TestCase):
         resp = self.client.get("/news/news/featured/")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["id"], high.id)
+
+
+class NewsOverviewTest(TestCase):
+    """社团概览：成员=活跃用户数，作品=已发布新闻数；匿名可读。"""
+
+    def setUp(self):
+        self.author = _info(User.objects.create_user(username="info", password="x"))
+        self.normal = User.objects.create_user(username="normal", password="x")
+        News.objects.create(title="published", author=self.author, is_published=True)
+        News.objects.create(title="draft", author=self.author, is_published=False)
+        self.client = APIClient()
+
+    def test_anon_overview_counts(self):
+        """匿名可读；成员=活跃用户数，作品=已发布新闻数（草稿不计）。"""
+        resp = self.client.get("/news/news/overview/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["members"], 2)  # author + normal，均活跃
+        self.assertEqual(resp.data["works"], 1)    # 仅 1 条已发布
+
+    def test_inactive_users_not_counted(self):
+        """停用账号不计入成员数。"""
+        User.objects.create_user(username="ghost", password="x", is_active=False)
+        resp = self.client.get("/news/news/overview/")
+        self.assertEqual(resp.data["members"], 2)
