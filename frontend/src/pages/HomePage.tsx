@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { newsApi } from "../api/news";
 import AppShell from "../components/AppShell";
+import ClubFeed from "../components/ClubFeed";
 import { useLoginModal } from "../components/LoginModalProvider";
 import "../styles/home.css";
 
@@ -11,30 +12,6 @@ interface User {
   username: string;
 }
 
-interface Activity {
-  id: number;
-  title: string;
-  date: string;
-  category: string;
-  status: "进行中" | "已结束" | "即将开始";
-  emoji: string;
-}
-
-// 社团动态（mock 占位，真实数据接入记为后续债）
-const ACTIVITIES: Activity[] = [
-  { id: 1, title: "2024 年度校园摄影大赛作品征集", date: "2024.03.15", category: "比赛", status: "进行中", emoji: "📷" },
-  { id: 2, title: "短视频制作技能培训课程", date: "2024.03.10", category: "培训", status: "已结束", emoji: "🎬" },
-  { id: 3, title: "校园文化节宣传片拍摄", date: "2024.03.08", category: "项目", status: "进行中", emoji: "🎥" },
-  { id: 4, title: "社团新学期成员见面会", date: "2024.03.01", category: "活动", status: "已结束", emoji: "🎉" },
-  { id: 5, title: "Adobe 设计软件入门讲座", date: "2024.02.25", category: "培训", status: "已结束", emoji: "🎨" },
-  { id: 6, title: "新媒体运营实战分享会", date: "2024.02.10", category: "分享", status: "已结束", emoji: "💡" },
-];
-
-const STATUS_BADGE: Record<Activity["status"], string> = {
-  "进行中": "badge-success",
-  "即将开始": "badge-warning",
-  "已结束": "badge-neutral",
-};
 
 const EqBars = () => (
   <span className="eq" aria-hidden="true"><span /><span /><span /><span /></span>
@@ -123,33 +100,7 @@ export default function HomePage() {
 
           {/* 右：社团动态 */}
           <div className="home-main">
-            <section>
-              <div className="section-head">
-                <div>
-                  <div className="eyebrow">CLUB · ACTIVITY</div>
-                  <h2 className="section-title"><span className="bar" /> 社团动态</h2>
-                </div>
-                <a className="section-link" href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>
-                  全部动态
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-                </a>
-              </div>
-              <div className="activity-grid">
-                {ACTIVITIES.map((item) => (
-                  <a key={item.id} className="card card-hover activity-card" href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>
-                    <div className="card-media ph-img card-cover">
-                      <span className={"badge badge-brand cat"}>{item.category}</span>
-                      <span className="cover-emoji">{item.emoji}</span>
-                    </div>
-                    <div className="card-body">
-                      <span className={"badge " + STATUS_BADGE[item.status]}><span className="badge-dot" />{item.status}</span>
-                      <h3>{item.title}</h3>
-                      <div className="card-foot"><span className="date tnum">{item.date}</span><span className="muted">{item.category}</span></div>
-                    </div>
-                  </a>
-                ))}
-              </div>
-            </section>
+            <ClubFeed user={user} />
           </div>
         </div>
       </div>
