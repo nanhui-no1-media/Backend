@@ -29,4 +29,6 @@ export const newsApi = {
   featured: () => request("/news/featured/") as Promise<NewsListItem | null>,
   hot: () => request("/news/hot/") as Promise<NewsListItem[]>,
   tags: () => request("/news/tags/") as Promise<NewsTag[]>,
+  // 社团概览：成员=活跃用户数，作品=已发布新闻数（匿名可读）
+  overview: () => request("/news/overview/") as Promise<{ members: number; works: number }>,
 };

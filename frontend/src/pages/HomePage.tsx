@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { newsApi } from "../api/news";
 import AppShell from "../components/AppShell";
 import { useLoginModal } from "../components/LoginModalProvider";
 import "../styles/home.css";
@@ -41,6 +42,7 @@ const EqBars = () => (
 
 export default function HomePage() {
   const [user, setUser] = useState<User | null>(null);
+  const [overview, setOverview] = useState<{ members: number; works: number } | null>(null);
   const navigate = useNavigate();
   const { openLogin, authNonce } = useLoginModal();
 
@@ -50,6 +52,13 @@ export default function HomePage() {
       .then((data) => setUser({ id: data.user.id, username: data.user.username }))
       .catch(() => setUser(null));
   }, [authNonce]);
+
+  // 社团概览统计：匿名可读，与登录态无关，挂载时拉一次
+  useEffect(() => {
+    newsApi.overview()
+      .then(setOverview)
+      .catch(() => setOverview(null));
+  }, []);
 
   // 受保护目的地：游客改走登录弹窗（带 redirectTo）
   const go = (path: string) => {
@@ -100,9 +109,9 @@ export default function HomePage() {
             <div className="rail-card">
               <h4><span className="bar" /> 社团概览</h4>
               <div className="stat-row"><span className="k">成立</span><span className="v tnum">2026.03</span></div>
-              <div className="stat-row"><span className="k">成员</span><span className="v">— 待统计</span></div>
+              <div className="stat-row"><span className="k">成员</span><span className="v tnum">{overview ? overview.members : "—"}</span></div>
               <div className="stat-row"><span className="k">指导</span><span className="v">信息组</span></div>
-              <div className="stat-row"><span className="k">作品</span><span className="v">— 待录入</span></div>
+              <div className="stat-row"><span className="k">作品</span><span className="v tnum">{overview ? overview.works : "—"}</span></div>
             </div>
             <div className="rail-card rail-actions">
               <h4><span className="bar" /> 快速入口</h4>
