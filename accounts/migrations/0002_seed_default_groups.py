@@ -9,8 +9,7 @@ def seed(apps, schema_editor):
     Group = apps.get_model("auth", "Group")
     Permission = apps.get_model("auth", "Permission")
 
-    # 自定义权限由 post_migrate 在「全部迁移跑完后」才创建；
-    # 数据迁移执行期间尚未存在 → 先强制建出 contenttypes 与权限，保证下方能查到。
+    # 先确保所有 app 的 ContentType 与 Permission（含模型 Meta.permissions 自定义项）已生成
     for app_config in real_apps.get_app_configs():
         create_contenttypes(app_config, apps=apps, verbosity=0)
         create_permissions(app_config, apps=apps, verbosity=0)
@@ -30,6 +29,7 @@ def seed(apps, schema_editor):
             ("proposals", "change_proposal"),
         ],
     }
+
     for group_name, codenames in GROUP_PERMISSIONS.items():
         group, _ = Group.objects.get_or_create(name=group_name)
         for app_label, codename in codenames:
@@ -40,11 +40,12 @@ def seed(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+
     dependencies = [
-        ("accounts", "0003_usersession"),
+        ("accounts", "0001_initial"),
         ("news", "0002_create_info_group"),
-        ("tasks", "0005_alter_tag_options_alter_task_options"),
-        ("proposals", "0002_alter_proposal_options"),
+        ("tasks", "0001_initial"),
+        ("proposals", "0001_initial"),
     ]
 
     operations = [
