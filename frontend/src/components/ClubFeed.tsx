@@ -17,7 +17,8 @@ export default function ClubFeed({ user }: Props) {
 
   // 用户身份变化（登录/登出）时重拉，让任务格随之出现/消失
   useEffect(() => {
-    newsApi.feed().then(setData).catch(() => setData(null));
+    // 失败时退化为空状态（显示"暂无动态"），而非永久"加载中…"（spec §12）
+    newsApi.feed().then(setData).catch(() => setData({ featured: null, items: [] }));
   }, [user?.id]);
 
   const goNews = (id: number) => navigate(`/news/${id}`);
