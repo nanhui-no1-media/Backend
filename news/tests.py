@@ -232,3 +232,36 @@ class FeedTest(TestCase):
         self.assertEqual(by_title["up"], "upcoming")
         self.assertEqual(by_title["og"], "ongoing")
         self.assertEqual(by_title["ed"], "ended")
+
+
+class FeedEndpointTest(TestCase):
+    """端点 /news/news/feed/：匿名可读、不含任务；登录含任务。"""
+
+    def setUp(self):
+        self.author = _info(User.objects.create_user(username="info", password="x"))
+        self.member = User.objects.create_user(username="member", password="x")
+        News.objects.create(title="n1", author=self.author, is_published=True)
+        Proposal.objects.create(
+            proposal_type="activity", status="approved",
+            title="a1", activity_type="training",
+        )
+        Task.objects.create(title="t1", creator=self.member, status="in_progress")
+        self.client = APIClient()
+
+    def test_anon_ok_without_tasks(self):
+        resp = self.client.get("/news/news/feed/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("featured", resp.data)
+        self.assertNotIn("task", {i["type"] for i in resp.data["items"]})
+
+    def test_authed_includes_tasks(self):
+        self.client.force_authenticate(self.member)
+        resp = self.client.get("/news/news/feed/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("task", {i["type"] for i in resp.data["items"]})
+
+    def test_limit_query_param(self):
+        self.client.force_authenticate(self.member)
+        resp = self.client.get("/news/news/feed/?limit=1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertLessEqual(len(resp.data["items"]), 1)

@@ -15,9 +15,10 @@ from tasks.models import Tag
 
 from .models import News, NewsView
 from .serializers import NewsDetailSerializer, NewsListSerializer, NewsTagSerializer
+from .feed import build_feed
 
 # 公开（匿名可访问）的 action
-PUBLIC_ACTIONS = frozenset({"list", "retrieve", "featured", "hot", "tags", "overview"})
+PUBLIC_ACTIONS = frozenset({"list", "retrieve", "featured", "hot", "tags", "overview", "feed"})
 
 # 正文内嵌图片上限（文章配图，比 2MB 头像略宽）
 _CONTENT_IMAGE_MAX_SIZE = 5 * 1024 * 1024
@@ -119,3 +120,12 @@ class NewsViewSet(viewsets.ModelViewSet):
             "members": User.objects.filter(is_active=True).count(),
             "works": News.objects.filter(is_published=True).count(),
         })
+
+    @action(detail=False, methods=["get"])
+    def feed(self, request):
+        """首页「社团动态」聚合：头条新闻 + 混排活动/新闻/(登录时的)任务。匿名可读。"""
+        try:
+            limit = int(request.query_params.get("limit", 6))
+        except (TypeError, ValueError):
+            limit = 6
+        return Response(build_feed(request=request, limit=limit))
