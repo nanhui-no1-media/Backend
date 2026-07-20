@@ -1,3 +1,4 @@
+import hashlib
 import os
 import uuid
 
@@ -8,9 +9,10 @@ from rest_framework.decorators import action
 from rest_framework.permissions import DjangoModelPermissionsOrAnonReadOnly
 from rest_framework.response import Response
 
+from accounts.utils import get_client_ip
 from tasks.models import Tag
 
-from .models import News
+from .models import News, NewsView
 from .serializers import NewsDetailSerializer, NewsListSerializer, NewsTagSerializer
 
 # 公开（匿名可访问）的 action
@@ -73,17 +75,26 @@ class NewsViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
-        # 阅读量 +1（F 表达式避免并发竞态）
-        News.objects.filter(pk=instance.pk).update(views=F("views") + 1)
-        instance.refresh_from_db()
+        # 去重阅读计数：登录用户按 user、匿名按 IP 的 sha256 去重；仅新读者才 +1。
+        if request.user.is_authenticated:
+            reader_key = f"user:{request.user.pk}"
+        else:
+            ip = get_client_ip(request) or ""
+            reader_key = "ip:" + hashlib.sha256(ip.encode()).hexdigest()
+        _, created = NewsView.objects.get_or_create(news=instance, reader_key=reader_key)
+        if created:
+            News.objects.filter(pk=instance.pk).update(views=F("views") + 1)
+            instance.refresh_from_db()
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
 
     @action(detail=False, methods=["get"])
     def featured(self, request):
-        """头条：最近一条 featured 已发布新闻；无则最近一条。"""
+        """头条：手工置顶（featured）优先；无置顶则取阅读人数最高的一条。"""
         qs = self.get_queryset()
-        item = qs.filter(featured=True).first() or qs.first()
+        item = qs.filter(featured=True).first()
+        if item is None:
+            item = qs.order_by("-views", "-published_at", "-created_at").first()
         if item is None:
             return Response(None)
         return Response(NewsListSerializer(item, context={"request": request}).data)
