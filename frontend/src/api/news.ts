@@ -1,5 +1,6 @@
 import { createRequest } from "./shared";
 import type { NewsDetail, NewsListItem, NewsTag } from "../types/news";
+import type { FeedResponse } from "../types/feed";
 
 const request = createRequest("/news");
 
@@ -31,4 +32,6 @@ export const newsApi = {
   tags: () => request("/news/tags/") as Promise<NewsTag[]>,
   // 社团概览：成员=活跃用户数，作品=已发布新闻数（匿名可读）
   overview: () => request("/news/overview/") as Promise<{ members: number; works: number }>,
+  // 首页「社团动态」聚合：{featured, items}（匿名可读；任务仅登录下发）
+  feed: (limit = 6) => request(`/news/feed/?limit=${limit}`) as Promise<FeedResponse>,
 };
