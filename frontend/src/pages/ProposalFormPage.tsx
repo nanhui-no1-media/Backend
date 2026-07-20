@@ -128,7 +128,7 @@ export default function ProposalFormPage() {
         </div>
       </div>
 
-      <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
+      <div className="container" style={{ paddingTop: "var(--s-12)", paddingBottom: "var(--s-16)" }}>
         <div className="form-card">
           {error && (
             <div className="alert alert-danger" style={{ marginBottom: "var(--s-4)" }}>
