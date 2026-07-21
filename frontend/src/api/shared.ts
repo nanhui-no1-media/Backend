@@ -43,8 +43,14 @@ export function createRequest(base: string) {
       supersedeHandler?.(data.takeover ?? {});
     }
     if (!res.ok) {
-      const err = new Error(data.detail || data.error || "请求失败") as Error & { status: number };
+      const err = new Error(data.detail || data.error || "请求失败") as Error & {
+        status: number;
+        reason?: string;
+        retry_after?: number;
+      };
       err.status = res.status;
+      err.reason = data?.reason;
+      if (typeof data?.retry_after === "number") err.retry_after = data.retry_after;
       throw err;
     }
     return data as T;

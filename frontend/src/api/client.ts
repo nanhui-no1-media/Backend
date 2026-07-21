@@ -15,6 +15,9 @@ export const api = {
   me: () =>
     request("/me/"),
 
+  listSessions: () =>
+    request("/sessions/"),
+
   getCsrf: () =>
     request("/csrf/"),
 
