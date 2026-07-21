@@ -32,6 +32,14 @@ export default function LoginModal({
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  // 后端登录接口返回的英文错误串 → 中文提示（前端只做展示层翻译）。
+  // 新增后端文案时在这里补一条即可；未命中的原文照常透出，兜底为「登录失败」。
+  const LOGIN_ERROR_ZH: Record<string, string> = {
+    "Invalid credentials": "账号或密码错误，请重新输入。",
+    "Invalid JSON": "请求数据格式错误，请刷新页面后重试。",
+    "Failed to fetch": "网络连接失败，请检查网络后重试。",
+  };
+
   if (!open) return null;
 
   const handleSubmit = async (e: FormEvent) => {
@@ -49,7 +57,8 @@ export default function LoginModal({
       onClose();
       navigate(redirectTo ?? "/");
     } catch (err: any) {
-      setError(err.message || "登录失败，请重试。");
+      const raw = err?.message || "";
+      setError(LOGIN_ERROR_ZH[raw] || raw || "登录失败，请重试。");
     } finally {
       setLoading(false);
     }
