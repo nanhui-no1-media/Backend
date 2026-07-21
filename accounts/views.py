@@ -18,6 +18,7 @@ from .models import Profile, UserSession
 from .utils import SESSION_HISTORY_LIMIT
 
 LOGIN_PROTECTION_SECONDS = 600  # 登录保护窗口：登录后 10 分钟内他方新会话登录被拒
+CONTENT_LIMIT = 15  # 个人中心每个内容 tab 返回的最近条数
 
 
 def _json_body(request):
@@ -322,3 +323,60 @@ def user_profile_view(request, id):
         data["groups"] = list(viewed.groups.values_list("name", flat=True))
 
     return JsonResponse(data)
+
+
+@require_GET
+@login_required
+def user_content_view(request, id):
+    """某用户的 tab 内容（按身份裁剪可见性）。"""
+    viewed = User.objects.filter(pk=id, is_active=True).first()
+    if viewed is None:
+        return JsonResponse({"error": "用户不存在"}, status=404)
+
+    is_owner = request.user.id == viewed.id
+    type_ = request.GET.get("type")
+    if type_ not in ("news", "proposals", "tasks"):
+        return JsonResponse({"error": "无效的 type"}, status=400)
+
+    if type_ == "news":
+        from news.models import News
+        qs = News.objects.filter(author=viewed)
+        if not is_owner:
+            qs = qs.filter(is_published=True)
+        results = [{
+            "id": n.id,
+            "title": n.title,
+            "category": n.category,
+            "cover_image": n.cover_image.url if n.cover_image else None,
+            "is_published": n.is_published,
+            "published_at": (n.published_at or n.created_at).isoformat(),
+        } for n in qs[:CONTENT_LIMIT]]
+
+    elif type_ == "proposals":
+        from proposals.models import Proposal
+        qs = Proposal.objects.filter(creator=viewed)
+        if not is_owner:
+            qs = qs.filter(status="approved")
+        results = [{
+            "id": p.id,
+            "title": p.title,
+            "proposal_type": p.proposal_type,
+            "status": p.status,
+            "created_at": p.created_at.isoformat(),
+        } for p in qs[:CONTENT_LIMIT]]
+
+    else:  # tasks
+        if not is_owner:
+            return JsonResponse({"error": "无权查看他人任务"}, status=403)
+        from tasks.models import Task
+        qs = Task.objects.filter(assignee=viewed)
+        results = [{
+            "id": t.id,
+            "title": t.title,
+            "status": t.status,
+            "priority": t.priority,
+            "created_at": t.created_at.isoformat(),
+        } for t in qs[:CONTENT_LIMIT]]
+
+    return JsonResponse({"results": results})
+

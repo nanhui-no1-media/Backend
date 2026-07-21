@@ -661,3 +661,55 @@ class UserProfileViewTest(TestCase):
         self.assertIn("groups", data)
         self.assertNotIn("email", data["user"])
         self.assertNotIn("birthday", data["profile"])
+
+
+class UserContentViewTest(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="owner", password="p")
+        self.other = User.objects.create_user(username="other", password="p")
+
+    def _login(self, user):
+        c = Client()
+        c.force_login(user)
+        return c
+
+    def _get(self, client, type_):
+        return client.get(f"/auth/users/{self.owner.id}/content/?type={type_}")
+
+    def test_unauthenticated_redirects(self):
+        self.assertEqual(Client().get(f"/auth/users/{self.owner.id}/content/?type=news").status_code, 302)
+
+    def test_unknown_user_404(self):
+        c = self._login(self.other)
+        self.assertEqual(c.get("/auth/users/999999/content/?type=news").status_code, 404)
+
+    def test_invalid_type_400(self):
+        c = self._login(self.other)
+        self.assertEqual(self._get(c, "bogus").status_code, 400)
+
+    def test_news_owner_sees_drafts_public_does_not(self):
+        from news.models import News
+        News.objects.create(title="published", author=self.owner, is_published=True)
+        News.objects.create(title="draft", author=self.owner, is_published=False)
+        owner = {r["title"] for r in self._get(self._login(self.owner), "news").json()["results"]}
+        self.assertEqual(owner, {"published", "draft"})
+        other = {r["title"] for r in self._get(self._login(self.other), "news").json()["results"]}
+        self.assertEqual(other, {"published"})
+
+    def test_proposals_public_sees_only_approved(self):
+        from proposals.models import Proposal
+        Proposal.objects.create(title="approved", proposal_type="activity", status="approved", creator=self.owner)
+        Proposal.objects.create(title="pending", proposal_type="activity", status="pending_approval", creator=self.owner)
+        other = {r["title"] for r in self._get(self._login(self.other), "proposals").json()["results"]}
+        self.assertEqual(other, {"approved"})
+        owner = {r["title"] for r in self._get(self._login(self.owner), "proposals").json()["results"]}
+        self.assertEqual(owner, {"approved", "pending"})
+
+    def test_tasks_owner_ok_other_403(self):
+        from tasks.models import Task
+        Task.objects.create(title="t", creator=self.owner, assignee=self.owner)
+        owner_resp = self._get(self._login(self.owner), "tasks")
+        self.assertEqual(owner_resp.status_code, 200)
+        self.assertEqual(len(owner_resp.json()["results"]), 1)
+        self.assertEqual(self._get(self._login(self.other), "tasks").status_code, 403)
+
