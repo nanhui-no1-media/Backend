@@ -314,16 +314,27 @@ class RecordUserSessionTest(TestCase):
     def test_second_login_supersedes_first(self):
         record_user_session(self._req(), self.user, "keyA")
         record_user_session(self._req(), self.user, "keyB")
-        self.assertEqual(UserSession.objects.filter(user=self.user).count(), 1)
-        current = UserSession.objects.get(user=self.user)
+        # 历史保留：两行都在；is_current 仅 keyB
+        self.assertEqual(UserSession.objects.filter(user=self.user).count(), 2)
+        current = UserSession.objects.get(user=self.user, is_current=True)
         self.assertEqual(current.session_key, "keyB")
-        self.assertTrue(current.is_current)
 
     def test_same_key_updates_in_place(self):
         record_user_session(self._req(), self.user, "keyA")
         record_user_session(self._req(), self.user, "keyA")
         self.assertEqual(UserSession.objects.filter(session_key="keyA").count(), 1)
         self.assertTrue(UserSession.objects.get(session_key="keyA").is_current)
+
+    def test_history_pruned_to_limit(self):
+        # 制造 25 次登录：保留最近 20 条，最旧的被裁掉
+        for i in range(25):
+            record_user_session(self._req(), self.user, f"key{i:02d}")
+        rows = list(UserSession.objects.filter(user=self.user).order_by("created_at", "id"))
+        self.assertEqual(len(rows), 20, "应精确裁剪到 20 条")  # 改为精确断言确保失败
+        # 当前会话（最后一次 key24）必在保留之列且为 current
+        current = UserSession.objects.get(user=self.user, is_current=True)
+        self.assertEqual(current.session_key, "key24")
+        self.assertIn(current.id, [r.id for r in rows])
 
 
 class LoginSignalIntegrationTest(TestCase):

@@ -4,6 +4,7 @@ from django.db import transaction
 
 from .models import UserSession
 
+SESSION_HISTORY_LIMIT = 20  # 每用户保留的登录记录条数（含当前会话）
 
 _BOT_RE = re.compile(r"bot|crawl|spider|slurp|fetcher", re.I)
 _TABLET_RE = re.compile(r"iPad|Android(?!.*Mobile)|Silk|Kindle|PlayBook", re.I)
@@ -73,4 +74,10 @@ def record_user_session(request, user, session_key):
             "is_current": True,
         },
     )
-    UserSession.objects.filter(user=user, is_current=False).delete()
+    # 保留登录历史：不再删除旧会话，仅裁剪到每用户最近 SESSION_HISTORY_LIMIT 条
+    keep_ids = list(
+        UserSession.objects.filter(user=user)
+        .order_by("-created_at", "-id")[:SESSION_HISTORY_LIMIT]
+        .values_list("id", flat=True)
+    )
+    UserSession.objects.filter(user=user).exclude(id__in=keep_ids).delete()
