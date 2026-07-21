@@ -5,7 +5,8 @@ import { api } from "../api/client";
 import SessionSupersedeModal from "./SessionSupersedeModal";
 import { useLoginModal } from "./LoginModalProvider";
 
-const POLL_INTERVAL_MS = 60000;
+// 轮询提速到 5s：被挤设备最迟 ~5s 感知挤号（原 60s）；内部工具并发低，5s 心跳可接受
+const POLL_INTERVAL_MS = 5000;
 
 export default function SessionGuard({ children }: { children: ReactNode }) {
   const [takeover, setTakeover] = useState<SupersedeTakeover | null>(null);
