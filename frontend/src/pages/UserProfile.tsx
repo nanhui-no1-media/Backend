@@ -1,0 +1,128 @@
+import { useEffect, useState } from "react";
+import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import AppShell from "../components/AppShell";
+import { api } from "../api/client";
+import { useLoginModal } from "../components/LoginModalProvider";
+import ProfileHero from "../components/profile/ProfileHero";
+import ProfileSideNav from "../components/profile/ProfileSideNav";
+import ProfileTabs from "../components/profile/ProfileTabs";
+import ProfileEditPanel from "../components/profile/ProfileEditPanel";
+import PasswordPanel from "../components/profile/PasswordPanel";
+import SessionsPanel from "../components/profile/SessionsPanel";
+import ContentListPanel from "../components/profile/ContentListPanel";
+import PermissionsPanel from "../components/profile/PermissionsPanel";
+import type { UserProfileData } from "../types/profile";
+import "../styles/profile.css";
+
+const SELF_TABS = [
+  { key: "profile", label: "资料编辑" },
+  { key: "password", label: "改密码" },
+  { key: "sessions", label: "登录记录" },
+  { key: "news", label: "我的新闻" },
+  { key: "proposals", label: "我的申报" },
+  { key: "tasks", label: "我的任务" },
+  { key: "permissions", label: "我的权限" },
+];
+
+export default function UserProfile() {
+  const { id } = useParams<{ id: string }>();
+  const [search, setSearch] = useSearchParams();
+  const navigate = useNavigate();
+  const { openLogin, notifyAuthChange } = useLoginModal();
+  const [profile, setProfile] = useState<UserProfileData | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [loadErr, setLoadErr] = useState("");
+
+  const uid = Number(id);
+
+  useEffect(() => {
+    setProfile(null);
+    setNotFound(false);
+    setLoadErr("");
+    api.getUserProfile(uid)
+      .then((d: any) => setProfile(d))
+      .catch((e: any) => {
+        if (e.status === 401) openLogin();
+        else if (e.status === 404) setNotFound(true);
+        else setLoadErr(e.message || "加载失败");
+      });
+  }, [uid, openLogin]);
+
+  if (notFound || loadErr) {
+    return (
+      <AppShell>
+        <div className="container" style={{ paddingTop: "var(--s-12)" }}>
+          <p className="muted">{notFound ? "用户不存在。" : loadErr}</p>
+        </div>
+      </AppShell>
+    );
+  }
+  if (!profile) {
+    return (
+      <AppShell>
+        <div className="container" style={{ paddingTop: "var(--s-12)" }}>
+          <p className="muted">加载中…</p>
+        </div>
+      </AppShell>
+    );
+  }
+
+  const isOwner = profile.viewer.is_owner;
+  const isAdmin = profile.viewer.is_admin;
+
+  const tabs = isOwner
+    ? SELF_TABS
+    : [
+        { key: "news", label: "ta 的新闻" },
+        { key: "proposals", label: "ta 的申报" },
+        ...(isAdmin ? [{ key: "permissions", label: "权限" }] : []),
+      ];
+
+  const defaultTab = isOwner ? "profile" : "news";
+  const tabKeys = tabs.map((t) => t.key);
+  const rawTab = search.get("tab");
+  const active = rawTab && tabKeys.includes(rawTab) ? rawTab : defaultTab;
+
+  const setTab = (k: string) => {
+    const next = new URLSearchParams(search);
+    next.set("tab", k);
+    setSearch(next, { replace: true });
+  };
+
+  const onProfileSaved = () => {
+    api.getUserProfile(uid).then((d: any) => setProfile(d)).catch((e: any) => console.warn("profile refetch failed", e));
+    notifyAuthChange();
+  };
+
+  return (
+    <AppShell>
+      <ProfileHero profile={profile} onEdit={isOwner ? () => setTab("profile") : undefined} />
+
+      <div className="container profile-body">
+        {isOwner ? (
+          <div className="profile-layout">
+            <ProfileSideNav tabs={tabs} active={active} onPick={setTab} />
+            <div className="profile-panel">
+              {active === "profile" && <ProfileEditPanel onSaved={onProfileSaved} />}
+              {active === "password" && <PasswordPanel />}
+              {active === "sessions" && <SessionsPanel />}
+              {active === "news" && <ContentListPanel userId={uid} type="news" selfView />}
+              {active === "proposals" && <ContentListPanel userId={uid} type="proposals" selfView />}
+              {active === "tasks" && <ContentListPanel userId={uid} type="tasks" selfView />}
+              {active === "permissions" && <PermissionsPanel profile={profile} />}
+            </div>
+          </div>
+        ) : (
+          <div className="profile-other">
+            <ProfileTabs tabs={tabs} active={active} onPick={setTab} />
+            <div className="profile-panel">
+              {active === "news" && <ContentListPanel userId={uid} type="news" selfView={false} />}
+              {active === "proposals" && <ContentListPanel userId={uid} type="proposals" selfView={false} />}
+              {active === "permissions" && <PermissionsPanel profile={profile} />}
+            </div>
+          </div>
+        )}
+      </div>
+    </AppShell>
+  );
+}

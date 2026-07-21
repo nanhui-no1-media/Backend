@@ -8,7 +8,8 @@ import { api } from "./api/client";
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
 const HomePage = lazy(() => import("./pages/HomePage"));
-const ProfilePage = lazy(() => import("./pages/ProfilePage"));
+const UserProfile = lazy(() => import("./pages/UserProfile"));
+const ProfileRedirect = lazy(() => import("./pages/ProfileRedirect"));
 const TaskListPage = lazy(() => import("./pages/TaskListPage"));
 const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage"));
 const TaskFormPage = lazy(() => import("./pages/TaskFormPage"));
@@ -39,7 +40,8 @@ export default function App() {
         <Routes>
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/profile" element={<ProfileRedirect />} />
+          <Route path="/u/:id" element={<UserProfile />} />
           <Route path="/tasks" element={<ProtectedRoute><TaskListPage /></ProtectedRoute>} />
           <Route path="/tasks/new" element={<ProtectedRoute><TaskFormPage /></ProtectedRoute>} />
           <Route path="/tasks/:id" element={<ProtectedRoute><TaskDetailPage /></ProtectedRoute>} />
