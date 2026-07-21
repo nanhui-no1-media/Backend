@@ -100,6 +100,12 @@ class LogoutViewTest(TestCase):
         response = self.client.post("/auth/logout/")
         self.assertEqual(response.status_code, 302)
 
+    def test_logout_clears_current_session_row(self):
+        self.client.login(username="testuser", password="secret123")
+        self.assertTrue(UserSession.objects.filter(user=self.user, is_current=True).exists())
+        self.client.post("/auth/logout/")
+        self.assertFalse(UserSession.objects.filter(user=self.user, is_current=True).exists())
+
 
 class MeViewTest(TestCase):
     def setUp(self):

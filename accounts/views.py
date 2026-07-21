@@ -12,7 +12,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.core.mail import send_mail
 
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
-from .models import Profile
+from .models import Profile, UserSession
 
 
 def _json_body(request):
@@ -68,7 +68,9 @@ def csrf_token_view(request):
 @require_POST
 @login_required
 def logout_view(request):
+    user = request.user
     auth_logout(request)
+    UserSession.objects.filter(user=user, is_current=True).update(is_current=False)
     return JsonResponse({"message": "Logged out"})
 
 
