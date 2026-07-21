@@ -10,6 +10,7 @@
 .cs, .cs *, .cs *::before, .cs *::after { margin: 0; padding: 0; box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {
+  margin: 0; /* body 在 .cs 之外、无法被作用域 reset 覆盖；清掉浏览器默认 8px 外边距，否则整圈白边 */
   font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.6;
