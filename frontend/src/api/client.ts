@@ -38,4 +38,10 @@ export const api = {
 
   listUsers: () =>
     request("/users/"),
+
+  getUserProfile: (id: number) =>
+    request(`/users/${id}/profile/`),
+
+  getUserContent: (id: number, type: "news" | "proposals" | "tasks") =>
+    request(`/users/${id}/content/?type=${type}`),
 };
