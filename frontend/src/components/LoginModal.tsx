@@ -53,10 +53,31 @@ export default function LoginModal({
     try {
       if (method === "username") await api.login(account.trim(), password);
       else await api.loginWithEmail(account.trim(), password);
+
+      // 防假登录：登录成功后立即自检一次；若刚建的会话已被挤/未真正建立，不进入"已登录"假态
+      try {
+        await api.me();
+      } catch (selfErr: any) {
+        if (selfErr?.status === 401) {
+          // 刚登录即被挤：supersede 弹窗已由 shared.ts 拦截器 + SessionGuard 触发，这里只关登录框
+          onClose();
+          return;
+        }
+        // 其它错误（网络等）：登录确已成功，乐观放行
+      }
+
       onLoggedIn();
       onClose();
       navigate(redirectTo ?? "/");
     } catch (err: any) {
+      if (err?.reason === "login_protection") {
+        const mins = err.retry_after ? Math.ceil(err.retry_after / 60) : null;
+        setError(
+          "该账号 10 分钟内在其他设备登录过，处于登录保护期，请稍后重试或由原设备退出登录。" +
+            (mins ? `（约 ${mins} 分钟后可重试）` : ""),
+        );
+        return;
+      }
       const raw = err?.message || "";
       setError(LOGIN_ERROR_ZH[raw] || raw || "登录失败，请重试。");
     } finally {
