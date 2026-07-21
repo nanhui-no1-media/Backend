@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -7,12 +8,15 @@ from django.contrib.auth import authenticate, login, logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
+from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.core.mail import send_mail
 
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .models import Profile, UserSession
+
+LOGIN_PROTECTION_SECONDS = 600  # 登录保护窗口：登录后 10 分钟内他方新会话登录被拒
 
 
 def _json_body(request):
@@ -48,6 +52,22 @@ def login_view(request):
     user = authenticate(request, username=username, password=form.cleaned_data["password"])
     if user is None:
         return JsonResponse({"error": "Invalid credentials"}, status=401)
+
+    # 10 分钟登录保护：该账号已有当前会话且登录未满窗口、且非同一会话再认证 → 拒绝
+    existing = UserSession.objects.filter(user=user, is_current=True).first()
+    if existing:
+        age = timezone.now() - existing.created_at
+        same_session = existing.session_key == request.session.session_key
+        if not same_session and age < timedelta(seconds=LOGIN_PROTECTION_SECONDS):
+            retry_after = max(0, int(LOGIN_PROTECTION_SECONDS - age.total_seconds()))
+            return JsonResponse(
+                {
+                    "error": "Login protection active",
+                    "reason": "login_protection",
+                    "retry_after": retry_after,
+                },
+                status=409,
+            )
 
     login(request, user)
     return JsonResponse({"user": {"id": user.id, "username": user.username, "email": user.email}})
