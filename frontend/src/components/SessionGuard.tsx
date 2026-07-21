@@ -11,26 +11,42 @@ const POLL_INTERVAL_MS = 5000;
 export default function SessionGuard({ children }: { children: ReactNode }) {
   const [takeover, setTakeover] = useState<SupersedeTakeover | null>(null);
   const intervalRef = useRef<number | null>(null);
-  const { openLogin } = useLoginModal();
+  const { openLogin, authNonce } = useLoginModal();
 
+  // supersede 回调：显示挤号弹窗（幂等：已显示则不覆盖）并停轮询
   useEffect(() => {
     setSupersedeHandler((t) => {
-      setTakeover((prev) => prev ?? t); // idempotent: don't overwrite an already-shown popup
+      setTakeover((prev) => prev ?? t);
       if (intervalRef.current !== null) {
-        window.clearInterval(intervalRef.current); // kicked: stop polling
+        window.clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
     });
-
-    intervalRef.current = window.setInterval(() => {
-      api.me().catch(() => {}); // supersede 401 is handled by shared.ts interceptor; other errors swallowed
-    }, POLL_INTERVAL_MS);
-
-    return () => {
-      setSupersedeHandler(null);
-      if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
-    };
+    return () => setSupersedeHandler(null);
   }, []);
+
+  // 仅在已登录时轮询 /auth/me/：挂载 + 每次登录/登出（authNonce 变化）后先探测一次，
+  // 已登录才起 5s 心跳；未登录/已登出则不轮询——没有会话就不会被挤号。
+  useEffect(() => {
+    let cancelled = false;
+    api.me()
+      .then(() => {
+        if (cancelled) return;
+        intervalRef.current = window.setInterval(() => {
+          api.me().catch(() => {}); // supersede 401 由 shared.ts 拦截器处理；其它错误忽略
+        }, POLL_INTERVAL_MS);
+      })
+      .catch(() => {
+        // 未登录：不轮询
+      });
+    return () => {
+      cancelled = true;
+      if (intervalRef.current !== null) {
+        window.clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [authNonce]);
 
   function handleConfirm() {
     setTakeover(null);
