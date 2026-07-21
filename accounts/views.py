@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from django.contrib.auth import authenticate, login, logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -15,6 +15,7 @@ from django.core.mail import send_mail
 
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .models import Profile, UserSession
+from .utils import SESSION_HISTORY_LIMIT
 
 LOGIN_PROTECTION_SECONDS = 600  # 登录保护窗口：登录后 10 分钟内他方新会话登录被拒
 
@@ -98,6 +99,29 @@ def logout_view(request):
 def me_view(request):
     profile = _get_or_create_profile(request.user)
     return JsonResponse(_profile_response(request.user, profile))
+
+
+@require_GET
+@login_required
+def sessions_view(request):
+    """本人最近登录记录（设备/IP/时间，当前会话高亮），按时间倒序裁剪到历史上限。"""
+    rows = (
+        UserSession.objects.filter(user=request.user)
+        .order_by("-created_at", "-id")[:SESSION_HISTORY_LIMIT]
+    )
+    return JsonResponse({
+        "results": [
+            {
+                "id": r.id,
+                "device_name": r.device_name,
+                "device_type": r.device_type,
+                "ip_address": r.ip_address,
+                "created_at": r.created_at.isoformat(),
+                "is_current": r.is_current,
+            }
+            for r in rows
+        ]
+    })
 
 
 @require_POST

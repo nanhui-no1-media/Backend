@@ -1,6 +1,8 @@
 import json
+from datetime import timedelta
 from django.test import TestCase, Client, RequestFactory
 from django.contrib.auth.models import User
+from django.utils import timezone
 from .models import UserSession
 from .utils import get_client_ip, parse_user_agent, record_user_session
 
@@ -391,6 +393,10 @@ class SingleSessionMiddlewareTest(TestCase):
 
     def test_superseded_device_gets_401_with_takeover(self):
         a = self._login()
+        # 老化 a 的当前会话到保护期外（≥10 分钟），b 才能挤号
+        UserSession.objects.filter(user=self.user, is_current=True).update(
+            created_at=timezone.now() - timedelta(minutes=11)
+        )
         b = Client()
         b.post(
             "/auth/login/",
@@ -440,3 +446,142 @@ class CrossUserReloginTest(TestCase):
         )
         # And B must be able to access an authenticated view (not kicked):
         self.assertEqual(c.get("/auth/me/").status_code, 200)
+
+
+class LoginProtectionTest(TestCase):
+    """10 分钟登录保护：登录后 10 分钟内，他方新会话登录该账号被拒绝。"""
+    def setUp(self):
+        self.user = User.objects.create_user(username="u", email="u@e.com", password="secret123")
+
+    def _post_login(self, client, **extra):
+        return client.post(
+            "/auth/login/",
+            data=json.dumps({"username": "u", "password": "secret123"}),
+            content_type="application/json",
+            **extra,
+        )
+
+    def test_second_login_within_window_is_blocked(self):
+        a = Client()
+        a.login(username="u", password="secret123")  # 建立当前会话（age≈0）
+        b = Client()
+        resp = self._post_login(b)
+        self.assertEqual(resp.status_code, 409)
+        data = resp.json()
+        self.assertEqual(data["reason"], "login_protection")
+        self.assertGreater(data["retry_after"], 0)
+        # a 仍是当前会话、可继续访问
+        self.assertEqual(UserSession.objects.filter(user=self.user, is_current=True).count(), 1)
+        self.assertEqual(a.get("/auth/me/").status_code, 200)
+
+    def test_second_login_after_window_is_allowed(self):
+        a = Client()
+        a.login(username="u", password="secret123")
+        UserSession.objects.filter(user=self.user, is_current=True).update(
+            created_at=timezone.now() - timedelta(minutes=11)
+        )
+        b = Client()
+        resp = self._post_login(b)
+        self.assertEqual(resp.status_code, 200)
+        # a 现已被挤下线
+        self.assertEqual(a.get("/auth/me/").status_code, 401)
+
+    def test_logout_releases_protection(self):
+        a = Client()
+        a.login(username="u", password="secret123")
+        a.post("/auth/logout/")  # 主动登出 → 清 is_current（依赖 Task 2）
+        b = Client()
+        resp = self._post_login(b)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_same_session_reauth_is_exempt(self):
+        c = Client()
+        c.login(username="u", password="secret123")  # 当前会话 = c 的 session_key
+        # 同一 client（同一 session_key）再次提交登录 → 不拦截
+        resp = self._post_login(c)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_wrong_password_not_treated_as_protection(self):
+        a = Client()
+        a.login(username="u", password="secret123")
+        b = Client()
+        resp = b.post(
+            "/auth/login/",
+            data=json.dumps({"username": "u", "password": "wrong"}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 401)
+        self.assertNotEqual(resp.json().get("reason"), "login_protection")
+
+
+class SessionsViewTest(TestCase):
+    """GET /auth/sessions/：返回本人最近 20 条登录记录（按时间倒序，含 is_current）。"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password="secret123",
+        )
+
+    def _login(self):
+        c = Client()
+        c.post(
+            "/auth/login/",
+            data=json.dumps({"username": "testuser", "password": "secret123"}),
+            content_type="application/json",
+            REMOTE_ADDR="5.6.7.8",
+            HTTP_USER_AGENT="Mozilla/5.0 (Windows NT 10.0) Chrome/120.0",
+        )
+        return c
+
+    def test_requires_login(self):
+        resp = Client().get("/auth/sessions/")
+        self.assertEqual(resp.status_code, 302)
+
+    def test_response_shape_and_device_info(self):
+        c = self._login()
+        row = c.get("/auth/sessions/").json()["results"][0]
+        for key in ("id", "device_name", "device_type", "ip_address", "created_at", "is_current"):
+            self.assertIn(key, row)
+        self.assertEqual(row["ip_address"], "5.6.7.8")
+        self.assertEqual(row["device_type"], "Desktop")
+        self.assertIn("Chrome", row["device_name"])
+        self.assertTrue(row["is_current"])
+
+    def test_ordered_desc_current_first(self):
+        c = self._login()  # 当前会话：最新
+        base = timezone.now() - timedelta(hours=2)
+        # 先创建再 update created_at（auto_now_add 会覆盖 create 时的显式值）
+        h1 = UserSession.objects.create(user=self.user, session_key="h1", is_current=False)
+        h2 = UserSession.objects.create(user=self.user, session_key="h2", is_current=False)
+        UserSession.objects.filter(pk=h1.pk).update(created_at=base)
+        UserSession.objects.filter(pk=h2.pk).update(created_at=base + timedelta(minutes=30))
+        results = c.get("/auth/sessions/").json()["results"]
+        self.assertEqual(len(results), 3)
+        self.assertTrue(results[0]["is_current"])  # 最新（当前会话）排第一
+        times = [r["created_at"] for r in results]
+        self.assertEqual(times, sorted(times, reverse=True))
+
+    def test_returns_only_own_sessions(self):
+        other = User.objects.create_user(username="other", password="secret123")
+        oc = Client()
+        oc.login(username="other", password="secret123")  # 产生 other 的记录
+        c = self._login()
+        results = c.get("/auth/sessions/").json()["results"]
+        expected = UserSession.objects.filter(user=self.user).count()
+        self.assertEqual(len(results), expected)  # 只返回本人，不含 other
+
+    def test_caps_at_history_limit(self):
+        c = self._login()  # 1 条当前会话
+        base = timezone.now() - timedelta(hours=1)
+        # 直接造 21 条更早的历史（不经 record_user_session，不触发裁剪）
+        for i in range(21):
+            UserSession.objects.create(
+                user=self.user,
+                session_key=f"extra{i:02d}",
+                is_current=False,
+                created_at=base + timedelta(seconds=i),
+            )
+        results = c.get("/auth/sessions/").json()["results"]
+        self.assertEqual(len(results), 20)  # 视图裁剪到 SESSION_HISTORY_LIMIT
