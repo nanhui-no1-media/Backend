@@ -607,3 +607,57 @@ class RoleForTest(TestCase):
     def test_plain_member(self):
         from .views import _role_for
         self.assertEqual(_role_for(self.user), {"label": "成员", "variant": "member"})
+
+
+class UserProfileViewTest(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import Group
+        self.viewed = User.objects.create_user(username="viewed", email="v@e.com", password="p")
+        self.viewer = User.objects.create_user(username="viewer", password="p")
+        self.admin = User.objects.create_user(username="admin", password="p")
+        self.admin.groups.add(Group.objects.get_or_create(name="信息组")[0])
+
+    def _login(self, user):
+        c = Client()
+        c.force_login(user)
+        return c
+
+    def test_unauthenticated_redirects(self):
+        self.assertEqual(Client().get(f"/auth/users/{self.viewed.id}/profile/").status_code, 302)
+
+    def test_unknown_user_404(self):
+        c = self._login(self.viewer)
+        self.assertEqual(c.get("/auth/users/999999/profile/").status_code, 404)
+
+    def test_public_viewer_does_not_see_private_fields(self):
+        data = self._login(self.viewer).get(f"/auth/users/{self.viewed.id}/profile/").json()
+        self.assertEqual(data["user"]["id"], self.viewed.id)
+        self.assertEqual(data["user"]["username"], "viewed")
+        self.assertIn("date_joined", data["user"])
+        for k in ("avatar", "nickname", "bio"):
+            self.assertIn(k, data["profile"])
+        self.assertIn("role", data)
+        self.assertEqual(data["viewer"], {"is_owner": False, "is_admin": False})
+        self.assertNotIn("email", data["user"])
+        self.assertNotIn("birthday", data["profile"])
+        self.assertNotIn("gender", data["profile"])
+        self.assertNotIn("permissions", data)
+        self.assertNotIn("groups", data)
+
+    def test_owner_sees_everything(self):
+        data = self._login(self.viewed).get(f"/auth/users/{self.viewed.id}/profile/").json()
+        self.assertTrue(data["viewer"]["is_owner"])
+        self.assertEqual(data["user"]["email"], "v@e.com")
+        self.assertIn("birthday", data["profile"])
+        self.assertIn("gender", data["profile"])
+        self.assertIn("permissions", data)
+        self.assertIn("groups", data)
+
+    def test_admin_sees_permissions_but_not_private_fields(self):
+        data = self._login(self.admin).get(f"/auth/users/{self.viewed.id}/profile/").json()
+        self.assertTrue(data["viewer"]["is_admin"])
+        self.assertFalse(data["viewer"]["is_owner"])
+        self.assertIn("permissions", data)
+        self.assertIn("groups", data)
+        self.assertNotIn("email", data["user"])
+        self.assertNotIn("birthday", data["profile"])

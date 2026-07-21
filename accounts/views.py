@@ -283,3 +283,42 @@ def users_view(request):
             "avatar": profile.avatar.url if profile and profile.avatar else None,
         })
     return JsonResponse({"results": data})
+
+
+@require_GET
+@login_required
+def user_profile_view(request, id):
+    """查看任意用户的主页资料（按请求者身份裁剪字段）。"""
+    viewed = User.objects.filter(pk=id, is_active=True).first()
+    if viewed is None:
+        return JsonResponse({"error": "用户不存在"}, status=404)
+
+    profile = _get_or_create_profile(viewed)
+    is_owner = request.user.id == viewed.id
+    is_admin = request.user.is_superuser or request.user.groups.filter(name="信息组").exists()
+
+    data = {
+        "user": {
+            "id": viewed.id,
+            "username": viewed.username,
+            "date_joined": viewed.date_joined.isoformat(),
+        },
+        "profile": {
+            "avatar": profile.avatar.url if profile.avatar else None,
+            "nickname": profile.nickname,
+            "bio": profile.bio,
+        },
+        "role": _role_for(viewed),
+        "viewer": {"is_owner": is_owner, "is_admin": is_admin},
+    }
+
+    if is_owner:
+        data["user"]["email"] = viewed.email
+        data["profile"]["birthday"] = profile.birthday.isoformat() if profile.birthday else None
+        data["profile"]["gender"] = profile.gender
+
+    if is_owner or is_admin:
+        data["permissions"] = _capabilities(viewed)
+        data["groups"] = list(viewed.groups.values_list("name", flat=True))
+
+    return JsonResponse(data)
