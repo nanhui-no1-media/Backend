@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { api } from "../api/client";
 import { taskApi } from "../api/tasks";
 import {
@@ -139,7 +139,7 @@ export default function TaskListPage() {
                         <span key={t.id} className="tag-mini">{t.name}</span>
                       ))}
                       <span className="who">
-                        {task.assignee && <Avatar user={task.assignee} />}
+                        {task.assignee && <Link to={`/u/${task.assignee.id}`}><Avatar user={task.assignee} /></Link>}
                         {task.assignee?.nickname || task.assignee?.username || "未分配"}
                       </span>
                       {task.attachment_count > 0 && <span>{task.attachment_count} 附件</span>}

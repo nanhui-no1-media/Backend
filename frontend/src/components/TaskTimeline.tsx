@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   TaskListItem,
   TaskStatus,
@@ -79,7 +79,7 @@ export default function TaskTimeline({ tasks }: Props) {
               </div>
               <div className="timeline-card-meta">
                 <span className="timeline-assignee">
-                  {task.assignee && <Avatar user={task.assignee} />}
+                  {task.assignee && <Link to={`/u/${task.assignee.id}`}><Avatar user={task.assignee} /></Link>}
                   {task.assignee?.nickname || task.assignee?.username || "未分配"}
                 </span>
                 {task.tags.map((t) => (

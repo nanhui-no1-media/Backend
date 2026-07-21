@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import { proposalApi } from "../api/proposals";
 import { messagingApi } from "../api/messaging";
 import { api } from "../api/client";
@@ -345,7 +345,7 @@ export default function ProposalDetailPage() {
             {p.reviewed_by && (
               <div className="meta-cell">
                 <span className="meta-k">审核人</span>
-                <span className="meta-v user-with-avatar"><Avatar user={p.reviewed_by} size="sm" />{p.reviewed_by.nickname || p.reviewed_by.username}</span>
+                <span className="meta-v user-with-avatar"><Link to={`/u/${p.reviewed_by.id}`}><Avatar user={p.reviewed_by} size="sm" /></Link>{p.reviewed_by.nickname || p.reviewed_by.username}</span>
               </div>
             )}
           </div>
@@ -397,7 +397,7 @@ export default function ProposalDetailPage() {
               <div className="vote-list">
                 {p.votes.map((v) => (
                   <div key={v.id} className="vote-item">
-                    <Avatar user={v.voter} size="sm" />
+                    <Link to={`/u/${v.voter.id}`}><Avatar user={v.voter} size="sm" /></Link>
                     <span className="vote-name">{v.voter.nickname || v.voter.username}</span>
                     <span className={"vote-choice " + v.vote_choice}>{VOTE_CHOICE_LABELS[v.vote_choice]}</span>
                   </div>
@@ -460,7 +460,7 @@ export default function ProposalDetailPage() {
                 {messages.map((m) => (
                   <div key={m.id} className="comment-item">
                     <div className="comment-head">
-                      <Avatar user={m.sender} size="md" />
+                      <Link to={`/u/${m.sender.id}`}><Avatar user={m.sender} size="md" /></Link>
                       <strong>{m.sender.nickname || m.sender.username}</strong>
                       <span className="comment-time">{new Date(m.created_at).toLocaleString("zh-CN")}</span>
                     </div>

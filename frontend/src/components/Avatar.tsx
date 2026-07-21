@@ -1,6 +1,7 @@
 import "./Avatar.css";
 
 interface AvatarUser {
+  id: number;
   avatar: string | null;
   nickname?: string;
   username: string;

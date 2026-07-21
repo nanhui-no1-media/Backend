@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { api } from "../api/client";
 import { proposalApi } from "../api/proposals";
 import {
@@ -139,7 +139,7 @@ export default function ProposalListPage() {
           <span className="who">
             {isActivity && p.creator ? (
               <>
-                <Avatar user={p.creator} />
+                <Link to={`/u/${p.creator.id}`}><Avatar user={p.creator} /></Link>
                 {p.creator.nickname || p.creator.username}
               </>
             ) : isActivity ? (

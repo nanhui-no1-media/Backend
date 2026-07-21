@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { messagingApi } from "../api/messaging";
 import { api } from "../api/client";
 import { Conversation, Message, TaskUser } from "../types/tasks";
@@ -136,7 +136,7 @@ export default function MessagePage() {
             {activeConv ? (
               <>
                 <div className="msg-thread-head">
-                  {activeOther && <Avatar user={activeOther} size="md" />}
+                  {activeOther && <Link to={`/u/${activeOther.id}`}><Avatar user={activeOther} size="md" /></Link>}
                   <h3>{getConvTitle(activeConv)}</h3>
                   <span className="mt-count">{activeConv.participants.length} 人</span>
                 </div>
@@ -151,7 +151,7 @@ export default function MessagePage() {
                       >
                         {m.sender.id !== user?.id && (
                           <div className="mb-author">
-                            <Avatar user={m.sender} />
+                            <Link to={`/u/${m.sender.id}`}><Avatar user={m.sender} /></Link>
                             {m.sender.nickname || m.sender.username}
                           </div>
                         )}

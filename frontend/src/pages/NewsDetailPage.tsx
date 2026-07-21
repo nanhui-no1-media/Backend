@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import Avatar from "../components/Avatar";
 import { newsApi } from "../api/news";
@@ -60,7 +60,7 @@ export default function NewsDetailPage() {
 
             <div className="article-meta">
               <span className="author">
-                <Avatar user={news.author} size="sm" />
+                <Link to={`/u/${news.author.id}`}><Avatar user={news.author} size="sm" /></Link>
                 {news.author.nickname || news.author.username}
               </span>
               <span className="sep">·</span>
@@ -104,7 +104,7 @@ export default function NewsDetailPage() {
             </div>
 
             <div className="author-card">
-              <Avatar user={news.author} size="md" />
+              <Link to={`/u/${news.author.id}`}><Avatar user={news.author} size="md" /></Link>
               <div>
                 <div className="ac-name">{news.author.nickname || news.author.username}</div>
                 <div className="ac-desc">@{news.author.username} · 本内容由信息组发布。</div>

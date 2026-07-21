@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import { taskApi } from "../api/tasks";
 import { messagingApi } from "../api/messaging";
 import { api } from "../api/client";
@@ -323,7 +323,7 @@ export default function TaskDetailPage() {
             <div className="chip-row">
               {task.collaborators.map((u) => (
                 <span key={u.id} className="user-chip-inline">
-                  <Avatar user={u} size="sm" />{u.nickname || u.username}
+                  <Link to={`/u/${u.id}`}><Avatar user={u} size="sm" /></Link>{u.nickname || u.username}
                 </span>
               ))}
             </div>
@@ -349,7 +349,7 @@ export default function TaskDetailPage() {
               {pendingClaims.map((cr) => (
                 <div key={cr.id} className="claim-item">
                   <div className="claim-head">
-                    <Avatar user={cr.claimant} size="sm" />
+                    <Link to={`/u/${cr.claimant.id}`}><Avatar user={cr.claimant} size="sm" /></Link>
                     <strong>{cr.claimant.nickname || cr.claimant.username}</strong>
                     <span className="claim-time">{new Date(cr.created_at).toLocaleString("zh-CN")}</span>
                   </div>
@@ -408,7 +408,7 @@ export default function TaskDetailPage() {
               {messages.map((m) => (
                 <div key={m.id} className="comment-item">
                   <div className="comment-head">
-                    <Avatar user={m.sender} size="md" />
+                    <Link to={`/u/${m.sender.id}`}><Avatar user={m.sender} size="md" /></Link>
                     <strong>{m.sender.nickname || m.sender.username}</strong>
                     <span className="comment-time">{new Date(m.created_at).toLocaleString("zh-CN")}</span>
                   </div>
