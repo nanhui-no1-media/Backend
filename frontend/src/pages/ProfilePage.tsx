@@ -16,6 +16,15 @@ interface ProfileData {
   };
 }
 
+interface SessionRow {
+  id: number;
+  device_name: string;
+  device_type: string;
+  ip_address: string | null;
+  created_at: string;
+  is_current: boolean;
+}
+
 const GENDER_OPTIONS = [
   { value: "", label: "未设置" },
   { value: "M", label: "男" },
@@ -24,6 +33,21 @@ const GENDER_OPTIONS = [
 ];
 const genderLabel = (v: string) => GENDER_OPTIONS.find((o) => o.value === v)?.label || "未设置";
 
+const DEVICE_TYPE_LABEL: Record<string, string> = {
+  Desktop: "桌面端",
+  Mobile: "手机",
+  Tablet: "平板",
+  Bot: "爬虫",
+  Unknown: "未知",
+};
+
+const formatSessionTime = (iso: string): string => {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [editing, setEditing] = useState(false);
@@ -31,6 +55,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -63,6 +88,13 @@ export default function ProfilePage() {
       .catch(() => openLogin())
       .finally(() => setLoading(false));
   }, [openLogin]);
+
+  useEffect(() => {
+    api
+      .listSessions()
+      .then((data) => setSessions(data.results))
+      .catch(() => setSessions([]));
+  }, []);
 
   const handleAvatarClick = () => fileInputRef.current?.click();
 
@@ -315,6 +347,45 @@ export default function ProfilePage() {
                   <button className="btn btn-primary" type="submit" disabled={passwordSaving}>{passwordSaving ? "修改中…" : "确认修改"}</button>
                 </div>
               </form>
+            )}
+          </div>
+        </div>
+
+        {/* 登录记录：本人最近 20 条登录会话（设备/IP/时间，当前会话高亮） */}
+        <div className="form-card" style={{ marginTop: "var(--s-6)" }}>
+          <div className="card card-pad">
+            <h2 style={{ fontSize: 18, marginBottom: "var(--s-4)" }}>登录记录</h2>
+            {sessions === null ? (
+              <p className="muted">加载中…</p>
+            ) : sessions.length === 0 ? (
+              <p className="muted">暂无登录记录</p>
+            ) : (
+              <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column" }}>
+                {sessions.map((s) => (
+                  <li
+                    key={s.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "var(--s-3)",
+                      flexWrap: "wrap",
+                      padding: "var(--s-3) 0",
+                      borderBottom: "1px solid var(--surface-2)",
+                    }}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <span style={{ fontWeight: 600 }}>{s.device_name || "未知设备"}</span>
+                      <span className="muted" style={{ fontSize: 13 }}>
+                        {DEVICE_TYPE_LABEL[s.device_type] ?? s.device_type}
+                        {s.ip_address ? ` · ${s.ip_address}` : ""}
+                        {" · " + formatSessionTime(s.created_at)}
+                      </span>
+                    </div>
+                    {s.is_current && <span className="badge badge-success">当前本机</span>}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         </div>
