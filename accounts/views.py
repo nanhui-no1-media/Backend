@@ -71,7 +71,7 @@ def login_view(request):
             )
 
     login(request, user)
-    return JsonResponse({"user": {"id": user.id, "username": user.username, "email": user.email}})
+    return JsonResponse({"user": {"id": user.id, "username": user.username, "email": user.email}}) # type: ignore
 
 
 
@@ -112,7 +112,7 @@ def sessions_view(request):
     return JsonResponse({
         "results": [
             {
-                "id": r.id,
+                "id": r.id, # type: ignore
                 "device_name": r.device_name,
                 "device_type": r.device_type,
                 "ip_address": r.ip_address,
@@ -190,6 +190,18 @@ def _capabilities(user):
     }
 
 
+ROLE_PRIORITY = ["社长", "信息组"]  # 前者优先；都不在则归 "member"
+
+
+def _role_for(user):
+    """主角色 {label, variant}：社长 > 信息组 > 成员。variant 供前端配色。"""
+    user_groups = set(user.groups.values_list("name", flat=True))
+    for name in ROLE_PRIORITY:
+        if name in user_groups:
+            return {"label": name, "variant": "president" if name == "社长" else "info"}
+    return {"label": "成员", "variant": "member"}
+
+
 def _profile_response(user, profile):
     return {
         "user": {
@@ -265,7 +277,7 @@ def users_view(request):
     for u in users:
         profile = getattr(u, "profile", None)
         data.append({
-            "id": u.id,
+            "id": u.id, # type: ignore
             "username": u.username,
             "nickname": profile.nickname if profile else "",
             "avatar": profile.avatar.url if profile and profile.avatar else None,

@@ -585,3 +585,25 @@ class SessionsViewTest(TestCase):
             )
         results = c.get("/auth/sessions/").json()["results"]
         self.assertEqual(len(results), 20)  # 视图裁剪到 SESSION_HISTORY_LIMIT
+
+
+class RoleForTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="u", password="p")
+
+    def test_president_wins_over_info(self):
+        from django.contrib.auth.models import Group
+        self.user.groups.add(Group.objects.get_or_create(name="社长")[0])
+        self.user.groups.add(Group.objects.get_or_create(name="信息组")[0])
+        from .views import _role_for
+        self.assertEqual(_role_for(self.user), {"label": "社长", "variant": "president"})
+
+    def test_info_group(self):
+        from django.contrib.auth.models import Group
+        self.user.groups.add(Group.objects.get_or_create(name="信息组")[0])
+        from .views import _role_for
+        self.assertEqual(_role_for(self.user), {"label": "信息组", "variant": "info"})
+
+    def test_plain_member(self):
+        from .views import _role_for
+        self.assertEqual(_role_for(self.user), {"label": "成员", "variant": "member"})
