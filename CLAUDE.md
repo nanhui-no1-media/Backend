@@ -32,3 +32,17 @@ npm run build                              # Production build → frontend/dist/
 - Frontend entry: `frontend/src/index.tsx` → built to `frontend/dist/`
 - Database: SQLite (default, dev only)
 - New Django apps: `uv run python manage.py startapp <name>` → add to `INSTALLED_APPS` in `config/settings.py`
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live as GitHub issues in `nanhui-no1-media/Backend`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles; the label string equals the role name (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
