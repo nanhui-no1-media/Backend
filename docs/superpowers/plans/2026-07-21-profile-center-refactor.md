@@ -15,7 +15,7 @@
 - 前端构建（类型 + 打包）：`cd frontend && npm run build`
 - 提交信息用中文，每次 task 末尾提交一次。
 
-**⚠️ 前置处理（Task 1 之前必做）：** `accounts/views.py` 目前有 3 处**未提交的** `# type: ignore` 改动（第 74 / 115 / 268 行，给 `user.id` / `r.id` / `u.id` 静音类型检查）——这不在本特性范围内。因为 Task 1–3 都改这个文件，直接 `git add accounts/views.py` 会把它们一起带进本特性的提交。开工前先和用户确认怎么处理：**(a)** 先单独提一个 `chore: 给 .id 表达式补 type: ignore`（推荐，历史最干净）；**(b)** 暂时 `git stash`，特性做完再 pop；**(c)** 明确同意随本特性一起提交。确定后再开始 Task 1。
+**⚠️ 前置处理（已定）：** `accounts/views.py` 有 3 处未提交的 `# type: ignore` 改动（第 74 / 115 / 268 行，给 `user.id` / `r.id` / `u.id` 静音类型检查），不在本特性范围内。**已与用户确认：随本特性一起提交（不单独提、不 stash）。** 因此 Task 1–3 直接 `git add accounts/views.py ...` 即可，这些 type:ignore 会随 Task 1 的首次提交进入历史——无需处理，也不必在提交信息里特别说明。
 
 ---
 
