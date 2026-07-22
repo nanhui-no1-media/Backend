@@ -18,10 +18,10 @@ const SELF_TABS = [
   { key: "profile", label: "资料编辑" },
   { key: "password", label: "改密码" },
   { key: "sessions", label: "登录记录" },
-  { key: "news", label: "我的新闻" },
+  { key: "news", label: "我的新闻", divider: true },
   { key: "proposals", label: "我的申报" },
   { key: "tasks", label: "我的任务" },
-  { key: "permissions", label: "我的权限" },
+  { key: "permissions", label: "我的权限", divider: true },
 ];
 
 export default function UserProfile() {
