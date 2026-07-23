@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { proposalApi } from "../api/proposals";
+import { attachmentApi } from "../api/attachments";
 import { messagingApi } from "../api/messaging";
 import { api } from "../api/client";
 import {
@@ -184,7 +185,7 @@ export default function ProposalDetailPage() {
       return;
     }
     try {
-      const att = await proposalApi.addAttachment(proposal.id, file);
+      const att = await attachmentApi.upload({ file, proposalId: proposal.id });
       setProposal({ ...proposal, attachments: [...proposal.attachments, att] });
     } catch (err: any) {
       setError(err.message);
@@ -195,7 +196,7 @@ export default function ProposalDetailPage() {
   const handleDeleteAttachment = async (attachmentId: number) => {
     if (!proposal) return;
     try {
-      await proposalApi.deleteAttachment(proposal.id, attachmentId);
+      await attachmentApi.delete(attachmentId);
       setProposal({ ...proposal, attachments: proposal.attachments.filter((a) => a.id !== attachmentId) });
     } catch (err: any) {
       setError(err.message);

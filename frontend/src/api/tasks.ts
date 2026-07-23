@@ -16,15 +16,6 @@ export const taskApi = {
     return request(`/tasks/my_tasks/${qs}`);
   },
 
-  // Attachments
-  addAttachment: (taskId: number, file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    return request(`/tasks/${taskId}/add_attachment/`, { method: "POST", body: formData });
-  },
-  deleteAttachment: (taskId: number, attachmentId: number) =>
-    request(`/tasks/${taskId}/delete_attachment/`, { method: "POST", body: JSON.stringify({ attachment_id: attachmentId }) }),
-
   // Assignment
   assign: (taskId: number, assigneeId: number | null) =>
     request(`/tasks/${taskId}/assign/`, { method: "POST", body: JSON.stringify({ assignee_id: assigneeId }) }),

@@ -42,18 +42,6 @@ export const proposalApi = {
   withdraw: (id: number): Promise<ProposalDetail> =>
     request(`/proposals/${id}/withdraw/`, { method: "POST" }),
 
-  // 附件
-  addAttachment: (id: number, file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    return request(`/proposals/${id}/add_attachment/`, { method: "POST", body: formData });
-  },
-  deleteAttachment: (id: number, attachmentId: number) =>
-    request(`/proposals/${id}/delete_attachment/`, {
-      method: "POST",
-      body: JSON.stringify({ attachment_id: attachmentId }),
-    }),
-
   // 当前用户创建的活动申报
   myProposals: (params?: Record<string, string>) => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";

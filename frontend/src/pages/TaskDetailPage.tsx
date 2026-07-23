@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { taskApi } from "../api/tasks";
+import { attachmentApi } from "../api/attachments";
 import { messagingApi } from "../api/messaging";
 import { api } from "../api/client";
 import {
@@ -180,7 +181,7 @@ export default function TaskDetailPage() {
       return;
     }
     try {
-      const att = await taskApi.addAttachment(task.id, file);
+      const att = await attachmentApi.upload({ file, taskId: task.id });
       setTask({ ...task, attachments: [...task.attachments, att] });
     } catch (err: any) {
       setError(err.message);
@@ -191,7 +192,7 @@ export default function TaskDetailPage() {
   const handleDeleteAttachment = async (attachmentId: number) => {
     if (!task) return;
     try {
-      await taskApi.deleteAttachment(task.id, attachmentId);
+      await attachmentApi.delete(attachmentId);
       setTask({ ...task, attachments: task.attachments.filter((a) => a.id !== attachmentId) });
     } catch (err: any) {
       setError(err.message);
