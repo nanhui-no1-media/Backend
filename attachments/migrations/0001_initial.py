@@ -26,9 +26,9 @@ class Migration(migrations.Migration):
                 ('file_name', models.CharField(max_length=255, verbose_name='文件名')),
                 ('file_size', models.BigIntegerField(verbose_name='文件大小')),
                 ('uploaded_at', models.DateTimeField(auto_now_add=True)),
-                ('proposal', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='unified_attachments', to='proposals.proposal', verbose_name='申报')),
-                ('task', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='unified_attachments', to='tasks.task', verbose_name='任务')),
-                ('uploaded_by', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='uploaded_unified_attachments', to=settings.AUTH_USER_MODEL, verbose_name='上传者')),
+                ('proposal', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='attachments', to='proposals.proposal', verbose_name='申报')),
+                ('task', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='attachments', to='tasks.task', verbose_name='任务')),
+                ('uploaded_by', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='uploaded_attachments', to=settings.AUTH_USER_MODEL, verbose_name='上传者')),
             ],
             options={
                 'verbose_name': '附件',

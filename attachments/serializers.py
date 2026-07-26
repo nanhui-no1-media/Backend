@@ -1,12 +1,10 @@
 from rest_framework import serializers
 
-from tasks.serializers import SimpleUserSerializer  # 复用现有用户序列化器
-
 from .models import Attachment
 
 
 class AttachmentSerializer(serializers.ModelSerializer):
-    uploaded_by = SimpleUserSerializer(read_only=True)
+    uploaded_by = serializers.SerializerMethodField()
     file_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -15,6 +13,14 @@ class AttachmentSerializer(serializers.ModelSerializer):
             "id", "file_url", "file_type", "file_name",
             "file_size", "uploaded_by", "uploaded_at",
         ]
+
+    def get_uploaded_by(self, obj):
+        # 延迟导入打破 tasks ↔ attachments 的序列化器循环：
+        # tasks/proposals 的详情序列化器复用本类，而 SimpleUserSerializer 住在
+        # tasks.serializers——若在模块顶层导入会成环。运行期再取，Python 已缓存模块。
+        from tasks.serializers import SimpleUserSerializer
+
+        return SimpleUserSerializer(obj.uploaded_by, context=self.context).data
 
     def get_file_url(self, obj):
         request = self.context.get("request")

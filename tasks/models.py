@@ -1,13 +1,5 @@
-import os
-import uuid
-
 from django.conf import settings
 from django.db import models
-
-
-def attachment_upload_path(instance, filename):
-    ext = os.path.splitext(filename)[1]
-    return f"task_attachments/task_{instance.task_id}/{uuid.uuid4().hex}{ext}"
 
 
 class Tag(models.Model):
@@ -118,31 +110,7 @@ class TaskClaimRequest(models.Model):
         return f"{self.claimant.username} -> {self.task.title} ({self.status})"
 
 
-class Attachment(models.Model):
-    """附件"""
-    FILE_TYPE_CHOICES = [
-        ("image", "图片"),
-        ("video", "视频"),
-        ("document", "文档"),
-        ("archive", "压缩包"),
-        ("other", "其他"),
-    ]
+# 附件（Attachment）已统一到独立 attachments app：见 attachments/models.py。
+# 删除任务时，CASCADE 经统一附件的可空 task 外键连带删除其附件行，再由该 app 的
+# post_delete 信号回收磁盘文件——故此处不再需要内嵌附件模型。
 
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="attachments", verbose_name="任务")
-    uploaded_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
-        related_name="uploaded_attachments", verbose_name="上传者",
-    )
-    file = models.FileField("文件", upload_to=attachment_upload_path)
-    file_type = models.CharField("文件类型", max_length=20, choices=FILE_TYPE_CHOICES)
-    file_name = models.CharField("文件名", max_length=255)
-    file_size = models.BigIntegerField("文件大小")
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = "附件"
-        verbose_name_plural = "附件"
-        ordering = ["-uploaded_at"]
-
-    def __str__(self):
-        return self.file_name

@@ -1,4 +1,3 @@
-import os
 from datetime import timedelta
 
 from django.db.models import Count, Q
@@ -9,19 +8,17 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import serializers as drf_serializers
 
-from .models import Proposal, ProposalAttachment, Vote
+from .models import Proposal, Vote
 from .notifications import notify_proposal_event
 from .permissions import (
     CanApproveProposal,
     CanCreateProposal,
-    CanManageProposalAttachment,
     CanModifyProposal,
     CanViewProposal,
     CanVoteProposal,
     CanWithdrawProposal,
 )
 from .serializers import (
-    ProposalAttachmentSerializer,
     ProposalDetailSerializer,
     ProposalListSerializer,
 )
@@ -93,8 +90,6 @@ class ProposalViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated(), CanVoteProposal()]
         if self.action == "withdraw":
             return [IsAuthenticated(), CanWithdrawProposal()]
-        if self.action in ("add_attachment", "delete_attachment"):
-            return [IsAuthenticated(), CanManageProposalAttachment()]
         return [IsAuthenticated(), CanViewProposal()]
 
     def get_queryset(self):
@@ -241,78 +236,7 @@ class ProposalViewSet(viewsets.ModelViewSet):
         serializer = ProposalListSerializer(qs, many=True, context={"request": request})
         return Response(serializer.data)
 
-    # ── 附件（复制 tasks 的校验逻辑）──
-    @action(detail=True, methods=["post"], url_path="add_attachment")
-    def add_attachment(self, request, pk=None):
-        proposal = self.get_object()
-        file = request.FILES.get("file")
-        if not file:
-            return Response({"detail": "请选择文件"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if file.size > 50 * 1024 * 1024:
-            return Response({"detail": "文件大小不能超过 50MB"}, status=status.HTTP_400_BAD_REQUEST)
+# 旧的按申报内嵌的上传/删除动作已移除：上传/删除统一走独立 /attachments/ 端点
+# （见 attachments app），附件列表随申报详情返回。
 
-        ext = os.path.splitext(file.name)[1].lower()
-        forbidden = {".exe", ".bat", ".cmd", ".sh", ".php", ".asp", ".jsp", ".py", ".rb", ".pl", ".cgi", ".com", ".scr", ".pif", ".msi"}
-        if ext in forbidden:
-            return Response({"detail": "禁止上传此类型的文件"}, status=status.HTTP_400_BAD_REQUEST)
-
-        content_type = file.content_type or ""
-        if content_type.startswith("image/"):
-            file_type = "image"
-        elif content_type.startswith("video/"):
-            file_type = "video"
-        elif content_type in (
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.ms-excel",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-powerpoint",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "text/plain",
-        ):
-            file_type = "document"
-        elif content_type in (
-            "application/zip",
-            "application/x-rar-compressed",
-            "application/x-7z-compressed",
-            "application/gzip",
-        ):
-            file_type = "archive"
-        else:
-            file_type = "other"
-
-        attachment = ProposalAttachment.objects.create(
-            proposal=proposal,
-            uploaded_by=request.user,
-            file=file,
-            file_type=file_type,
-            file_name=file.name,
-            file_size=file.size,
-        )
-        return Response(
-            ProposalAttachmentSerializer(attachment, context={"request": request}).data,
-            status=status.HTTP_201_CREATED,
-        )
-
-    @action(detail=True, methods=["post"], url_path="delete_attachment")
-    def delete_attachment(self, request, pk=None):
-        proposal = self.get_object()
-        attachment_id = request.data.get("attachment_id")
-        if not attachment_id:
-            return Response({"detail": "缺少 attachment_id"}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            attachment = ProposalAttachment.objects.get(id=attachment_id, proposal=proposal)
-        except ProposalAttachment.DoesNotExist:
-            return Response({"detail": "附件不存在"}, status=status.HTTP_404_NOT_FOUND)
-        can_delete = (
-            attachment.uploaded_by == request.user
-            or request.user.has_perm("proposals.change_proposal")
-            or proposal.creator == request.user
-        )
-        if not can_delete:
-            return Response({"detail": "无权删除此附件"}, status=status.HTTP_403_FORBIDDEN)
-        attachment.file.delete(save=False)
-        attachment.delete()
-        return Response({"detail": "附件已删除"})

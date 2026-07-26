@@ -2,7 +2,9 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Attachment, Tag, Task, TaskClaimRequest
+from attachments.serializers import AttachmentSerializer
+
+from .models import Tag, Task, TaskClaimRequest
 
 
 class SimpleUserSerializer(serializers.ModelSerializer):
@@ -29,27 +31,6 @@ class TagSerializer(serializers.ModelSerializer):
 
     def get_task_count(self, obj):
         return obj.tasks.count()
-
-
-class AttachmentSerializer(serializers.ModelSerializer):
-    uploaded_by = SimpleUserSerializer(read_only=True)
-    file_url = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Attachment
-        fields = [
-            "id", "file_url", "file_type", "file_name",
-            "file_size", "uploaded_by", "uploaded_at",
-        ]
-
-    def get_file_url(self, obj):
-        request = self.context.get("request")
-        if obj.file and hasattr(obj.file, "url"):
-            url = obj.file.url
-            if request:
-                return request.build_absolute_uri(url)
-            return url
-        return None
 
 
 class TaskClaimRequestSerializer(serializers.ModelSerializer):

@@ -11,7 +11,9 @@
 | 路径 | 用途 |
 |------|------|
 | `/auth` | 账号、个人资料、用户列表等接口 |
-| `/tasks` | 任务、标签、附件接口 |
+| `/tasks` | 任务、标签接口 |
+| `/proposals` | 活动申报、意见反馈接口 |
+| `/attachments` | 统一附件接口（上传/删除） |
 | `/messaging` | 站内消息、任务讨论接口 |
 | `/media` | 用户上传文件（头像、附件等） |
 | `/admin` | 管理后台（可选） |
@@ -303,8 +305,8 @@ const initial = displayName.charAt(0).toUpperCase();
 | `reject_completion` | `reviewing` | 创建人或社长 | body `reason`（必填）；`→in_progress`，写 `reject_reason` |
 | `cancel` | 非 `completed` | 创建人或社长 | `→cancelled` |
 | `assign` | — | **社长** | body `assignee_id`（空=取消指派）；`→in_progress`/`pending` |
-| `add_attachment` | 见权限模型 | 见权限模型 | `multipart`，字段 `file`；≤50MB，禁 `.exe/.bat/.sh/.py` 等 |
-| `delete_attachment` | — | 上传者/创建人/社长 | body `attachment_id` |
+
+> 附件上传/删除不再挂在任务动作下，统一走 `/attachments/` 端点（见「附件接口」）。
 
 ### 任务状态流转
 
@@ -323,8 +325,7 @@ const initial = displayName.charAt(0).toUpperCase();
 - **任务编辑/删除**：仅当 `pending`，且为创建人或持 `tasks.manage_tasks`。
 - **认领审批 / 验收 / 取消**：创建人或持 `tasks.manage_tasks`。
 - **直接指派 `assign`**：持 `tasks.assign_task`。
-- **附件上传**：`in_progress` 前仅创建者；`in_progress` 期间创建者/负责人/协作者；持 `tasks.manage_tasks` 始终。
-- **附件删除**：上传者、创建人或持 `tasks.manage_tasks`。
+- **附件**（任务/申报通用，见「附件接口」）：父级创建者、或父级活跃参与者（任务 = 进行中的负责人/协作者）、或持父级管理权限（任务 `tasks.manage_tasks` / 申报 `proposals.change_proposal`）可上传与删除；此外上传者始终可删自己上传的附件。
 - **标签写**：持 `tasks.manage_tags`（读：任意登录用户）。
 - **消息**：仅会话参与者。
 
@@ -334,9 +335,17 @@ const initial = displayName.charAt(0).toUpperCase();
 
 标准 REST：GET 列表/详情（任意登录）；POST/PUT/PATCH/DELETE（仅社长）。`search_fields=["name"]`。
 
-### 附件接口 `/tasks/attachments/`
+### 附件接口 `/attachments/`
 
-只读（GET 列表/详情），`filterset_fields=["task","file_type"]`。上传/删除请走任务详情的 `add_attachment` / `delete_attachment` 动作。
+附件已收口为独立子系统，任务与申报共用同一套端点与权限规则。附件**列表不单独提供**——随任务/申报详情的 `attachments` 字段返回。
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/attachments/` | POST | 上传：`multipart`，字段 `file` + `task_id` 或 `proposal_id`（恰填一个）；≤50MB，禁 `.exe/.bat/.sh/.py` 等 |
+| `/attachments/{id}/` | DELETE | 删除：上传者，或满足父级权限规则者 |
+
+权限（任务/申报同一抽象规则）：父级**创建者**、或父级**活跃参与者**（任务 = 进行中的负责人/协作者；申报无）、或持父级**管理权限**（任务 `tasks.manage_tasks` / 申报 `proposals.change_proposal`）。删除额外允许上传者删自己上传的附件。上传要求登录（匿名意见反馈无附件）。删除父级（任务/申报）时，其附件行与磁盘文件由后端自动回收。
+
 
 ## 站内消息与任务讨论
 
@@ -380,13 +389,15 @@ Django 的路由规则：
 |------|--------|
 | `/admin/*` | Django Admin |
 | `/auth/*` | Django API（账号/资料/用户） |
-| `/tasks/*` | Django API（任务/标签/附件） |
+| `/tasks/*` | Django API（任务/标签） |
+| `/proposals/*` | Django API（申报/反馈） |
+| `/attachments/*` | Django API（统一附件） |
 | `/messaging/*` | Django API（消息/讨论） |
 | `/static/*` | 静态文件 |
 | `/media/*` | 用户上传文件 |
 | 其他所有路径 | 返回 `index.html`（SPA） |
 
-前端路由不受限制，Django 会将所有非后端路径交给前端处理。路径选择只需避开 `/admin/`、`/auth/`、`/tasks/`、`/messaging/`、`/static/`、`/media/` 即可。
+前端路由不受限制，Django 会将所有非后端路径交给前端处理。路径选择只需避开 `/admin/`、`/auth/`、`/tasks/`、`/proposals/`、`/attachments/`、`/messaging/`、`/static/`、`/media/` 即可。
 
 ## 部署模式
 

@@ -40,30 +40,6 @@ class CanAssignTask(permissions.BasePermission):
         return bool(user and user.is_authenticated and user.has_perm("tasks.assign_task"))
 
 
-class CanUploadAttachment(permissions.BasePermission):
-    """上传附件：manage_tasks 权限者始终可；否则按创建者/负责人/协作者规则。
-    delete_attachment 由视图内逻辑进一步限制（上传者/创建者/manage_tasks 可删）。"""
-
-    def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated
-
-    def has_object_permission(self, request, view, obj):
-        user = request.user
-        if not user or not user.is_authenticated:
-            return False
-        if user.has_perm("tasks.manage_tasks"):
-            return True
-        if getattr(view, "action", "") == "delete_attachment":
-            return True
-        if getattr(view, "action", "") == "add_attachment":
-            if obj.status == "in_progress":
-                if user == obj.creator or user == obj.assignee:
-                    return True
-                return obj.collaborators.filter(pk=user.pk).exists()
-            return user == obj.creator
-        return False
-
-
 class CanManageTag(permissions.BasePermission):
     """标签管理：所有登录用户可读；写需 tasks.manage_tags 权限"""
 

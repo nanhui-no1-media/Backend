@@ -1,6 +1,3 @@
-import os
-import re
-
 from django.contrib.auth.models import User
 from django.db.models import Q
 from django.utils import timezone
@@ -9,17 +6,15 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Attachment, Tag, Task, TaskClaimRequest
+from .models import Tag, Task, TaskClaimRequest
 from .permissions import (
     CanAssignTask,
     CanCreateTask,
     CanManageTag,
     CanModifyTask,
-    CanUploadAttachment,
     CanViewTask,
 )
 from .serializers import (
-    AttachmentSerializer,
     SimpleUserSerializer,
     TagSerializer,
     TaskClaimRequestSerializer,
@@ -65,8 +60,6 @@ class TaskViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated(), CanModifyTask()]
         if self.action == "assign":
             return [IsAuthenticated(), CanAssignTask()]
-        if self.action in ("add_attachment", "delete_attachment"):
-            return [IsAuthenticated(), CanUploadAttachment()]
         return [IsAuthenticated(), CanViewTask()]
 
     def get_queryset(self):
@@ -202,84 +195,6 @@ class TaskViewSet(viewsets.ModelViewSet):
         return Response(TaskDetailSerializer(task, context={"request": request}).data)
 
     @action(detail=True, methods=["post"])
-    def add_attachment(self, request, pk=None):
-        task = self.get_object()
-        file = request.FILES.get("file")
-        if not file:
-            return Response({"detail": "请选择文件"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if file.size > 50 * 1024 * 1024:
-            return Response({"detail": "文件大小不能超过 50MB"}, status=status.HTTP_400_BAD_REQUEST)
-
-        ext = os.path.splitext(file.name)[1].lower()
-        forbidden = {".exe", ".bat", ".cmd", ".sh", ".php", ".asp", ".jsp", ".py", ".rb", ".pl", ".cgi", ".com", ".scr", ".pif", ".msi"}
-        if ext in forbidden:
-            return Response({"detail": "禁止上传此类型的文件"}, status=status.HTTP_400_BAD_REQUEST)
-
-        content_type = file.content_type or ""
-        if content_type.startswith("image/"):
-            file_type = "image"
-        elif content_type.startswith("video/"):
-            file_type = "video"
-        elif content_type in (
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.ms-excel",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-powerpoint",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "text/plain",
-        ):
-            file_type = "document"
-        elif content_type in (
-            "application/zip",
-            "application/x-rar-compressed",
-            "application/x-7z-compressed",
-            "application/gzip",
-        ):
-            file_type = "archive"
-        else:
-            file_type = "other"
-
-        attachment = Attachment.objects.create(
-            task=task,
-            uploaded_by=request.user,
-            file=file,
-            file_type=file_type,
-            file_name=file.name,
-            file_size=file.size,
-        )
-        return Response(
-            AttachmentSerializer(attachment, context={"request": request}).data,
-            status=status.HTTP_201_CREATED,
-        )
-
-    @action(detail=True, methods=["post"])
-    def delete_attachment(self, request, pk=None):
-        task = self.get_object()
-        attachment_id = request.data.get("attachment_id")
-        if not attachment_id:
-            return Response({"detail": "缺少 attachment_id"}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            attachment = Attachment.objects.get(id=attachment_id, task=task)
-        except Attachment.DoesNotExist:
-            return Response({"detail": "附件不存在"}, status=status.HTTP_404_NOT_FOUND)
-
-        can_delete = (
-            attachment.uploaded_by == request.user
-            or request.user.has_perm("tasks.manage_tasks")
-            or task.creator == request.user
-        )
-        if not can_delete:
-            return Response({"detail": "无权删除此附件"}, status=status.HTTP_403_FORBIDDEN)
-
-        attachment.file.delete(save=False)
-        attachment.delete()
-        return Response({"detail": "附件已删除"})
-
-    @action(detail=True, methods=["post"])
     def assign(self, request, pk=None):
         """社长直接指派"""
         task = self.get_object()
@@ -315,12 +230,6 @@ class TaskViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-class AttachmentViewSet(viewsets.ReadOnlyModelViewSet):
-    """附件列表"""
-    queryset = Attachment.objects.select_related("uploaded_by", "task").all()
-    serializer_class = AttachmentSerializer
-    permission_classes = [IsAuthenticated]
-    filterset_fields = ["task", "file_type"]
+# 旧的按任务内嵌只读附件 ViewSet 与上传/删除动作已移除：附件列表随父级详情返回，
+# 上传/删除统一走独立 /attachments/ 端点（见 attachments app）。
 
-    def get_queryset(self):
-        return super().get_queryset()

@@ -1,8 +1,9 @@
 from rest_framework import serializers
 
+from attachments.serializers import AttachmentSerializer
 from tasks.serializers import SimpleUserSerializer  # 复用
 
-from .models import Proposal, ProposalAttachment, Vote
+from .models import Proposal, Vote
 
 
 def _creator_repr(obj):
@@ -10,27 +11,6 @@ def _creator_repr(obj):
     if obj.creator_id is None:
         return None
     return SimpleUserSerializer(obj.creator).data
-
-
-class ProposalAttachmentSerializer(serializers.ModelSerializer):
-    uploaded_by = SimpleUserSerializer(read_only=True)
-    file_url = serializers.SerializerMethodField()
-
-    class Meta:
-        model = ProposalAttachment
-        fields = [
-            "id", "file_url", "file_type", "file_name",
-            "file_size", "uploaded_by", "uploaded_at",
-        ]
-
-    def get_file_url(self, obj):
-        request = self.context.get("request")
-        if obj.file and hasattr(obj.file, "url"):
-            url = obj.file.url
-            if request:
-                return request.build_absolute_uri(url)
-            return url
-        return None
 
 
 class VoteSerializer(serializers.ModelSerializer):
@@ -80,7 +60,7 @@ class ProposalDetailSerializer(serializers.ModelSerializer):
     creator = serializers.SerializerMethodField()
     reviewed_by = SimpleUserSerializer(read_only=True)
     votes = VoteSerializer(many=True, read_only=True)
-    attachments = ProposalAttachmentSerializer(many=True, read_only=True)
+    attachments = AttachmentSerializer(many=True, read_only=True)
     my_vote = serializers.SerializerMethodField()
 
     class Meta:

@@ -60,17 +60,3 @@ class CanWithdrawProposal(permissions.BasePermission):
         if obj.status not in ("voting", "pending_approval"):
             return False
         return obj.creator == request.user
-
-
-class CanManageProposalAttachment(permissions.BasePermission):
-    """附件：有 change_proposal 权限者，或申报创建人（已打回可改/补材料）"""
-
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated)
-
-    def has_object_permission(self, request, view, obj):
-        if request.user.has_perm("proposals.change_proposal"):
-            return True
-        if getattr(view, "action", "") == "delete_attachment":
-            return True
-        return obj.creator == request.user

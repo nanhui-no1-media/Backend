@@ -319,3 +319,60 @@ class CascadeReclaimTest(_AttachmentTestCase):
         self.assertEqual(resp.status_code, 204)
         self.assertFalse(Attachment.objects.filter(pk=att_id).exists())
         self.assertFalse(storage.exists(name))
+
+
+# ── 详情内联渲染：附件随父级详情返回（统一序列化器 + 规范化后的 attachments 访问器）──
+class ParentDetailRendersAttachmentsTest(_AttachmentTestCase):
+    """统一附件不再有独立列表端点——列表随任务/申报详情的 ``attachments`` 字段返回。
+
+    守护 T3 收尾后的渲染路径：访问器已从 ``unified_attachments`` 规范化为
+    ``attachments``，且两个详情序列化器都复用统一 ``AttachmentSerializer``（其
+    ``uploaded_by`` 经延迟导入打破 tasks↔attachments 序列化器循环）。
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.creator = User.objects.create_user(username="creator", password="x")
+        self.client = APIClient()
+        self.client.force_authenticate(self.creator)
+        self.task = Task.objects.create(title="t", creator=self.creator, status="pending")
+        self.prop = Proposal.objects.create(
+            proposal_type="activity", status="pending_approval", title="p", creator=self.creator,
+        )
+
+    def test_task_detail_inlines_attachments(self):  # 故事 #23
+        resp = self.client.post(
+            "/attachments/",
+            {"file": upload("a.png", b"x", "image/png"), "task_id": self.task.pk},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 201)
+        att_id = resp.data["id"]
+
+        resp = self.client.get(f"/tasks/tasks/{self.task.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        attachments = resp.data["attachments"]
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0]["id"], att_id)
+        self.assertEqual(attachments[0]["file_type"], "image")
+        # 统一序列化器经延迟导入的 SimpleUserSerializer 渲染上传者
+        self.assertEqual(attachments[0]["uploaded_by"]["username"], "creator")
+        self.assertIn("file_url", attachments[0])
+
+    def test_proposal_detail_inlines_attachments(self):  # 故事 #24
+        resp = self.client.post(
+            "/attachments/",
+            {"file": upload("a.pdf", b"x", "application/pdf"), "proposal_id": self.prop.pk},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 201)
+        att_id = resp.data["id"]
+
+        resp = self.client.get(f"/proposals/proposals/{self.prop.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        attachments = resp.data["attachments"]
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0]["id"], att_id)
+        self.assertEqual(attachments[0]["file_type"], "document")
+        self.assertEqual(attachments[0]["uploaded_by"]["username"], "creator")
+

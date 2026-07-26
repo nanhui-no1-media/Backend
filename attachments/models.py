@@ -4,10 +4,9 @@
 强制「恰好一个父级」。删除父级时 CASCADE 连带删除附件行，再由 post_delete
 信号（见 signals.py）同步删除磁盘文件——自动回收，无需定时任务。
 
-注：本券（T1）刻意使用临时反向访问器名 ``unified_attachments`` /
-``uploaded_unified_attachments``，避免与旧模型 ``tasks.Attachment`` /
-``proposals.ProposalAttachment`` 的 ``attachments`` 访问器冲突；待 T3 移除旧模型
-后，再规范化为 ``attachments``（纯代码改动，不产生迁移）。
+反向访问器规范化为 ``attachments``（任务/申报侧）与 ``uploaded_attachments``
+（用户侧）：T3 移除旧的内嵌附件模型后，统一模型成为唯一来源，故不再需要
+T1 时期的临时前缀 ``unified_*``。
 """
 import os
 import uuid
@@ -35,15 +34,15 @@ class Attachment(models.Model):
 
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
-        related_name="uploaded_unified_attachments", verbose_name="上传者",
+        related_name="uploaded_attachments", verbose_name="上传者",
     )
     task = models.ForeignKey(
         "tasks.Task", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="unified_attachments", verbose_name="任务",
+        null=True, blank=True, related_name="attachments", verbose_name="任务",
     )
     proposal = models.ForeignKey(
         "proposals.Proposal", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="unified_attachments", verbose_name="申报",
+        null=True, blank=True, related_name="attachments", verbose_name="申报",
     )
     file = models.FileField("文件", upload_to=attachment_upload_path)
     file_type = models.CharField("文件类型", max_length=20, choices=FILE_TYPE_CHOICES)
