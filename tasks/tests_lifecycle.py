@@ -15,6 +15,9 @@ from .lifecycle import (
     CANCEL,
     CLAIM,
     COMPLETE,
+    KIND_BAD_REQUEST,
+    KIND_FORBIDDEN,
+    KIND_NOT_FOUND,
     REJECT_CLAIM,
     REJECT_COMPLETION,
     TransitionResult,
@@ -24,6 +27,7 @@ from .lifecycle import (
     can_manage,
     is_active_participant,
     is_creator,
+    status_for_assignee,
 )
 from .models import Task, TaskClaimRequest
 
@@ -356,3 +360,37 @@ class ApplyTransitionTest(TestCase):
         result = apply(REJECT_CLAIM, task, self.creator, payload={"claim_id": claim_a.pk})
         self.assertTrue(result.ok)
         self.assertEqual(Task.objects.get(pk=task.pk).status, "review")  # 仍有待审认领，不回退
+
+    # ---- 拒绝类别 kind（供 HTTP 层映射 403/400/404）----
+
+    def test_complete_by_non_participant_is_forbidden(self):
+        task = self._task(status="in_progress", assignee=self.assignee)
+        self.assertEqual(apply(COMPLETE, task, self.outsider).kind, KIND_FORBIDDEN)
+
+    def test_complete_in_wrong_state_is_bad_request(self):
+        # 状态不对（非进行中）优先于权限判定 → bad_request。
+        task = self._task(status="reviewing", assignee=self.assignee)
+        self.assertEqual(apply(COMPLETE, task, self.assignee).kind, KIND_BAD_REQUEST)
+
+    def test_approve_completion_by_assignee_is_forbidden(self):
+        task = self._task(status="reviewing", assignee=self.assignee)
+        self.assertEqual(apply(APPROVE_COMPLETION, task, self.assignee).kind, KIND_FORBIDDEN)
+
+    def test_approve_claim_missing_claim_is_not_found(self):
+        task = self._task(status="review")
+        result = apply(APPROVE_CLAIM, task, self.creator, payload={"claim_id": 999999})
+        self.assertEqual(result.kind, KIND_NOT_FOUND)
+
+    def test_reject_completion_without_reason_is_bad_request(self):
+        task = self._task(status="reviewing")
+        result = apply(REJECT_COMPLETION, task, self.creator, payload={})
+        self.assertEqual(result.kind, KIND_BAD_REQUEST)
+
+
+class AssigneeLinkageTest(TestCase):
+    """负责人↔状态联动：任务创建与指派共用的单一判定。"""
+
+    def test_status_for_assignee(self):
+        user = User.objects.create_user(username="u", password="x")
+        self.assertEqual(status_for_assignee(user), "in_progress")
+        self.assertEqual(status_for_assignee(None), "pending")

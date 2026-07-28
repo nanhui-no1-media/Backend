@@ -1,15 +1,17 @@
-"""任务生命周期模块（架构深化 #1，见 #6 / #9）。
+"""任务生命周期模块（架构深化 #1，见 #6 / #9 / #12）。
 
 独占任务的状态机、权限规则与「活跃参与者」判定。对外暴露：
 
 - 三段权限谓词：``is_creator`` / ``is_active_participant`` / ``can_manage``
   （外加指派权限 ``can_assign``）；
 - ``available_actions(task, user)`` —— 此刻该用户可执行的动作集合；
-- ``apply(action, task, user, *, payload)`` —— 执行一次状态转移。
+- ``apply(action, task, user, *, payload)`` —— 执行一次状态转移，返回
+  :class:`TransitionResult`（含拒绝类别 ``kind``，供 HTTP 层映射状态码）；
+- ``status_for_assignee(assignee)`` —— 负责人↔状态联动，供任务创建与指派共用。
 
-状态机与权限判定为进程内纯领域逻辑，仅依赖任务字段 + 用户权限。``apply``
-会在此之上产生副作用并写库（创建/审批认领申请、置负责人、记完成时间等），
-使八个 HTTP 动作可退化为「解析入参 → 调 apply → 序列化」的薄调用方。
+状态机与权限规则为进程内纯领域逻辑，集中在 ``_REQUIRED_STATES`` 与
+``_permitted`` 一处，``available_actions`` 与 ``apply`` 共用、不再五处复制。
+``apply`` 在此之上产生副作用并写库（创建/审批认领申请、置负责人、记完成时间）。
 """
 
 from dataclasses import dataclass
@@ -48,8 +50,17 @@ def can_assign(user):
     return user.has_perm("tasks.assign_task")
 
 
+def status_for_assignee(assignee):
+    """负责人↔状态联动：有负责人则进行中，否则待处理。
+
+    任务创建（序列化器）与指派动作（``apply(ASSIGN)``）共用此判定，
+    删除两处各自直接改状态的做法（见 #12）。
+    """
+    return "in_progress" if assignee else "pending"
+
+
 # ---- 动作标识 -----------------------------------------------------------
-# 与 tasks 视图的 @action 名一一对应，#12 可直接以此映射 HTTP 路由。
+# 与 tasks 视图的 @action 名一一对应，HTTP 路由即以此映射。
 CLAIM = "claim"
 APPROVE_CLAIM = "approve_claim"
 REJECT_CLAIM = "reject_claim"
@@ -66,55 +77,19 @@ _ACTION_ORDER = (
     CANCEL, ASSIGN,
 )
 
+# 各动作的合法源状态。空元组表示「任意状态」（指派）。
+_REQUIRED_STATES = {
+    CLAIM: ("pending", "review"),
+    APPROVE_CLAIM: ("review",),
+    REJECT_CLAIM: ("review",),
+    COMPLETE: ("in_progress",),
+    APPROVE_COMPLETION: ("reviewing",),
+    REJECT_COMPLETION: ("reviewing",),
+    CANCEL: ("pending", "in_progress", "reviewing", "review"),  # 非终态
+    ASSIGN: (),
+}
 
-def available_actions(task, user):
-    """此刻 ``user`` 可对 ``task`` 执行的动作（有序、唯一）。
-
-    纯领域逻辑：仅依据任务字段 + 用户权限，不查认领申请、不触 HTTP。
-    故「认领」类动作按「状态 + 角色」给出，至于此刻是否真有待审认领、
-    是否已重复申请，留待 ``apply`` / HTTP 层在执行时校验。
-    """
-    if not user.is_authenticated:
-        return ()
-    actions = set()
-
-    # 申请认领：待处理 / 认领审核中，且无负责人、且非创建者。
-    if task.status in ("pending", "review") and not task.assignee_id and not is_creator(task, user):
-        actions.add(CLAIM)
-    # 审批认领：认领审核中，且为创建者或持管理权限。
-    if task.status == "review" and (is_creator(task, user) or can_manage(user)):
-        actions.add(APPROVE_CLAIM)
-        actions.add(REJECT_CLAIM)
-    # 提交验收：进行中，且为活跃参与者（负责人 / 协作者）或持管理权限。
-    if task.status == "in_progress" and (is_active_participant(task, user) or can_manage(user)):
-        actions.add(COMPLETE)
-    # 通过 / 打回验收：待验收，且为创建者或持管理权限。
-    if task.status == "reviewing" and (is_creator(task, user) or can_manage(user)):
-        actions.add(APPROVE_COMPLETION)
-        actions.add(REJECT_COMPLETION)
-    # 取消：尚未终态，且为创建者或持管理权限。
-    if task.status not in ("completed", "cancelled") and (is_creator(task, user) or can_manage(user)):
-        actions.add(CANCEL)
-    # 指派：持指派权限（与状态无关）。
-    if can_assign(user):
-        actions.add(ASSIGN)
-
-    return tuple(action for action in _ACTION_ORDER if action in actions)
-
-
-# ---- 转移执行 -----------------------------------------------------------
-
-@dataclass(frozen=True)
-class TransitionResult:
-    """``apply`` 的返回：是否成功、所执行动作、转移后的任务、拒绝原因。"""
-
-    ok: bool
-    action: str
-    task: Task
-    reason: str | None = None
-
-
-# 「状态 / 权限」闸口失败时的原因（载荷级校验另给具体原因）。
+# 闸口失败时的中文原因（载荷级校验另给具体原因）。
 _UNAVAILABLE_REASON = {
     COMPLETE: "当前无法提交验收",
     APPROVE_COMPLETION: "当前无法通过验收",
@@ -127,16 +102,83 @@ _UNAVAILABLE_REASON = {
 }
 
 
+def _permitted(action, task, user):
+    """动作的权限判定（假定状态已满足）。
+
+    审批类动作（批准/拒绝认领、通过/打回验收、取消）统一「创建者 或 管理权限」；
+    提交验收为「活跃参与者 或 管理权限」；认领为「非创建者 且 无负责人」。
+    """
+    if action == COMPLETE:
+        return is_active_participant(task, user) or can_manage(user)
+    if action in (APPROVE_CLAIM, REJECT_CLAIM, APPROVE_COMPLETION, REJECT_COMPLETION, CANCEL):
+        return is_creator(task, user) or can_manage(user)
+    if action == CLAIM:
+        return not is_creator(task, user) and not task.assignee_id
+    if action == ASSIGN:
+        return can_assign(user)
+    return False
+
+
+def available_actions(task, user):
+    """此刻 ``user`` 可对 ``task`` 执行的动作（有序、唯一）。
+
+    纯领域逻辑：仅依据任务字段 + 用户权限，不查认领申请、不触 HTTP。
+    故「认领」类动作按「状态 + 角色」给出，至于此刻是否真有待审认领、
+    是否已重复申请，留待 ``apply`` / HTTP 层在执行时校验。
+    """
+    if not user.is_authenticated:
+        return ()
+    out = []
+    for action in _ACTION_ORDER:
+        states = _REQUIRED_STATES[action]
+        if states and task.status not in states:
+            continue
+        if not _permitted(action, task, user):
+            continue
+        out.append(action)
+    return tuple(out)
+
+
+# ---- 转移执行 -----------------------------------------------------------
+
+# 拒绝类别：HTTP 层据此映射状态码（403 / 400 / 404）。成功时为 None。
+KIND_FORBIDDEN = "forbidden"
+KIND_BAD_REQUEST = "bad_request"
+KIND_NOT_FOUND = "not_found"
+
+
+@dataclass(frozen=True)
+class TransitionResult:
+    """``apply`` 的返回：是否成功、所执行动作、转移后的任务、拒绝原因与类别。"""
+
+    ok: bool
+    action: str
+    task: Task
+    reason: str | None = None
+    kind: str | None = None
+
+
+def _reject(action, task, reason, kind):
+    return TransitionResult(False, action, task, reason, kind=kind)
+
+
 def apply(action, task, user, *, payload=None):
     """执行一次状态转移，返回 :class:`TransitionResult`。
 
-    先以 :func:`available_actions` 把守「状态 + 权限」闸口，再做载荷级校验
-    （打回理由、认领 id、指派 id、重复认领），最后落地副作用并写库。
+    先按 ``_REQUIRED_STATES`` 把状态闸口（不满足 → ``bad_request``），再按
+    ``_permitted`` 把权限闸口（不满足 → ``forbidden``），最后做载荷级校验
+    （打回理由、认领 id、指派 id、重复认领 → ``bad_request`` / ``not_found``）
+    并落地副作用、写库。
     """
     payload = payload or {}
 
-    if action not in available_actions(task, user):
-        return TransitionResult(False, action, task, _UNAVAILABLE_REASON.get(action, "当前不可执行此操作"))
+    if action not in _REQUIRED_STATES:
+        return _reject(action, task, "当前不可执行此操作", KIND_BAD_REQUEST)
+    states = _REQUIRED_STATES[action]
+    if states and task.status not in states:
+        return _reject(action, task, _UNAVAILABLE_REASON[action], KIND_BAD_REQUEST)
+    if not _permitted(action, task, user):
+        return _reject(action, task, _UNAVAILABLE_REASON[action], KIND_FORBIDDEN)
 
     if action == COMPLETE:
         task.status = "reviewing"
@@ -153,7 +195,7 @@ def apply(action, task, user, *, payload=None):
     if action == REJECT_COMPLETION:
         reason = str(payload.get("reason", "")).strip()
         if not reason:
-            return TransitionResult(False, action, task, "请填写打回理由")
+            return _reject(action, task, "请填写打回理由", KIND_BAD_REQUEST)
         task.status = "in_progress"
         task.reject_reason = reason
         task.save(update_fields=["status", "reject_reason", "updated_at"])
@@ -170,12 +212,11 @@ def apply(action, task, user, *, payload=None):
             try:
                 assignee = User.objects.get(pk=assignee_id)
             except User.DoesNotExist:
-                return TransitionResult(False, action, task, "用户不存在")
+                return _reject(action, task, "用户不存在", KIND_NOT_FOUND)
             task.assignee = assignee
-            task.status = "in_progress"
         else:
             task.assignee = None
-            task.status = "pending"
+        task.status = status_for_assignee(task.assignee)
         task.save(update_fields=["assignee", "status", "updated_at"])
         return TransitionResult(True, action, task)
 
@@ -185,7 +226,7 @@ def apply(action, task, user, *, payload=None):
             task=task, claimant=user, defaults={"reason": reason},
         )
         if not created:
-            return TransitionResult(False, action, task, "你已经申请过认领此任务")
+            return _reject(action, task, "你已经申请过认领此任务", KIND_BAD_REQUEST)
         # 首个认领申请把待处理任务流转到认领审核；审核中追加则状态不变。
         if task.status == "pending":
             task.status = "review"
@@ -196,7 +237,7 @@ def apply(action, task, user, *, payload=None):
         try:
             claim = TaskClaimRequest.objects.get(pk=payload.get("claim_id"), task=task, status="pending")
         except TaskClaimRequest.DoesNotExist:
-            return TransitionResult(False, action, task, "认领请求不存在或已处理")
+            return _reject(action, task, "认领请求不存在或已处理", KIND_NOT_FOUND)
         claim.status = "approved"
         claim.reviewed_by = user
         claim.reviewed_at = timezone.now()
@@ -210,7 +251,7 @@ def apply(action, task, user, *, payload=None):
         try:
             claim = TaskClaimRequest.objects.get(pk=payload.get("claim_id"), task=task, status="pending")
         except TaskClaimRequest.DoesNotExist:
-            return TransitionResult(False, action, task, "认领请求不存在或已处理")
+            return _reject(action, task, "认领请求不存在或已处理", KIND_NOT_FOUND)
         claim.status = "rejected"
         claim.reviewed_by = user
         claim.reviewed_at = timezone.now()
@@ -221,6 +262,6 @@ def apply(action, task, user, *, payload=None):
             task.save(update_fields=["status", "updated_at"])
         return TransitionResult(True, action, task)
 
-    # 不可达：上方闸口已拦下所有不在 available_actions 中的动作，而命中的动作
-    # 八种均在上方分支处理。保留此句作为派发完备性的断言，防新增动作时漏写分支。
+    # 不可达：上方 _REQUIRED_STATES 已拦下未知动作，已知动作均在上方分支处理。
+    # 保留此句作为派发完备性的断言，防新增动作时漏写分支。
     raise AssertionError(f"lifecycle.apply: 未处理的动作 {action!r}")
