@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import PasswordInput from "./PasswordInput";
 
 type Method = "username" | "email" | "phone";
 
@@ -140,10 +141,7 @@ export default function LoginModal({
           </div>
           <div className="field">
             <label className="label" htmlFor="auth-password">密码</label>
-            <div className="input-affix">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
-              <input className="input" id="auth-password" type="password" placeholder="请输入密码" value={password} onChange={(e) => setPassword(e.target.value)} />
-            </div>
+            <PasswordInput id="auth-password" placeholder="请输入密码" value={password} onChange={(e) => setPassword(e.target.value)} />
             <div className="modal-row">
               <label className="check"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> 记住登录</label>
               <a href="#" onClick={(e) => { e.preventDefault(); handleDismiss(); navigate("/forgot-password"); }}>忘记密码？</a>

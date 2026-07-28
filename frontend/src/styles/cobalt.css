@@ -244,6 +244,8 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 .input-affix:focus-within { border-color: var(--brand-400); box-shadow: var(--ring-focus); }
 .input-affix .input { border: none; box-shadow: none; padding-left: 0; }
 .input-affix svg { width: 16px; height: 16px; color: var(--faint); flex-shrink: 0; }
+.input-affix .affix-btn { display: inline-flex; align-items: center; justify-content: center; background: none; border: none; padding: 0; cursor: pointer; color: inherit; border-radius: var(--r-sm); }
+.input-affix .affix-btn:hover svg { color: var(--muted); }
 .hint { font-size: 12px; color: var(--faint); }
 
 /* 提示条 */

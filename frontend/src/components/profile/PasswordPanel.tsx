@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { api } from "../../api/client";
+import PasswordInput from "../PasswordInput";
 import "../../styles/form.css";
 
 export default function PasswordPanel() {
@@ -34,16 +35,16 @@ export default function PasswordPanel() {
       {error && <div className="alert alert-danger"><span>{error}</span></div>}
       <div className="field">
         <label className="label">原密码</label>
-        <input className="input" type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} required />
+        <PasswordInput value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} required />
       </div>
       <div className="form-grid">
         <div className="field">
           <label className="label">新密码</label>
-          <input className="input" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} />
+          <PasswordInput value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} />
         </div>
         <div className="field">
           <label className="label">确认新密码</label>
-          <input className="input" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
+          <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
         </div>
       </div>
       <div className="form-actions">

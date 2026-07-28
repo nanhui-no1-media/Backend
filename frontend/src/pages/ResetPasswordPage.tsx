@@ -2,6 +2,7 @@ import { useState, FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import AppShell from "../components/AppShell";
+import PasswordInput from "../components/PasswordInput";
 import { useLoginModal } from "../components/LoginModalProvider";
 
 export default function ResetPasswordPage() {
@@ -57,7 +58,7 @@ export default function ResetPasswordPage() {
                     )}
                     <div className="field">
                       <label className="label">新密码</label>
-                      <input className="input" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少 8 个字符" required />
+                      <PasswordInput value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="至少 8 个字符" required />
                     </div>
                     <button className="btn btn-primary btn-block" type="submit" disabled={loading}>
                       {loading ? "重置中…" : "重置密码"}
