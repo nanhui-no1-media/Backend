@@ -305,6 +305,7 @@ class ApplyTransitionTest(TestCase):
         task = self._task(status="pending")
         result = apply(CLAIM, task, self.outsider, payload={"reason": "我能做"})
         self.assertTrue(result.ok)
+        self.assertEqual(result.claim.claimant_id, self.outsider.pk)  # 结果携带新建的认领申请
         task.refresh_from_db()
         self.assertEqual(task.status, "review")
         self.assertTrue(

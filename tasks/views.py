@@ -1,11 +1,22 @@
-from django.contrib.auth.models import User
 from django.db.models import Q
-from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from .lifecycle import (
+    APPROVE_CLAIM,
+    APPROVE_COMPLETION,
+    ASSIGN,
+    CANCEL,
+    CLAIM,
+    COMPLETE,
+    KIND_FORBIDDEN,
+    KIND_NOT_FOUND,
+    REJECT_CLAIM,
+    REJECT_COMPLETION,
+    apply,
+)
 from .models import Tag, Task, TaskClaimRequest
 from .permissions import (
     CanAssignTask,
@@ -29,6 +40,13 @@ class TagViewSet(viewsets.ModelViewSet):
     serializer_class = TagSerializer
     permission_classes = [IsAuthenticated, CanManageTag]
     search_fields = ["name"]
+
+
+# apply 拒绝类别 → HTTP 状态码（默认 bad_request → 400）。
+_KIND_STATUS = {
+    KIND_FORBIDDEN: status.HTTP_403_FORBIDDEN,
+    KIND_NOT_FOUND: status.HTTP_404_NOT_FOUND,
+}
 
 
 class TaskViewSet(viewsets.ModelViewSet):
@@ -71,146 +89,83 @@ class TaskViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         serializer.save()
 
+    def _respond_transition(self, result, request):
+        """把生命周期模块的 TransitionResult 映射为 HTTP 响应。
+
+        成功则回取带 prefetch 的任务、序列化（详情含 available_actions）返回 200；
+        失败则按 ``kind`` 映射 403 / 404，其余（bad_request）默认 400。
+        八个流转动作均退化为「解析入参 → apply → 本方法」的薄调用方。
+        """
+        if result.ok:
+            task = self.get_queryset().get(pk=result.task.pk)
+            return Response(TaskDetailSerializer(task, context={"request": request}).data)
+        return Response(
+            {"detail": result.reason},
+            status=_KIND_STATUS.get(result.kind, status.HTTP_400_BAD_REQUEST),
+        )
+
     @action(detail=True, methods=["post"])
     def claim(self, request, pk=None):
-        """申请认领任务"""
+        """申请认领任务（成功返回该认领申请，201）"""
         task = self.get_object()
-        if task.assignee:
-            return Response({"detail": "任务已有负责人"}, status=status.HTTP_400_BAD_REQUEST)
-        if task.status not in ("pending", "review"):
-            return Response({"detail": "当前状态不可申请认领"}, status=status.HTTP_400_BAD_REQUEST)
-        reason = request.data.get("reason", "").strip()
-        claim, created = TaskClaimRequest.objects.get_or_create(
-            task=task, claimant=request.user,
-            defaults={"reason": reason},
-        )
-        if not created:
-            return Response({"detail": "你已经申请过认领此任务"}, status=status.HTTP_400_BAD_REQUEST)
-        # 第一个认领申请时自动流转到待审核
-        if task.status == "pending":
-            task.status = "review"
-            task.save(update_fields=["status", "updated_at"])
-        return Response(TaskClaimRequestSerializer(claim).data, status=status.HTTP_201_CREATED)
+        result = apply(CLAIM, task, request.user, payload={"reason": request.data.get("reason", "")})
+        if result.ok:
+            return Response(TaskClaimRequestSerializer(result.claim).data, status=status.HTTP_201_CREATED)
+        return self._respond_transition(result, request)
 
     @action(detail=True, methods=["post"])
     def approve_claim(self, request, pk=None):
         """批准认领请求"""
         task = self.get_object()
-        if task.creator != request.user and not request.user.has_perm("tasks.manage_tasks"):
-            return Response({"detail": "只有创建者或社长可以审批"}, status=status.HTTP_403_FORBIDDEN)
-        claim_id = request.data.get("claim_id")
-        if not claim_id:
-            return Response({"detail": "缺少 claim_id"}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            claim = TaskClaimRequest.objects.get(pk=claim_id, task=task, status="pending")
-        except TaskClaimRequest.DoesNotExist:
-            return Response({"detail": "认领请求不存在或已处理"}, status=status.HTTP_404_NOT_FOUND)
-        claim.status = "approved"
-        claim.reviewed_by = request.user
-        claim.reviewed_at = timezone.now()
-        claim.save()
-        task.assignee = claim.claimant
-        task.status = "in_progress"
-        task.save(update_fields=["assignee", "status", "updated_at"])
-        # 刷新 prefetch 缓存
-        task = self.get_queryset().get(pk=task.pk)
-        return Response(TaskDetailSerializer(task, context={"request": request}).data)
+        return self._respond_transition(
+            apply(APPROVE_CLAIM, task, request.user, payload={"claim_id": request.data.get("claim_id")}),
+            request,
+        )
 
     @action(detail=True, methods=["post"])
     def reject_claim(self, request, pk=None):
         """拒绝认领请求"""
         task = self.get_object()
-        if task.creator != request.user and not request.user.has_perm("tasks.manage_tasks"):
-            return Response({"detail": "只有创建者或社长可以审批"}, status=status.HTTP_403_FORBIDDEN)
-        claim_id = request.data.get("claim_id")
-        if not claim_id:
-            return Response({"detail": "缺少 claim_id"}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            claim = TaskClaimRequest.objects.get(pk=claim_id, task=task, status="pending")
-        except TaskClaimRequest.DoesNotExist:
-            return Response({"detail": "认领请求不存在或已处理"}, status=status.HTTP_404_NOT_FOUND)
-        claim.status = "rejected"
-        claim.reviewed_by = request.user
-        claim.reviewed_at = timezone.now()
-        claim.save()
-        if not TaskClaimRequest.objects.filter(task=task, status="pending").exists():
-            if task.status == "review":
-                task.status = "pending"
-                task.save(update_fields=["status", "updated_at"])
-        task = self.get_queryset().get(pk=task.pk)
-        return Response(TaskDetailSerializer(task, context={"request": request}).data)
+        return self._respond_transition(
+            apply(REJECT_CLAIM, task, request.user, payload={"claim_id": request.data.get("claim_id")}),
+            request,
+        )
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
-        """提交验收：负责人/社长完成工作，任务进入待验收（清空打回理由）"""
+        """提交验收：活跃参与者（负责人 / 协作者）或社长完成工作，进入待验收"""
         task = self.get_object()
-        if task.status != "in_progress":
-            return Response({"detail": "只有进行中的任务可以提交验收"}, status=status.HTTP_400_BAD_REQUEST)
-        if task.assignee != request.user and not request.user.has_perm("tasks.manage_tasks"):
-            return Response({"detail": "只有负责人或社长可以提交验收"}, status=status.HTTP_403_FORBIDDEN)
-        task.status = "reviewing"
-        task.reject_reason = ""
-        task.save(update_fields=["status", "reject_reason", "updated_at"])
-        return Response(TaskDetailSerializer(task, context={"request": request}).data)
+        return self._respond_transition(apply(COMPLETE, task, request.user), request)
 
     @action(detail=True, methods=["post"])
     def approve_completion(self, request, pk=None):
-        """通过验收：发起人/社长确认，任务完成"""
+        """通过验收：发起人 / 社长确认，任务完成"""
         task = self.get_object()
-        if task.creator != request.user and not request.user.has_perm("tasks.manage_tasks"):
-            return Response({"detail": "只有创建者或社长可以审批"}, status=status.HTTP_403_FORBIDDEN)
-        if task.status != "reviewing":
-            return Response({"detail": "只有待验收的任务可以审批"}, status=status.HTTP_400_BAD_REQUEST)
-        task.status = "completed"
-        task.completed_at = timezone.now()
-        task.save(update_fields=["status", "completed_at", "updated_at"])
-        return Response(TaskDetailSerializer(task, context={"request": request}).data)
+        return self._respond_transition(apply(APPROVE_COMPLETION, task, request.user), request)
 
     @action(detail=True, methods=["post"])
     def reject_completion(self, request, pk=None):
-        """打回：发起人/社长打回待验收任务，返回进行中（assignee 不变，记录打回理由）"""
+        """打回：发起人 / 社长打回待验收任务，返回进行中（需填打回理由）"""
         task = self.get_object()
-        if task.creator != request.user and not request.user.has_perm("tasks.manage_tasks"):
-            return Response({"detail": "只有创建者或社长可以审批"}, status=status.HTTP_403_FORBIDDEN)
-        if task.status != "reviewing":
-            return Response({"detail": "只有待验收的任务可以打回"}, status=status.HTTP_400_BAD_REQUEST)
-        reason = request.data.get("reason", "").strip()
-        if not reason:
-            return Response({"detail": "请填写打回理由"}, status=status.HTTP_400_BAD_REQUEST)
-        task.status = "in_progress"
-        task.reject_reason = reason
-        task.save(update_fields=["status", "reject_reason", "updated_at"])
-        return Response(TaskDetailSerializer(task, context={"request": request}).data)
+        return self._respond_transition(
+            apply(REJECT_COMPLETION, task, request.user, payload={"reason": request.data.get("reason", "")}),
+            request,
+        )
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, pk=None):
         """取消任务"""
         task = self.get_object()
-        if task.status == "completed":
-            return Response({"detail": "已完成的任务不能取消"}, status=status.HTTP_400_BAD_REQUEST)
-        if task.creator != request.user and not request.user.has_perm("tasks.manage_tasks"):
-            return Response({"detail": "只有创建者或社长可以取消"}, status=status.HTTP_403_FORBIDDEN)
-        task.status = "cancelled"
-        task.save(update_fields=["status", "updated_at"])
-        return Response(TaskDetailSerializer(task, context={"request": request}).data)
+        return self._respond_transition(apply(CANCEL, task, request.user), request)
 
     @action(detail=True, methods=["post"])
     def assign(self, request, pk=None):
-        """社长直接指派"""
+        """社长直接指派（设 / 清负责人，联动状态）"""
         task = self.get_object()
-        assignee_id = request.data.get("assignee_id")
-        if assignee_id:
-            try:
-                assignee = User.objects.get(pk=assignee_id)
-            except User.DoesNotExist:
-                return Response({"detail": "用户不存在"}, status=status.HTTP_404_NOT_FOUND)
-            task.assignee = assignee
-            task.status = "in_progress"
-        else:
-            task.assignee = None
-            task.status = "pending"
-        task.save(update_fields=["assignee", "status", "updated_at"])
-        return Response(TaskDetailSerializer(task, context={"request": request}).data)
+        return self._respond_transition(
+            apply(ASSIGN, task, request.user, payload={"assignee_id": request.data.get("assignee_id")}),
+            request,
+        )
 
     @action(detail=False, methods=["get"])
     def my_tasks(self, request):
@@ -232,4 +187,3 @@ class TaskViewSet(viewsets.ModelViewSet):
 
 # 旧的按任务内嵌只读附件 ViewSet 与上传/删除动作已移除：附件列表随父级详情返回，
 # 上传/删除统一走独立 /attachments/ 端点（见 attachments app）。
-

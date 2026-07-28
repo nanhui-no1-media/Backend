@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from attachments.serializers import AttachmentSerializer
 
+from .lifecycle import available_actions, status_for_assignee
 from .models import Tag, Task, TaskClaimRequest
 
 
@@ -74,6 +75,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
     tags = TagSerializer(many=True, read_only=True)
     attachments = AttachmentSerializer(many=True, read_only=True)
     claim_requests = TaskClaimRequestSerializer(many=True, read_only=True)
+    available_actions = serializers.SerializerMethodField()
 
     assignee_id = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(), required=False, allow_null=True, write_only=True,
@@ -95,21 +97,26 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             "creator", "assignee", "assignee_id",
             "collaborators", "collaborator_ids",
             "tags", "tag_ids",
-            "attachments", "claim_requests",
+            "attachments", "claim_requests", "available_actions",
             "completed_at",
             "reject_reason",
             "created_at", "updated_at",
         ]
         read_only_fields = ["creator", "status", "completed_at", "reject_reason", "created_at", "updated_at"]
 
+    def get_available_actions(self, task):
+        """当前查看者可对该任务执行的动作（来自生命周期模块）。列表序列化不带此字段。"""
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            return []
+        return available_actions(task, user)
+
     def create(self, validated_data):
         tags = validated_data.pop("tags", [])
         collaborators = validated_data.pop("collaborators", [])
-        # 创建时有负责人直接进入进行中，否则待处理
-        if validated_data.get("assignee"):
-            validated_data["status"] = "in_progress"
-        else:
-            validated_data["status"] = "pending"
+        # 负责人↔状态联动委托生命周期模块（与指派动作共用一处判定）。
+        validated_data["status"] = status_for_assignee(validated_data.get("assignee"))
         task = Task.objects.create(**validated_data)
         if tags:
             task.tags.set(tags)

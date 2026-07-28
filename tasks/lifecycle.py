@@ -149,13 +149,19 @@ KIND_NOT_FOUND = "not_found"
 
 @dataclass(frozen=True)
 class TransitionResult:
-    """``apply`` 的返回：是否成功、所执行动作、转移后的任务、拒绝原因与类别。"""
+    """``apply`` 的返回：是否成功、所执行动作、转移后的任务、拒绝原因与类别。
+
+    ``kind`` 为 ``None`` 表示成功；否则为 ``KIND_*`` 之一，供 HTTP 层映射
+    状态码（403 / 400 / 404）。``claim`` 仅 ``claim`` 动作成功时携带新建的
+    认领申请，供视图直接序列化、免去二次查询。
+    """
 
     ok: bool
     action: str
     task: Task
     reason: str | None = None
     kind: str | None = None
+    claim: TaskClaimRequest | None = None
 
 
 def _reject(action, task, reason, kind):
@@ -222,7 +228,7 @@ def apply(action, task, user, *, payload=None):
 
     if action == CLAIM:
         reason = str(payload.get("reason", "")).strip()
-        _, created = TaskClaimRequest.objects.get_or_create(
+        claim, created = TaskClaimRequest.objects.get_or_create(
             task=task, claimant=user, defaults={"reason": reason},
         )
         if not created:
@@ -231,7 +237,7 @@ def apply(action, task, user, *, payload=None):
         if task.status == "pending":
             task.status = "review"
             task.save(update_fields=["status", "updated_at"])
-        return TransitionResult(True, action, task)
+        return TransitionResult(True, action, task, claim=claim)
 
     if action == APPROVE_CLAIM:
         try:
