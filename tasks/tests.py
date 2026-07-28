@@ -1,17 +1,11 @@
 import json
 
-from django.contrib.auth.models import Group, User
+from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from .factories import make_president
 from .models import Task
-
-
-def make_president(user):
-    """把用户加入「社长」组（默认组已被迁移授予 manage_tasks 等权限）。"""
-    group, _ = Group.objects.get_or_create(name="社长")
-    user.groups.add(group)
-    return user
 
 
 class TaskCompletionReviewTest(TestCase):

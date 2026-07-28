@@ -9,6 +9,7 @@
 删除时在上述规则之上，额外允许**附件上传者**删除自己上传的附件（用户故事 #12）。
 """
 from proposals.models import Proposal
+from tasks.lifecycle import is_active_participant
 from tasks.models import Task
 
 
@@ -17,12 +18,8 @@ def is_parent_creator(user, parent):
     return parent.creator_id is not None and parent.creator_id == user.pk
 
 
-def is_task_active_participant(user, task):
-    """任务活跃参与者：进行中时的负责人或协作者。"""
-    return task.status == "in_progress" and (
-        task.assignee_id == user.pk
-        or task.collaborators.filter(pk=user.pk).exists()
-    )
+# 「任务活跃参与者」谓词已收口到 tasks.lifecycle.is_active_participant
+# （架构深化 #1），本模块按 (parent, user) 顺序引用之——对外规则不变。
 
 
 def has_parent_manage_permission(user, parent):
@@ -40,7 +37,7 @@ def can_manage_parent_attachments(user, parent):
         return False
     if is_parent_creator(user, parent):
         return True
-    if isinstance(parent, Task) and is_task_active_participant(user, parent):
+    if isinstance(parent, Task) and is_active_participant(parent, user):
         return True
     if has_parent_manage_permission(user, parent):
         return True
