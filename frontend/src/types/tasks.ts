@@ -60,6 +60,18 @@ export interface Message {
 export type TaskStatus = "pending" | "in_progress" | "reviewing" | "review" | "completed" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 
+// 任务详情里后端给出的「此刻该用户可执行的动作」标识，与 tasks 生命周期模块
+// （tasks/lifecycle.py）的动作常量一一对应。前端据此渲染按钮，不再本地推状态机（#6/#15）。
+export type TaskAction =
+  | "claim"
+  | "approve_claim"
+  | "reject_claim"
+  | "complete"
+  | "approve_completion"
+  | "reject_completion"
+  | "cancel"
+  | "assign";
+
 export interface TaskListItem {
   id: number;
   title: string;
@@ -87,6 +99,7 @@ export interface TaskDetail {
   tags: Tag[];
   attachments: Attachment[];
   claim_requests: TaskClaimRequest[];
+  available_actions: TaskAction[];
   completed_at: string | null;
   reject_reason: string;
   created_at: string;

@@ -3,9 +3,8 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import { taskApi } from "../api/tasks";
 import { attachmentApi } from "../api/attachments";
 import { messagingApi } from "../api/messaging";
-import { api } from "../api/client";
 import {
-  TaskDetail, Message,
+  TaskDetail, Message, TaskAction,
   STATUS_LABELS, PRIORITY_LABELS,
   STATUS_BADGE_CLASS, PRIORITY_DOT_CLASS,
 } from "../types/tasks";
@@ -27,14 +26,9 @@ export default function TaskDetailPage() {
   const [claimReason, setClaimReason] = useState("");
   const [claiming, setClaiming] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState<{ id: number; can_manage_tasks?: boolean } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
-
-  useEffect(() => {
-    api.me().then((d) => setCurrentUser({ id: d.user.id, can_manage_tasks: d.user.permissions?.can_manage_tasks })).catch(() => {});
-  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -210,13 +204,10 @@ export default function TaskDetailPage() {
     return (bytes / 1024 / 1024).toFixed(1) + " MB";
   };
 
-  const isCreator = task && currentUser && task.creator.id === currentUser.id;
-  const canManageTasks = !!currentUser?.can_manage_tasks;
-  const isAssignee = task && currentUser && task.assignee?.id === currentUser.id;
-  const canClaim = task && !task.assignee && currentUser && task.creator.id !== currentUser.id && task.status === "pending";
-  const canComplete = task && task.status === "in_progress" && (!!isAssignee || canManageTasks);
-  const canReviewCompletion = task && task.status === "reviewing" && (!!isCreator || canManageTasks);
-  const canCancel = task && task.status !== "completed" && task.status !== "cancelled" && (!!isCreator || canManageTasks);
+  // 按钮显隐完全由后端 available_actions 决定（任务生命周期模块，#6/#15）；
+  // 前端不再凭 currentUser + 状态本地推 canX，编辑锁除外（仅 pending 可编辑，#6 故事 31）。
+  const availableActions = task?.available_actions ?? [];
+  const can = (action: TaskAction) => availableActions.includes(action);
   const pendingClaims = task?.claim_requests.filter((c) => c.status === "pending") || [];
 
   if (loading) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中...</p></div></AppShell>;
@@ -265,26 +256,26 @@ export default function TaskDetailPage() {
           <div className="alert alert-warning"><b>此任务已被打回：</b>{task.reject_reason}</div>
         )}
 
-        {(canComplete || canReviewCompletion || canCancel) && (
+        {(can("complete") || can("approve_completion") || can("reject_completion") || can("cancel")) && (
           <div className="detail-actions">
-            {canComplete && (
+            {can("complete") && (
               <button className="btn btn-primary" onClick={handleComplete} disabled={actionLoading}>
                 {actionLoading ? "处理中…" : "提交验收"}
               </button>
             )}
-            {canReviewCompletion && (
+            {(can("approve_completion") || can("reject_completion")) && (
               <>
                 <button className="btn btn-primary" onClick={handleApproveCompletion} disabled={actionLoading}>通过验收</button>
                 <button className="btn btn-ghost" onClick={() => setShowRejectForm(true)} disabled={actionLoading}>打回</button>
               </>
             )}
-            {canCancel && (
+            {can("cancel") && (
               <button className="btn btn-ghost" onClick={handleCancel} disabled={actionLoading}>取消任务</button>
             )}
           </div>
         )}
 
-        {showRejectForm && canReviewCompletion && (
+        {showRejectForm && can("reject_completion") && (
           <div className="card card-pad detail-section">
             <h3 className="section-h">打回理由</h3>
             <textarea className="textarea" value={rejectReason}
@@ -331,7 +322,7 @@ export default function TaskDetailPage() {
           </div>
         )}
 
-        {canClaim && (
+        {can("claim") && (
           <div className="card card-pad detail-section">
             <h3 className="section-h">认领任务</h3>
             <textarea className="textarea" value={claimReason}
@@ -343,7 +334,7 @@ export default function TaskDetailPage() {
           </div>
         )}
 
-        {(!!isCreator || canManageTasks) && pendingClaims.length > 0 && (
+        {can("approve_claim") && pendingClaims.length > 0 && (
           <div className="card card-pad detail-section">
             <h3 className="section-h">认领请求 ({pendingClaims.length})</h3>
             <div className="claim-list">
