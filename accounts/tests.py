@@ -405,12 +405,18 @@ class SingleSessionMiddlewareTest(TestCase):
             HTTP_USER_AGENT="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari",
         )
         resp = a.get("/auth/me/")
-        self.assertEqual(resp.status_code, 401)
+        # 契约（#10）：被挤设备得到 401 + reason + takeover 四字段。前端适配器据此
+        # 映射成类型化「会话被挤下线」结果，故此处把响应形状钉死。
         data = resp.json()
+        self.assertEqual(resp.status_code, 401)
         self.assertEqual(data["reason"], "session_superseded")
-        self.assertEqual(data["takeover"]["device_type"], "Mobile")
-        self.assertIn("iOS", data["takeover"]["device_name"])
-        self.assertIn("time", data["takeover"])
+        takeover = data["takeover"]
+        self.assertIsInstance(takeover, dict)
+        # takeover 恰含四字段（前端 SessionSupersedeModal 直接消费）；ip 可为 null。
+        self.assertEqual(set(takeover.keys()), {"device_name", "device_type", "ip", "time"})
+        self.assertEqual(takeover["device_type"], "Mobile")
+        self.assertIn("iOS", takeover["device_name"])
+        self.assertIsInstance(takeover["time"], str)
 
     def test_new_device_can_access_after_takeover(self):
         a = self._login()
@@ -466,10 +472,15 @@ class LoginProtectionTest(TestCase):
         a.login(username="u", password="secret123")  # 建立当前会话（age≈0）
         b = Client()
         resp = self._post_login(b)
-        self.assertEqual(resp.status_code, 409)
+        # 契约（#10）：保护期登录被拒 409 + reason + retry_after（数值，秒）。
+        # 注：本契约为 409（Conflict），非 401——后端语义自始如此，此处钉死
+        # （与挤号的 401 区分：挤号是「你已被顶下线」，保护期是「他方刚登录、暂拒」）。
         data = resp.json()
+        self.assertEqual(resp.status_code, 409)
         self.assertEqual(data["reason"], "login_protection")
+        self.assertIsInstance(data["retry_after"], int)
         self.assertGreater(data["retry_after"], 0)
+        self.assertLessEqual(data["retry_after"], 600)
         # a 仍是当前会话、可继续访问
         self.assertEqual(UserSession.objects.filter(user=self.user, is_current=True).count(), 1)
         self.assertEqual(a.get("/auth/me/").status_code, 200)
