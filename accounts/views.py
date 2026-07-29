@@ -16,6 +16,7 @@ from django.core.mail import send_mail
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .models import Profile, UserSession
 from .utils import SESSION_HISTORY_LIMIT
+from .visibility import content_visibility, profile_view_for
 
 LOGIN_PROTECTION_SECONDS = 600  # 登录保护窗口：登录后 10 分钟内他方新会话登录被拒
 CONTENT_LIMIT = 15  # 个人中心每个内容 tab 返回的最近条数
@@ -289,14 +290,13 @@ def users_view(request):
 @require_GET
 @login_required
 def user_profile_view(request, id):
-    """查看任意用户的主页资料（按请求者身份裁剪字段）。"""
+    """查看任意用户的主页资料（按请求者身份裁剪字段，委托可见性模块）。"""
     viewed = User.objects.filter(pk=id, is_active=True).first()
     if viewed is None:
         return JsonResponse({"error": "用户不存在"}, status=404)
 
     profile = _get_or_create_profile(viewed)
-    is_owner = request.user.id == viewed.id
-    is_admin = request.user.is_superuser or request.user.groups.filter(name="信息组").exists()
+    visibility = profile_view_for(request.user, viewed)
 
     data = {
         "user": {
@@ -310,15 +310,15 @@ def user_profile_view(request, id):
             "bio": profile.bio,
         },
         "role": _role_for(viewed),
-        "viewer": {"is_owner": is_owner, "is_admin": is_admin},
+        "viewer": {"is_owner": visibility.is_owner, "is_admin": visibility.is_admin},
     }
 
-    if is_owner:
+    if visibility.can_see_private:
         data["user"]["email"] = viewed.email
         data["profile"]["birthday"] = profile.birthday.isoformat() if profile.birthday else None
         data["profile"]["gender"] = profile.gender
 
-    if is_owner or is_admin:
+    if visibility.can_see_sensitive:
         data["permissions"] = _capabilities(viewed)
         data["groups"] = list(viewed.groups.values_list("name", flat=True))
 
@@ -328,21 +328,22 @@ def user_profile_view(request, id):
 @require_GET
 @login_required
 def user_content_view(request, id):
-    """某用户的 tab 内容（按身份裁剪可见性）。"""
+    """某用户的 tab 内容（按身份裁剪可见性，委托可见性模块）。"""
     viewed = User.objects.filter(pk=id, is_active=True).first()
     if viewed is None:
         return JsonResponse({"error": "用户不存在"}, status=404)
 
-    is_owner = request.user.id == viewed.id
     type_ = request.GET.get("type")
     if type_ not in ("news", "proposals", "tasks"):
         return JsonResponse({"error": "无效的 type"}, status=400)
 
+    visibility = content_visibility(request.user, viewed, type_)
+    if visibility.denied:
+        return JsonResponse({"error": "无权查看他人任务"}, status=403)
+
     if type_ == "news":
         from news.models import News
-        qs = News.objects.filter(author=viewed)
-        if not is_owner:
-            qs = qs.filter(is_published=True)
+        qs = News.objects.filter(author=viewed, **visibility.extra_filter)
         results = [{
             "id": n.id,
             "title": n.title,
@@ -354,9 +355,7 @@ def user_content_view(request, id):
 
     elif type_ == "proposals":
         from proposals.models import Proposal
-        qs = Proposal.objects.filter(creator=viewed)
-        if not is_owner:
-            qs = qs.filter(status="approved")
+        qs = Proposal.objects.filter(creator=viewed, **visibility.extra_filter)
         results = [{
             "id": p.id,
             "title": p.title,
@@ -365,11 +364,9 @@ def user_content_view(request, id):
             "created_at": p.created_at.isoformat(),
         } for p in qs[:CONTENT_LIMIT]]
 
-    else:  # tasks
-        if not is_owner:
-            return JsonResponse({"error": "无权查看他人任务"}, status=403)
+    else:  # tasks（visibility.denied 已保证仅本人到此）
         from tasks.models import Task
-        qs = Task.objects.filter(assignee=viewed)
+        qs = Task.objects.filter(assignee=viewed, **visibility.extra_filter)
         results = [{
             "id": t.id,
             "title": t.title,

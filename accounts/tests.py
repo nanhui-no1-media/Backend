@@ -621,6 +621,7 @@ class RoleForTest(TestCase):
 
 
 class UserProfileViewTest(TestCase):
+    """薄冒烟：本人/管理员/他人各一条（字段可见集）+ 边界；可见性矩阵见 tests_visibility。"""
     def setUp(self):
         from django.contrib.auth.models import Group
         self.viewed = User.objects.create_user(username="viewed", email="v@e.com", password="p")
@@ -675,9 +676,19 @@ class UserProfileViewTest(TestCase):
 
 
 class UserContentViewTest(TestCase):
+    """薄冒烟：本人/他人两路 + 边界（404/400/403）；可见性矩阵见 tests_visibility。"""
+
     def setUp(self):
         self.owner = User.objects.create_user(username="owner", password="p")
         self.other = User.objects.create_user(username="other", password="p")
+        from news.models import News
+        from proposals.models import Proposal
+        from tasks.models import Task
+        News.objects.create(title="published", author=self.owner, is_published=True)
+        News.objects.create(title="draft", author=self.owner, is_published=False)
+        Proposal.objects.create(title="approved", proposal_type="activity", status="approved", creator=self.owner)
+        Proposal.objects.create(title="pending", proposal_type="activity", status="pending_approval", creator=self.owner)
+        Task.objects.create(title="t", creator=self.owner, assignee=self.owner)
 
     def _login(self, user):
         c = Client()
@@ -698,29 +709,20 @@ class UserContentViewTest(TestCase):
         c = self._login(self.other)
         self.assertEqual(self._get(c, "bogus").status_code, 400)
 
-    def test_news_owner_sees_drafts_public_does_not(self):
-        from news.models import News
-        News.objects.create(title="published", author=self.owner, is_published=True)
-        News.objects.create(title="draft", author=self.owner, is_published=False)
-        owner = {r["title"] for r in self._get(self._login(self.owner), "news").json()["results"]}
-        self.assertEqual(owner, {"published", "draft"})
-        other = {r["title"] for r in self._get(self._login(self.other), "news").json()["results"]}
-        self.assertEqual(other, {"published"})
+    def test_owner_smoke_reaches_all_types(self):
+        # 本人冒烟：三类内容都可达，本人可见未发布项（可见性矩阵见模块测试）
+        c = self._login(self.owner)
+        news = {r["title"] for r in self._get(c, "news").json()["results"]}
+        self.assertIn("draft", news)
+        self.assertEqual(len(self._get(c, "proposals").json()["results"]), 2)
+        self.assertEqual(len(self._get(c, "tasks").json()["results"]), 1)
 
-    def test_proposals_public_sees_only_approved(self):
-        from proposals.models import Proposal
-        Proposal.objects.create(title="approved", proposal_type="activity", status="approved", creator=self.owner)
-        Proposal.objects.create(title="pending", proposal_type="activity", status="pending_approval", creator=self.owner)
-        other = {r["title"] for r in self._get(self._login(self.other), "proposals").json()["results"]}
-        self.assertEqual(other, {"approved"})
-        owner = {r["title"] for r in self._get(self._login(self.owner), "proposals").json()["results"]}
-        self.assertEqual(owner, {"approved", "pending"})
-
-    def test_tasks_owner_ok_other_403(self):
-        from tasks.models import Task
-        Task.objects.create(title="t", creator=self.owner, assignee=self.owner)
-        owner_resp = self._get(self._login(self.owner), "tasks")
-        self.assertEqual(owner_resp.status_code, 200)
-        self.assertEqual(len(owner_resp.json()["results"]), 1)
-        self.assertEqual(self._get(self._login(self.other), "tasks").status_code, 403)
+    def test_other_smoke_filtered_and_tasks_forbidden(self):
+        # 他人冒烟：news 草稿不可见、proposals 未通过不可见（收窄生效）、tasks 403（边界）
+        c = self._login(self.other)
+        news = {r["title"] for r in self._get(c, "news").json()["results"]}
+        self.assertNotIn("draft", news)
+        proposals = {r["title"] for r in self._get(c, "proposals").json()["results"]}
+        self.assertNotIn("pending", proposals)
+        self.assertEqual(self._get(c, "tasks").status_code, 403)
 
