@@ -24,10 +24,13 @@ export type ApiError =
   | { kind: "not_found" }            // 404
   | { kind: "http"; status: number }; // 其余非 2xx（400 / 409 / 5xx …）
 
-/** readResponse 的结果：成功（带数据）或失败（带类型化错误 + 旧字段，供消费方过渡）。 */
+/** 「会话被挤下线」类型化结果（会话守卫按此消费，不读 reason 串）。 */
+export type SessionSupersededResult = Extract<ApiError, { kind: "session_superseded" }>;
+
+/** readResponse 的结果：成功（带数据）或失败（带类型化错误 + 人类可读 message）。 */
 type ResponseOutcome<T> =
   | { ok: true; data: T }
-  | { ok: false; error: ApiError; message: string; reason?: string; retryAfter?: number };
+  | { ok: false; error: ApiError; message: string };
 
 // 后端 reason 串常量：reason → kind 的映射只发生在 classifyHttpResponse 一处，
 // 后端改字段名时只改这一处（#7 故事 9）。
@@ -63,14 +66,10 @@ export async function readResponse<T>(res: Response): Promise<ResponseOutcome<T>
     return { ok: false, error: { kind: "network" }, message: "Failed to fetch" };
   }
   if (res.ok) return { ok: true, data: data as T };
-  const reason = typeof data?.reason === "string" ? data.reason : undefined;
-  const retryAfter = typeof data?.retry_after === "number" ? data.retry_after : undefined;
   return {
     ok: false,
     error: classifyHttpResponse(res.status, data),
     message: data?.detail || data?.error || "请求失败",
-    reason,
-    retryAfter,
   };
 }
 
@@ -104,8 +103,8 @@ export function humanizeApiError(err: ApiError): string {
   }
 }
 
-// ---- 挤号回调（会话守卫注册）----
-type SupersedeHandler = (takeover: SupersedeTakeover) => void;
+// ---- 挤号回调（会话守卫注册；消费类型化结果）----
+type SupersedeHandler = (result: SessionSupersededResult) => void;
 
 let supersedeHandler: SupersedeHandler | null = null;
 
@@ -142,22 +141,13 @@ export function createRequest(base: string) {
     }
     const result = await readResponse<T>(res);
     if (result.ok) return result.data;
-    const { error: apiError, message, reason, retryAfter } = result;
-    // 挤号：触发守卫回调（幂等由 SessionGuard 保证），随后照常抛错。
+    const { error: apiError, message } = result;
+    // 挤号：把类型化「会话被挤下线」结果交给守卫（幂等由 SessionGuard 保证），随后照常抛错。
     if (apiError.kind === "session_superseded") {
-      supersedeHandler?.(apiError.takeover ?? {});
+      supersedeHandler?.(apiError);
     }
-    // 旧错误形状（status/reason/retry_after）保留以保持零行为变更；另附类型化 apiError。
-    // #16 消费方改读 apiError 后，再删 reason/retry_after。
-    const err = new Error(message) as Error & {
-      status: number;
-      reason?: string;
-      retry_after?: number;
-      apiError?: ApiError;
-    };
+    const err = new Error(message) as Error & { status: number; apiError: ApiError };
     err.status = res.status;
-    err.reason = reason;
-    if (typeof retryAfter === "number") err.retry_after = retryAfter;
     err.apiError = apiError;
     throw err;
   };

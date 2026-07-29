@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { humanizeApiError, type ApiError } from "../api/shared";
 import PasswordInput from "./PasswordInput";
 
 type Method = "username" | "email" | "phone";
@@ -33,12 +34,10 @@ export default function LoginModal({
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // 后端登录接口返回的英文错误串 → 中文提示（前端只做展示层翻译）。
-  // 新增后端文案时在这里补一条即可；未命中的原文照常透出，兜底为「登录失败」。
+  // 登录接口的英文 error 串 → 中文（仅登录专用项；网络等其余错误按类型走 humanizeApiError）。
   const LOGIN_ERROR_ZH: Record<string, string> = {
     "Invalid credentials": "账号或密码错误，请重新输入。",
     "Invalid JSON": "请求数据格式错误，请刷新页面后重试。",
-    "Failed to fetch": "网络连接失败，请检查网络后重试。",
   };
 
   if (!open) return null;
@@ -71,16 +70,15 @@ export default function LoginModal({
       onClose();
       navigate(redirectTo ?? "/");
     } catch (err: any) {
-      if (err?.reason === "login_protection") {
-        const mins = err.retry_after ? Math.ceil(err.retry_after / 60) : null;
-        setError(
-          "该账号 10 分钟内在其他设备登录过，处于登录保护期，请稍后重试或由原设备退出登录。" +
-            (mins ? `（约 ${mins} 分钟后可重试）` : ""),
-        );
+      const apiError = err?.apiError as ApiError | undefined;
+      // 登录保护期：类型化结果驱动 ETA 文案（删除手写分钟换算，#16）
+      if (apiError?.kind === "login_protection") {
+        setError(humanizeApiError(apiError));
         return;
       }
-      const raw = err?.message || "";
-      setError(LOGIN_ERROR_ZH[raw] || raw || "登录失败，请重试。");
+      // 登录专用英文串（Invalid credentials 等）优先映射；其余按类型回退通用中文文案（#7 故事 7）。
+      const raw = (err?.message as string) || "";
+      setError(LOGIN_ERROR_ZH[raw] ?? humanizeApiError(apiError ?? { kind: "http", status: 0 }));
     } finally {
       setLoading(false);
     }

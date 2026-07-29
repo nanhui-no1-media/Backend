@@ -15,8 +15,9 @@ export default function SessionGuard({ children }: { children: ReactNode }) {
 
   // supersede 回调：显示挤号弹窗（幂等：已显示则不覆盖）并停轮询
   useEffect(() => {
-    setSupersedeHandler((t) => {
-      setTakeover((prev) => prev ?? t);
+    setSupersedeHandler((result) => {
+      // result 为类型化「会话被挤下线」结果（#16）；取其 takeover 渲染弹窗
+      setTakeover((prev) => prev ?? result.takeover);
       if (intervalRef.current !== null) {
         window.clearInterval(intervalRef.current);
         intervalRef.current = null;
