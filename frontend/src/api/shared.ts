@@ -1,9 +1,12 @@
-// 各 api 模块共用的请求工具。
+// 各 api 模块共用的请求工具 —— HTTP 适配器（架构深化 #2，见 #7 / #13 / #16）。
 //
-// CSRF 头、FormData 自动识别、204 空响应处理、统一的错误信息提取。
-// 另外拦截 401 + reason=session_superseded（其他设备登录挤下线），
-// 触发由 SessionGuard 注册的回调以弹出提示。
+// 独占 fetch、鉴权/会话头（credentials）、CSRF，以及单一「HTTP 响应 → 类型化结果」
+// 映射（classifyHttpResponse / readResponse）。会话/挤号契约以类型化结果联合
+// （ApiError）产出，守卫与弹窗按 kind 分支，不再匹配后端 reason 字符串。
 
+// ---- 命名会话/错误契约（discriminated union）----
+
+/** 挤号接管方信息（后端 takeover 载荷；形状由 accounts 测试 #10 钉死）。 */
 export interface SupersedeTakeover {
   device_name?: string;
   device_type?: string;
@@ -11,6 +14,97 @@ export interface SupersedeTakeover {
   time?: string;
 }
 
+/** 适配器产出的类型化错误/会话结果：消费方按 kind 分支，不读后端 reason 串。 */
+export type ApiError =
+  | { kind: "session_superseded"; takeover: SupersedeTakeover }
+  | { kind: "login_protection"; retryAfter: number }
+  | { kind: "network" }              // 断网 / 超时 / 响应非 JSON
+  | { kind: "auth" }                 // 401（非挤号）
+  | { kind: "forbidden" }            // 403
+  | { kind: "not_found" }            // 404
+  | { kind: "http"; status: number }; // 其余非 2xx（400 / 409 / 5xx …）
+
+/** readResponse 的结果：成功（带数据）或失败（带类型化错误 + 旧字段，供消费方过渡）。 */
+type ResponseOutcome<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: ApiError; message: string; reason?: string; retryAfter?: number };
+
+// 后端 reason 串常量：reason → kind 的映射只发生在 classifyHttpResponse 一处，
+// 后端改字段名时只改这一处（#7 故事 9）。
+export const REASON = {
+  SESSION_SUPERSEDED: "session_superseded",
+  LOGIN_PROTECTION: "login_protection",
+} as const;
+
+// ---- 纯映射：HTTP 响应 → 类型化结果 ----
+
+/** 把「状态码 + 已解析响应体」映射成类型化 ApiError。reason 串 → kind 的唯一归属。 */
+export function classifyHttpResponse(status: number, data: any): ApiError {
+  const reason = typeof data?.reason === "string" ? data.reason : null;
+  if (reason === REASON.SESSION_SUPERSEDED) {
+    return { kind: "session_superseded", takeover: data?.takeover ?? {} };
+  }
+  if (reason === REASON.LOGIN_PROTECTION && typeof data?.retry_after === "number") {
+    return { kind: "login_protection", retryAfter: data.retry_after };
+  }
+  if (status === 401) return { kind: "auth" };
+  if (status === 403) return { kind: "forbidden" };
+  if (status === 404) return { kind: "not_found" };
+  return { kind: "http", status };
+}
+
+/** 读取一个 HTTP 响应并映射成类型化结果（含成功分支）。响应体非 JSON 归为网络错误。 */
+export async function readResponse<T>(res: Response): Promise<ResponseOutcome<T>> {
+  if (res.status === 204) return { ok: true, data: null as T };
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    return { ok: false, error: { kind: "network" }, message: "Failed to fetch" };
+  }
+  if (res.ok) return { ok: true, data: data as T };
+  const reason = typeof data?.reason === "string" ? data.reason : undefined;
+  const retryAfter = typeof data?.retry_after === "number" ? data.retry_after : undefined;
+  return {
+    ok: false,
+    error: classifyHttpResponse(res.status, data),
+    message: data?.detail || data?.error || "请求失败",
+    reason,
+    retryAfter,
+  };
+}
+
+/** 类型化错误 → 中文文案（穷尽 switch；新增 ApiError kind 时编译器在 default 报错）。 */
+export function humanizeApiError(err: ApiError): string {
+  switch (err.kind) {
+    case "session_superseded":
+      return "您的账号在其他设备登录，您已被迫下线。";
+    case "login_protection": {
+      const mins = Math.ceil(err.retryAfter / 60);
+      return (
+        "该账号 10 分钟内在其他设备登录过，处于登录保护期，请稍后重试或由原设备退出登录。" +
+        (mins > 0 ? `（约 ${mins} 分钟后可重试）` : "")
+      );
+    }
+    case "network":
+      return "网络连接失败，请检查网络后重试。";
+    case "auth":
+      return "登录已失效，请重新登录。";
+    case "forbidden":
+      return "您没有权限执行此操作。";
+    case "not_found":
+      return "请求的资源不存在。";
+    case "http":
+      return "请求失败，请稍后重试。";
+    default: {
+      // 穷尽性：新增 ApiError kind 时，TS 在此行报错，强制补分支。
+      const _exhaustive: never = err;
+      return _exhaustive;
+    }
+  }
+}
+
+// ---- 挤号回调（会话守卫注册）----
 type SupersedeHandler = (takeover: SupersedeTakeover) => void;
 
 let supersedeHandler: SupersedeHandler | null = null;
@@ -24,35 +118,47 @@ export function getCSRFToken(): string {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
+// ---- 适配器：独占 fetch / 头 / CSRF / 响应映射 ----
 export function createRequest(base: string) {
   return async function request<T = any>(path: string, options: RequestInit = {}): Promise<T> {
     const isFormData = options.body instanceof FormData;
-    const res = await fetch(`${base}${path}`, {
-      ...options,
-      headers: {
-        ...(isFormData ? {} : { "Content-Type": "application/json" }),
-        "X-CSRFToken": getCSRFToken(),
-        ...options.headers,
-      },
-      credentials: "include",
-    });
-    if (res.status === 204) return null as T;
-    const data = await res.json();
-    if (res.status === 401 && data?.reason === "session_superseded") {
-      // 被新设备挤下线：触发回调弹窗（幂等由 SessionGuard 保证），随后照常抛错
-      supersedeHandler?.(data.takeover ?? {});
-    }
-    if (!res.ok) {
-      const err = new Error(data.detail || data.error || "请求失败") as Error & {
-        status: number;
-        reason?: string;
-        retry_after?: number;
-      };
-      err.status = res.status;
-      err.reason = data?.reason;
-      if (typeof data?.retry_after === "number") err.retry_after = data.retry_after;
+    let res: Response;
+    try {
+      res = await fetch(`${base}${path}`, {
+        ...options,
+        headers: {
+          ...(isFormData ? {} : { "Content-Type": "application/json" }),
+          "X-CSRFToken": getCSRFToken(),
+          ...options.headers,
+        },
+        credentials: "include",
+      });
+    } catch {
+      // 断网/超时：统一成网络错误（#7 故事 11）。message 沿用旧值，过渡期消费方不受影响。
+      const err = new Error("Failed to fetch") as Error & { status: number; apiError: ApiError };
+      err.status = 0;
+      err.apiError = { kind: "network" };
       throw err;
     }
-    return data as T;
+    const result = await readResponse<T>(res);
+    if (result.ok) return result.data;
+    const { error: apiError, message, reason, retryAfter } = result;
+    // 挤号：触发守卫回调（幂等由 SessionGuard 保证），随后照常抛错。
+    if (apiError.kind === "session_superseded") {
+      supersedeHandler?.(apiError.takeover ?? {});
+    }
+    // 旧错误形状（status/reason/retry_after）保留以保持零行为变更；另附类型化 apiError。
+    // #16 消费方改读 apiError 后，再删 reason/retry_after。
+    const err = new Error(message) as Error & {
+      status: number;
+      reason?: string;
+      retry_after?: number;
+      apiError?: ApiError;
+    };
+    err.status = res.status;
+    err.reason = reason;
+    if (typeof retryAfter === "number") err.retry_after = retryAfter;
+    err.apiError = apiError;
+    throw err;
   };
 }
