@@ -15,6 +15,14 @@ export interface NewsTag {
   news_count?: number;
 }
 
+export interface NewsAttachment {
+  id: number;
+  file_url: string;
+  file_type: "image" | "video" | "document" | "archive" | "other";
+  file_name: string;
+  file_size: number;
+}
+
 export interface NewsListItem {
   id: number;
   title: string;
@@ -34,6 +42,7 @@ export interface NewsDetail extends NewsListItem {
   content: string;
   related: NewsListItem[];
   updated_at: string;
+  attachments: NewsAttachment[];
 }
 
 export interface NewsFormData {
