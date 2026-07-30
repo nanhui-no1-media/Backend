@@ -243,7 +243,14 @@ export default function ProposalDetailPage() {
   const canEdit = isActivity && p.status === "returned" && (isCreator || canChangeProposals);
   const canResubmit = isActivity && p.status === "returned" && (isCreator || canChangeProposals);
   const canWithdraw = isCreator && (p.status === "voting" || p.status === "pending_approval");
-  const canManageAttachment = isActivity && (canChangeProposals || isCreator);
+  // 附件上传 / 删除权限（与后端 attachments.permissions 对齐）：
+  //  - 删除：创建者或 change_proposal 持有者（两种类型一致；社长对反馈「能删不能传」）。
+  //  - 上传：活动 = 创建者/社长；反馈 = 仅署名创建者且待审批
+  //    （社长不往别人反馈传证据，审结即锁——见 can_upload_to_parent 的反馈 carve-out）。
+  const canDeleteAttachment = canChangeProposals || isCreator;
+  const canUploadAttachment = isActivity
+    ? (canChangeProposals || isCreator)
+    : (isCreator && p.status === "pending_approval");
 
   const pct = (n: number, total: number) => (total > 0 ? Math.round((n / total) * 100) : 0) + "%";
 
@@ -418,46 +425,44 @@ export default function ProposalDetailPage() {
           </div>
         )}
 
-        {isActivity && (
-          <div className="card card-pad detail-section">
-            <div className="section-head-row">
-              <h3 className="section-h">附件 ({p.attachments.length})</h3>
-              {canManageAttachment && (
-                <>
-                  <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()} disabled={attUploading}>+ 上传</button>
-                  <input ref={fileInputRef} type="file" onChange={handleFileUpload} style={{ display: "none" }} />
-                </>
-              )}
-            </div>
-            {attUploading && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0" }}>
-                <span>{attProgress != null ? `上传 ${Math.round(attProgress * 100)}%` : "上传中…"}</span>
-                <div style={{ flex: 1, height: 6, background: "#e5e7eb", borderRadius: 4, overflow: "hidden" }}>
-                  <div style={{ width: attProgress != null ? `${Math.round(attProgress * 100)}%` : "0%", height: "100%", background: "#2563eb", transition: "width .2s" }} />
-                </div>
-              </div>
-            )}
-            {p.attachments.length > 0 ? (
-              <div className="att-list">
-                {p.attachments.map((att) => (
-                  <div key={att.id} className="att-item">
-                    <span className="att-icon">
-                      {att.file_type === "image" ? "IMG" : att.file_type === "video" ? "VID" :
-                       att.file_type === "document" ? "DOC" : att.file_type === "archive" ? "ZIP" : "FILE"}
-                    </span>
-                    <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="att-name">{att.file_name}</a>
-                    <span className="att-size">{formatSize(att.file_size)}</span>
-                    {canManageAttachment && (
-                      <button className="att-del" onClick={() => handleDeleteAttachment(att.id)} title="删除">✕</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="empty-text">暂无附件</p>
+        <div className="card card-pad detail-section">
+          <div className="section-head-row">
+            <h3 className="section-h">附件 ({p.attachments.length})</h3>
+            {canUploadAttachment && (
+              <>
+                <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()} disabled={attUploading}>+ 上传</button>
+                <input ref={fileInputRef} type="file" onChange={handleFileUpload} style={{ display: "none" }} />
+              </>
             )}
           </div>
-        )}
+          {attUploading && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0" }}>
+              <span>{attProgress != null ? `上传 ${Math.round(attProgress * 100)}%` : "上传中…"}</span>
+              <div style={{ flex: 1, height: 6, background: "#e5e7eb", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ width: attProgress != null ? `${Math.round(attProgress * 100)}%` : "0%", height: "100%", background: "#2563eb", transition: "width .2s" }} />
+              </div>
+            </div>
+          )}
+          {p.attachments.length > 0 ? (
+            <div className="att-list">
+              {p.attachments.map((att) => (
+                <div key={att.id} className="att-item">
+                  <span className="att-icon">
+                    {att.file_type === "image" ? "IMG" : att.file_type === "video" ? "VID" :
+                     att.file_type === "document" ? "DOC" : att.file_type === "archive" ? "ZIP" : "FILE"}
+                  </span>
+                  <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="att-name">{att.file_name}</a>
+                  <span className="att-size">{formatSize(att.file_size)}</span>
+                  {canDeleteAttachment && (
+                    <button className="att-del" onClick={() => handleDeleteAttachment(att.id)} title="删除">✕</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-text">暂无附件</p>
+          )}
+        </div>
 
         {isActivity && (
           <div className="card card-pad detail-section">
