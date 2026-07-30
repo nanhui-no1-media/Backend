@@ -701,3 +701,31 @@ class UploadNewsPermissionTest(_AttachmentTestCase):
     def test_outsider_cannot_upload_to_news(self):
         self.assertEqual(self._post(self.outsider).status_code, 403)
 
+
+# ── 新闻详情内联视频附件（精简、不含 uploaded_by）──
+class NewsDetailAttachmentsTest(_AttachmentTestCase):
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import Permission
+        from news.models import News
+        self.author = User.objects.create_user(username="author", password="x")
+        self.author.user_permissions.add(Permission.objects.get(codename="change_news"))
+        self.news = News.objects.create(title="n", author=self.author, is_published=True)
+        self.client = APIClient()
+        self.client.force_authenticate(self.author)
+        resp = self.client.post(
+            "/attachments/",
+            {"file": upload("v.mp4", b"x", "video/mp4"), "news_id": self.news.pk},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 201)
+
+    def test_news_detail_inlines_attachments(self):
+        resp = self.client.get(f"/news/news/{self.news.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        atts = resp.data["attachments"]  # pyright: ignore[reportAttributeAccessIssue]
+        self.assertEqual(len(atts), 1)
+        self.assertEqual(atts[0]["file_type"], "video")
+        self.assertIn("file_url", atts[0])
+        self.assertNotIn("uploaded_by", atts[0])
+
