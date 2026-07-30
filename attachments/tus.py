@@ -23,6 +23,7 @@ from rest_framework_tus import constants as tus_constants
 from rest_framework_tus.signals import finished
 from rest_framework_tus.views import UploadViewSet
 
+from news.models import News
 from proposals.models import Proposal
 from tasks.models import Task
 
@@ -64,7 +65,7 @@ def _resolve_parent(meta):
         pid = int(raw)
     except (TypeError, ValueError):
         return None, None
-    model = {"task": Task, "proposal": Proposal}.get(ptype)
+    model = {"task": Task, "proposal": Proposal, "news": News}.get(ptype)
     if model is None:
         return None, None
     try:
@@ -155,6 +156,7 @@ def create_attachment_from_tus(sender, instance, **kwargs):
         uploaded_by=user,
         task=parent if kind == "task" else None,
         proposal=parent if kind == "proposal" else None,
+        news=parent if kind == "news" else None,
         file_type=file_type,
         file_name=filename,
         file_size=instance.upload_length,
