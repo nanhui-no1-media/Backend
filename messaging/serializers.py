@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from tasks.serializers import SimpleUserSerializer
-from .models import Conversation, Message, MessageReadStatus
+from .models import Conversation, Message, MessageReadStatus, unread_message_count
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -44,4 +44,4 @@ class ConversationSerializer(serializers.ModelSerializer):
 
     def get_unread_count(self, obj):
         user = self.context["request"].user
-        return obj.messages.exclude(read_statuses__user=user).count()
+        return unread_message_count(user, obj)

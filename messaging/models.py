@@ -88,3 +88,22 @@ class MessageReadStatus(models.Model):
 
     def __str__(self):
         return f"{self.user.username} read message {self.message_id}"
+
+
+def unread_message_count(user, conversation=None):
+    """该用户尚未读的消息数。
+
+    - 只统计该用户参与的会话（``conversation=None`` 时为全部，否则限定单个会话）；
+    - 不计自己发出的消息——发送者不会为自己生成 MessageReadStatus，
+      若不排除，凡是发过消息的人未读数永远 ≥1（顶栏红点会常亮）。
+
+    供顶栏铃铛红点（总数）与会话列表未读徽标（单会话）共用。
+    """
+    qs = (
+        Message.objects
+        .filter(conversation__participants=user)
+        .exclude(sender=user)
+    )
+    if conversation is not None:
+        qs = qs.filter(conversation=conversation)
+    return qs.exclude(read_statuses__user=user).count()

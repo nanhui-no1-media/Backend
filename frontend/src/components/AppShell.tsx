@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { messagingApi } from "../api/messaging";
 import { useLoginModal } from "./LoginModalProvider";
 import "./AppShell.css";
 
@@ -47,6 +48,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
   const userWrap = useRef<HTMLDivElement>(null);
   const bellWrap = useRef<HTMLDivElement>(null);
   const { openLogin, authNonce, notifyAuthChange } = useLoginModal();
@@ -59,6 +61,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
       })
       .catch(() => setUser(null));
   }, [authNonce]);
+
+  // 铃铛红点：仅在「确有未读」时亮。登录态、跳转路由（含从 /messages 读毕返回）时刷新；
+  // 不做轮询——校园门户按需刷新即可。失败则按 0 处理（红点隐去），不阻塞顶栏。
+  useEffect(() => {
+    if (!user) { setUnread(0); return; }
+    messagingApi.unreadCount()
+      .then((d: any) => setUnread(Number(d?.total) || 0))
+      .catch(() => setUnread(0));
+  }, [user, authNonce, location.pathname]);
 
   // 用 body.is-authed 驱动 cobalt 的 .act-guest/.act-user 显隐
   useEffect(() => {
@@ -116,10 +127,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </div>
             <div className="act-user">
               <div className="bell-wrap" ref={bellWrap}>
-                <button className="bell" type="button" aria-label="站内通信"
+                <button className="bell" type="button" aria-label={unread > 0 ? `站内通信，${unread} 条未读` : "站内通信"}
                         aria-expanded={bellOpen} onClick={() => setBellOpen((v) => !v)}>
                   <BellIcon />
-                  <span className="bell-dot" />
+                  {unread > 0 && <span className="bell-dot" />}
                 </button>
                 {bellOpen && (
                   <div className="bell-panel is-open" role="menu" aria-label="站内通信">

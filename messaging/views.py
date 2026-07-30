@@ -11,7 +11,7 @@ from tasks.models import Task
 from proposals.models import Proposal
 from proposals.notifications import proposal_approvers
 
-from .models import Conversation, Message, MessageReadStatus
+from .models import Conversation, Message, MessageReadStatus, unread_message_count
 from .permissions import IsConversationParticipant
 from .serializers import ConversationSerializer, MessageSerializer
 
@@ -56,6 +56,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
             MessageSerializer(message, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @action(detail=False, methods=["get"])
+    def unread_count(self, request):
+        """未读消息总数，驱动顶栏铃铛红点（不含自己发出的消息）。"""
+        return Response({"total": unread_message_count(request.user)})
 
     @action(detail=True, methods=["post"])
     def mark_read(self, request, pk=None):

@@ -7,6 +7,8 @@ export const messagingApi = {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
     return request(`/conversations/${qs}`);
   },
+  // 未读消息总数（驱动顶栏铃铛红点）；不含自己发出的消息。
+  unreadCount: () => request(`/conversations/unread_count/`),
   getConversation: (id: number) => request(`/conversations/${id}/`),
   getMessages: (conversationId: number) =>
     request(`/conversations/messages/?conversation_id=${conversationId}`),
