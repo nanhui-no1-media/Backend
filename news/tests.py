@@ -12,6 +12,42 @@ from .models import News
 from .feed import build_feed
 
 
+class SanitizeVideoTest(TestCase):
+    """正文清洗器对视频元素的安全闸门。"""
+
+    def _clean(self, html):
+        from news.serializers import _sanitize_content
+        return _sanitize_content(html)
+
+    def test_keeps_bilibili_iframe(self):
+        html = '<iframe src="https://player.bilibili.com/player.html?bvid=BV1xx911x7x"></iframe>'
+        out = self._clean(html)
+        self.assertIn("player.bilibili.com", out)
+        self.assertIn("<iframe", out)
+
+    def test_strips_unknown_iframe_host(self):
+        out = self._clean('<iframe src="https://evil.com/player.html"></iframe>')
+        self.assertNotIn("evil.com", out)
+        self.assertNotIn("<iframe", out)
+
+    def test_strips_iframe_event_handler(self):
+        out = self._clean(
+            '<iframe src="https://player.bilibili.com/player.html?bvid=BV1xx911x7x" onload="alert(1)"></iframe>'
+        )
+        self.assertIn("player.bilibili.com", out)
+        self.assertNotIn("onload", out)
+
+    def test_keeps_video_tag(self):
+        out = self._clean('<video src="https://cdn.example.com/x.mp4" controls></video>')
+        self.assertIn("<video", out)
+        self.assertIn("controls", out)
+        self.assertIn("cdn.example.com/x.mp4", out)
+
+    def test_strips_script(self):
+        out = self._clean('<video src="https://cdn.example.com/x.mp4"></video><script>alert(1)</script>')
+        self.assertNotIn("<script", out)
+
+
 def _info(user):
     g, _ = Group.objects.get_or_create(name="信息组")
     user.groups.add(g)
