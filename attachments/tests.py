@@ -602,6 +602,21 @@ class TusUploadTest(_AttachmentTestCase):
         self.assertEqual(att.uploaded_by, self.creator)
         self.assertEqual(att.file_type, "image")
 
+    def test_tus_upload_to_activity_proposal_creates_attachment(self):  # 活动申报父级路径
+        prop = Proposal.objects.create(
+            proposal_type="activity", status="pending_approval", title="p", creator=self.creator,
+        )
+        chunk = b"prop-bytes"
+        resp = self._create(
+            self.creator, length=len(chunk), filetype="image/png",
+            parent_type="proposal", parent_id=prop.pk,
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(self._patch(resp.get("Location") or resp["Location"], chunk).status_code, 204)  # type: ignore[attr-defined]
+        att = Attachment.objects.get(proposal=prop)
+        self.assertEqual(att.uploaded_by, self.creator)
+        self.assertEqual(att.file_type, "image")
+
     def test_stale_tus_upload_swept_on_next_create(self):  # 放弃/过期的会话由惰性清理回收
         from datetime import timedelta
         from django.utils import timezone

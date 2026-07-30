@@ -35,6 +35,8 @@ export default function ProposalDetailPage() {
   const [error, setError] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [attUploading, setAttUploading] = useState(false);
+  const [attProgress, setAttProgress] = useState<number | null>(null);
 
   // 审批理由表单
   const [showReasonForm, setShowReasonForm] = useState<null | "return" | "reject">(null);
@@ -180,15 +182,23 @@ export default function ProposalDetailPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !proposal) return;
-    if (file.size > 50 * 1024 * 1024) {
-      setError("文件大小不能超过 50MB");
-      return;
-    }
+    setAttUploading(true);
+    setAttProgress(null);
     try {
-      const att = await attachmentApi.upload({ file, proposalId: proposal.id });
-      setProposal({ ...proposal, attachments: [...proposal.attachments, att] });
+      // 按大小自动选路：≤50MB 同步、>50MB tus 可续传
+      const att = await attachmentApi.uploadRouted({
+        parentType: "proposal", parentId: proposal.id, file, onProgress: setAttProgress,
+      });
+      if (att) {
+        setProposal({ ...proposal, attachments: [...proposal.attachments, att] });
+      } else {
+        setProposal(await proposalApi.get(proposal.id));  // tus：附件由服务端 finished 钩子异步建，重新拉取
+      }
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setAttUploading(false);
+      setAttProgress(null);
     }
     e.target.value = "";
   };
@@ -414,11 +424,19 @@ export default function ProposalDetailPage() {
               <h3 className="section-h">附件 ({p.attachments.length})</h3>
               {canManageAttachment && (
                 <>
-                  <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()}>+ 上传</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()} disabled={attUploading}>+ 上传</button>
                   <input ref={fileInputRef} type="file" onChange={handleFileUpload} style={{ display: "none" }} />
                 </>
               )}
             </div>
+            {attUploading && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0" }}>
+                <span>{attProgress != null ? `上传 ${Math.round(attProgress * 100)}%` : "上传中…"}</span>
+                <div style={{ flex: 1, height: 6, background: "#e5e7eb", borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ width: attProgress != null ? `${Math.round(attProgress * 100)}%` : "0%", height: "100%", background: "#2563eb", transition: "width .2s" }} />
+                </div>
+              </div>
+            )}
             {p.attachments.length > 0 ? (
               <div className="att-list">
                 {p.attachments.map((att) => (

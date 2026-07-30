@@ -26,6 +26,8 @@ export default function TaskDetailPage() {
   const [claimReason, setClaimReason] = useState("");
   const [claiming, setClaiming] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [attUploading, setAttUploading] = useState(false);
+  const [attProgress, setAttProgress] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
@@ -170,15 +172,23 @@ export default function TaskDetailPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !task) return;
-    if (file.size > 50 * 1024 * 1024) {
-      setError("文件大小不能超过 50MB");
-      return;
-    }
+    setAttUploading(true);
+    setAttProgress(null);
     try {
-      const att = await attachmentApi.upload({ file, taskId: task.id });
-      setTask({ ...task, attachments: [...task.attachments, att] });
+      // 按大小自动选路：≤50MB 同步、>50MB tus 可续传
+      const att = await attachmentApi.uploadRouted({
+        parentType: "task", parentId: task.id, file, onProgress: setAttProgress,
+      });
+      if (att) {
+        setTask({ ...task, attachments: [...task.attachments, att] });
+      } else {
+        setTask(await taskApi.get(task.id));  // tus：附件由服务端 finished 钩子异步建，重新拉取
+      }
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setAttUploading(false);
+      setAttProgress(null);
     }
     e.target.value = "";
   };
@@ -359,9 +369,17 @@ export default function TaskDetailPage() {
         <div className="card card-pad detail-section">
           <div className="section-head-row">
             <h3 className="section-h">附件 ({task.attachments.length})</h3>
-            <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()}>+ 上传</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()} disabled={attUploading}>+ 上传</button>
             <input ref={fileInputRef} type="file" onChange={handleFileUpload} style={{ display: "none" }} />
           </div>
+          {attUploading && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0" }}>
+              <span>{attProgress != null ? `上传 ${Math.round(attProgress * 100)}%` : "上传中…"}</span>
+              <div style={{ flex: 1, height: 6, background: "#e5e7eb", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ width: attProgress != null ? `${Math.round(attProgress * 100)}%` : "0%", height: "100%", background: "#2563eb", transition: "width .2s" }} />
+              </div>
+            </div>
+          )}
           {task.attachments.length > 0 ? (
             <div className="att-list">
               {task.attachments.map((att) => (

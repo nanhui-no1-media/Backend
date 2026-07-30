@@ -24,9 +24,6 @@ interface CurrentUser {
   can_view_feedback?: boolean;
 }
 
-// 同步上传通路的单文件上限；>50MB 的图/视频将在 #19 走 tus。
-const MAX_SYNC_BYTES = 50 * 1024 * 1024;
-
 export default function ProposalListPage() {
   const navigate = useNavigate();
   const { openLogin } = useLoginModal();
@@ -107,20 +104,16 @@ export default function ProposalListPage() {
     if (fbAttributed) data.disclose_identity = true;
     try {
       const created = await proposalApi.submitFeedback(data);
-      // 署名反馈：按返回的 id 挂附件——≤50MB 走同步、>50MB 走 tus 可续传
+      // 署名反馈：按返回的 id 挂附件（按大小自动选路：≤50MB 同步、>50MB tus 可续传）
       if (fbAttributed && fbFiles.length) {
         setFbUploading(true);
         for (const f of fbFiles) {
-          if (f.size <= MAX_SYNC_BYTES) {
-            await attachmentApi.upload({ proposalId: created.id, file: f });
-          } else {
-            await attachmentApi.uploadLarge({
-              parentType: "proposal",
-              parentId: created.id,
-              file: f,
-              onProgress: (r) => setFbUploadProgress(r),
-            });
-          }
+          await attachmentApi.uploadRouted({
+            parentType: "proposal",
+            parentId: created.id,
+            file: f,
+            onProgress: setFbUploadProgress,
+          });
         }
       }
       setFbSuccess(true);
