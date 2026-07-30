@@ -7,7 +7,13 @@
 """
 import os
 
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+from django.db.models import Count, Sum
+
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB——同步上传通路对所有类型的上限
+
+# 反馈附件配额（同步 / tus 通路共用）：每条 ≤9 个 / 总 ≤2GB。
+FEEDBACK_MAX_ATTACHMENTS = 9
+FEEDBACK_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
 
 FORBIDDEN_EXTENSIONS = frozenset({
     ".exe", ".bat", ".cmd", ".sh", ".php", ".asp", ".jsp",
@@ -54,4 +60,21 @@ def upload_error(file):
     ext = os.path.splitext(file.name)[1].lower()
     if ext in FORBIDDEN_EXTENSIONS:
         return "禁止上传此类型的文件"
+    return None
+
+
+def feedback_quota_error(parent, incoming_size):
+    """反馈父级的附件配额校验：超个数或总大小则返回错误消息，否则 None。
+
+    同步与 tus 两条上传通路共用（#19）。``incoming_size`` 为本次即将新增的字节数。
+    """
+    from proposals.models import Proposal  # 延迟导入，避免 attachments↔proposals 循环
+
+    if not (isinstance(parent, Proposal) and parent.proposal_type == "feedback"):
+        return None
+    stats = parent.attachments.aggregate(n=Count("id"), total=Sum("file_size")) # pyright: ignore[reportAttributeAccessIssue]
+    if (stats["n"] or 0) >= FEEDBACK_MAX_ATTACHMENTS:
+        return f"单条反馈最多 {FEEDBACK_MAX_ATTACHMENTS} 个附件"
+    if (stats["total"] or 0) + incoming_size > FEEDBACK_MAX_TOTAL_BYTES:
+        return "超出单条反馈附件总大小上限"
     return None

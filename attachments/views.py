@@ -1,5 +1,4 @@
 """统一附件端点：POST /attachments/（上传）、DELETE /attachments/{id}/（删除）。"""
-from django.db.models import Count, Sum
 from rest_framework import mixins, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -10,11 +9,7 @@ from tasks.models import Task
 from .models import Attachment
 from .permissions import can_manage_parent_attachments, can_upload_to_parent
 from .serializers import AttachmentSerializer
-from .validation import classify_file_type, upload_error
-
-# 反馈附件配额：每条 ≤9 个 / 总 ≤2GB（收住磁盘滥用面）。
-FEEDBACK_MAX_ATTACHMENTS = 9
-FEEDBACK_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024
+from .validation import classify_file_type, feedback_quota_error, upload_error
 
 
 class AttachmentViewSet(
@@ -63,19 +58,10 @@ class AttachmentViewSet(
                 {"detail": "无权操作此父级的附件"}, status=status.HTTP_403_FORBIDDEN,
             )
 
-        # 反馈附件配额（仅反馈父级）
-        if isinstance(parent, Proposal) and parent.proposal_type == "feedback":
-            stats = parent.attachments.aggregate(n=Count("id"), total=Sum("file_size"))
-            if (stats["n"] or 0) >= FEEDBACK_MAX_ATTACHMENTS:
-                return Response(
-                    {"detail": f"单条反馈最多 {FEEDBACK_MAX_ATTACHMENTS} 个附件"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if (stats["total"] or 0) + file.size > FEEDBACK_MAX_TOTAL_BYTES:
-                return Response(
-                    {"detail": "超出单条反馈附件总大小上限"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        # 反馈附件配额（仅反馈父级；同步 / tus 共用的校验收在 validation）
+        quota_err = feedback_quota_error(parent, file.size)
+        if quota_err:
+            return Response({"detail": quota_err}, status=status.HTTP_400_BAD_REQUEST)
 
         attachment = Attachment.objects.create(
             uploaded_by=request.user,

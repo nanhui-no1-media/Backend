@@ -10,5 +10,6 @@ dependencies = [
     "django-cors-headers>=4.9.0",
     "django-filter>=25.2",
     "djangorestframework>=3.17.1",
+    "drf-tus>=2.0.3",
     "pillow>=12.2.0",
 ]

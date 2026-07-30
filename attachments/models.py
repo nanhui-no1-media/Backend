@@ -14,6 +14,9 @@ import uuid
 from django.conf import settings
 from django.db import models
 
+from rest_framework_tus import states as tus_states
+from rest_framework_tus.models import AbstractUpload, custom_upload_path
+
 
 def attachment_upload_path(instance, filename):
     """扁平存储：attachments/<uuid>.<ext>（不再按父级分目录）。"""
@@ -67,3 +70,31 @@ class Attachment(models.Model):
 
     def __str__(self):
         return self.file_name
+
+
+class TusUpload(AbstractUpload):
+    """drf-tus 上传会话（attachments 视角）。
+
+    在 AbstractUpload 上补一个 ``user`` 外键——drf-tus 的创建逻辑在模型有 user 字段时
+    自动写入 ``request.user``。上传完成（finished 信号）时据此把文件搬成统一 ``Attachment``
+    （见 tus.py 的接收器）。临时分片落 BASE_DIR/tmp/uploads；完成后落到 MEDIA/tus_uploaded/，
+    再由接收器搬到 attachments/ 并删除本会话。
+    """
+
+    uploaded_file = models.FileField(
+        "完成文件", upload_to=custom_upload_path, blank=True, null=True, max_length=255,
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="tus_uploads", verbose_name="上传者",
+    )
+
+    class Meta: # type: ignore
+        verbose_name = "tus 上传"
+        verbose_name_plural = "tus 上传"
+
+    def delete(self, *args, **kwargs):
+        # DONE 态下文件已落到 uploaded_file，删除行时一并回收（搬运到 Attachment 后由接收器删除）
+        if self.state == tus_states.DONE and self.uploaded_file:
+            self.uploaded_file.delete(save=False)
+        super().delete(*args, **kwargs)

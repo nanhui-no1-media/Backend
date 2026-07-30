@@ -52,6 +52,7 @@ export default function ProposalListPage() {
   const [fbAttributed, setFbAttributed] = useState(false);
   const [fbFiles, setFbFiles] = useState<File[]>([]);
   const [fbUploading, setFbUploading] = useState(false);
+  const [fbUploadProgress, setFbUploadProgress] = useState<number | null>(null);
 
   useEffect(() => {
     api.me()
@@ -94,10 +95,6 @@ export default function ProposalListPage() {
       setError("标题和内容不能为空");
       return;
     }
-    if (fbAttributed && fbFiles.some((f) => f.size > MAX_SYNC_BYTES)) {
-      setError("单个文件不能超过 50MB");
-      return;
-    }
     setFbSubmitting(true);
     setError("");
     const data: FeedbackFormData = {
@@ -110,11 +107,20 @@ export default function ProposalListPage() {
     if (fbAttributed) data.disclose_identity = true;
     try {
       const created = await proposalApi.submitFeedback(data);
-      // 署名反馈：按返回的 id 同步挂附件（≤50MB）；大文件见 #19
+      // 署名反馈：按返回的 id 挂附件——≤50MB 走同步、>50MB 走 tus 可续传
       if (fbAttributed && fbFiles.length) {
         setFbUploading(true);
         for (const f of fbFiles) {
-          await attachmentApi.upload({ proposalId: created.id, file: f });
+          if (f.size <= MAX_SYNC_BYTES) {
+            await attachmentApi.upload({ proposalId: created.id, file: f });
+          } else {
+            await attachmentApi.uploadLarge({
+              parentType: "proposal",
+              parentId: created.id,
+              file: f,
+              onProgress: (r) => setFbUploadProgress(r),
+            });
+          }
         }
       }
       setFbSuccess(true);
@@ -133,6 +139,7 @@ export default function ProposalListPage() {
     } finally {
       setFbSubmitting(false);
       setFbUploading(false);
+      setFbUploadProgress(null);
     }
   };
 
@@ -291,6 +298,11 @@ export default function ProposalListPage() {
                   </div>
                 )}
                 <div><button className="btn btn-primary" type="submit" disabled={fbSubmitting || fbUploading}>{fbUploading ? "上传附件中…" : fbSubmitting ? "提交中…" : fbAttributed ? "署名提交" : "匿名提交"}</button></div>
+                {fbUploadProgress != null && (
+                  <div style={{ height: 6, background: "#e5e7eb", borderRadius: 4, overflow: "hidden", margin: "8px 0 0" }} aria-label="上传进度">
+                    <div style={{ width: `${Math.round(fbUploadProgress * 100)}%`, height: "100%", background: "#2563eb", transition: "width .2s" }} />
+                  </div>
+                )}
               </form>
             </div>
           )}

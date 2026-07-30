@@ -7,6 +7,7 @@
 所有用例经 ``_AttachmentTestCase`` 把 ``MEDIA_ROOT`` 重定向到临时目录，并在结束时兜底
 清理真实 ``media/attachments/``（Django 可能缓存 FileField 存储、使 override 不生效）。
 """
+import base64
 import shutil
 import tempfile
 from pathlib import Path
@@ -21,7 +22,7 @@ from rest_framework.test import APIClient
 from proposals.models import Proposal
 from tasks.models import Task
 
-from .models import Attachment
+from .models import Attachment, TusUpload
 
 
 def make_president(user):
@@ -33,6 +34,11 @@ def make_president(user):
 
 def upload(name="a.png", content=b"data", content_type="image/png"):
     return SimpleUploadedFile(name, content, content_type=content_type)
+
+
+def tus_meta(**kv):
+    """构造 tus Upload-Metadata 头：``key base64(value),…``（值由 drf-tus 解码）。"""
+    return ",".join(f"{k} {base64.b64encode(str(v).encode()).decode()}" for k, v in kv.items())
 
 
 class _AttachmentTestCase(TestCase):
@@ -75,7 +81,7 @@ class UploadTaskPermissionTest(_AttachmentTestCase):
         self.pending = Task.objects.create(title="p", creator=self.creator, status="pending")
 
     def _post(self, user, task):
-        self.client.force_authenticate(user)
+        self.client.force_authenticate(user) # pyright: ignore[reportAttributeAccessIssue]
         return self.client.post(
             "/attachments/", {"file": upload(), "task_id": task.pk}, format="multipart",
         )
@@ -105,7 +111,7 @@ class UploadTaskPermissionTest(_AttachmentTestCase):
         self.assertEqual(self._post(self.collab, other).status_code, 403)
 
     def test_anonymous_cannot_upload(self):  # 故事 #11
-        self.client.force_authenticate(None)
+        self.client.force_authenticate(None) # pyright: ignore[reportAttributeAccessIssue]
         resp = self.client.post(
             "/attachments/", {"file": upload(), "task_id": self.task.pk}, format="multipart",
         )
@@ -126,7 +132,7 @@ class UploadProposalPermissionTest(_AttachmentTestCase):
         )
 
     def _post(self, user):
-        self.client.force_authenticate(user)
+        self.client.force_authenticate(user) # pyright: ignore[reportAttributeAccessIssue]
         return self.client.post(
             "/attachments/", {"file": upload(), "proposal_id": self.prop.pk}, format="multipart",
         )
@@ -155,7 +161,7 @@ class FeedbackUploadPermissionTest(_AttachmentTestCase):
         )
 
     def _post(self, user, proposal=None):
-        self.client.force_authenticate(user)
+        self.client.force_authenticate(user) # pyright: ignore[reportAttributeAccessIssue]
         return self.client.post(
             "/attachments/",
             {"file": upload(), "proposal_id": (proposal or self.feedback).pk},
@@ -207,12 +213,12 @@ class FeedbackQuotaTest(_AttachmentTestCase):
 
     def test_count_cap_rejects_extra(self):
         self.assertEqual(self._post().status_code, 201)  # 第一张 ok
-        with mock.patch("attachments.views.FEEDBACK_MAX_ATTACHMENTS", 1):
+        with mock.patch("attachments.validation.FEEDBACK_MAX_ATTACHMENTS", 1):
             self.assertEqual(self._post().status_code, 400)  # 超个数上限
 
     def test_total_size_cap_rejects_extra(self):
         self.assertEqual(self._post().status_code, 201)  # 第一张 ok
-        with mock.patch("attachments.views.FEEDBACK_MAX_TOTAL_BYTES", 1):
+        with mock.patch("attachments.validation.FEEDBACK_MAX_TOTAL_BYTES", 1):
             self.assertEqual(self._post().status_code, 400)  # 超总大小上限
 
 
@@ -233,14 +239,14 @@ class DeletePermissionFeedbackTest(_AttachmentTestCase):
         resp = self.client.post(
             "/attachments/", {"file": upload(), "proposal_id": self.feedback.pk}, format="multipart",
         )
-        self.attachment_id = resp.data["id"]
+        self.attachment_id = resp.data["id"] # pyright: ignore[reportAttributeAccessIssue]
 
     def test_president_can_delete_feedback_attachment(self):  # 审核违规媒体
-        self.client.force_authenticate(self.president)
+        self.client.force_authenticate(self.president) # pyright: ignore[reportAttributeAccessIssue]
         self.assertEqual(self.client.delete(f"/attachments/{self.attachment_id}/").status_code, 204)
 
     def test_outsider_cannot_delete_feedback_attachment(self):
-        self.client.force_authenticate(self.outsider)
+        self.client.force_authenticate(self.outsider) # pyright: ignore[reportAttributeAccessIssue]
         self.assertEqual(self.client.delete(f"/attachments/{self.attachment_id}/").status_code, 403)
 
 
@@ -295,22 +301,22 @@ class FileValidationTest(_AttachmentTestCase):
     def test_classifies_image(self):  # 故事 #19
         resp = self._post(upload("a.png", b"x", "image/png"))
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(resp.data["file_type"], "image")
+        self.assertEqual(resp.data["file_type"], "image") # pyright: ignore[reportAttributeAccessIssue]
 
     def test_classifies_document(self):
         resp = self._post(upload("a.pdf", b"x", "application/pdf"))
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(resp.data["file_type"], "document")
+        self.assertEqual(resp.data["file_type"], "document") # type: ignore
 
     def test_classifies_archive(self):
         resp = self._post(upload("a.zip", b"x", "application/zip"))
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(resp.data["file_type"], "archive")
+        self.assertEqual(resp.data["file_type"], "archive") # pyright: ignore[reportAttributeAccessIssue]
 
     def test_classifies_other(self):
         resp = self._post(upload("a.bin", b"x", "application/octet-stream"))
         self.assertEqual(resp.status_code, 201)
-        self.assertEqual(resp.data["file_type"], "other")
+        self.assertEqual(resp.data["file_type"], "other") # pyright: ignore[reportAttributeAccessIssue]
 
 
 # ── 删除权限 ──
@@ -333,11 +339,11 @@ class DeletePermissionTest(_AttachmentTestCase):
         resp = self.client.post(
             "/attachments/", {"file": upload(), "task_id": self.task.pk}, format="multipart",
         )
-        self.assertEqual(resp.status_code, 201)
-        self.attachment_id = resp.data["id"]
+        self.assertEqual(resp.status_code, 201) # pyright: ignore[reportAttributeAccessIssue]
+        self.attachment_id = resp.data["id"] # pyright: ignore[reportAttributeAccessIssue]
 
     def _delete(self, user):
-        self.client.force_authenticate(user)
+        self.client.force_authenticate(user) # pyright: ignore[reportAttributeAccessIssue]
         return self.client.delete(f"/attachments/{self.attachment_id}/")
 
     def test_uploader_can_delete_own(self):  # 故事 #12
@@ -372,13 +378,13 @@ class DeleteOwnAfterTaskNotInProgressTest(_AttachmentTestCase):
         resp = self.client.post(
             "/attachments/", {"file": upload(), "task_id": self.task.pk}, format="multipart",
         )
-        self.attachment_id = resp.data["id"]
+        self.attachment_id = resp.data["id"] # pyright: ignore[reportAttributeAccessIssue]
         # 任务流转出进行中：uploader 不再是活跃参与者
         self.task.status = "completed"
         self.task.save()
 
     def test_uploader_can_delete_after_task_left_in_progress(self):
-        self.client.force_authenticate(self.uploader)
+        self.client.force_authenticate(self.uploader) # pyright: ignore[reportAttributeAccessIssue]
         resp = self.client.delete(f"/attachments/{self.attachment_id}/")
         self.assertEqual(resp.status_code, 204)
 
@@ -402,8 +408,8 @@ class CascadeReclaimTest(_AttachmentTestCase):
             format="multipart",
         )
         self.assertEqual(resp.status_code, 201)
-        att = Attachment.objects.get(pk=resp.data["id"])
-        return att.id, att.file.storage, att.file.name
+        att = Attachment.objects.get(pk=resp.data["id"]) # pyright: ignore[reportAttributeAccessIssue]
+        return att.id, att.file.storage, att.file.name # pyright: ignore[reportAttributeAccessIssue]
 
     def test_deleting_task_removes_attachment_and_file(self):  # 故事 #15
         att_id, storage, name = self._upload_and_capture("task_id", self.task.pk)
@@ -450,11 +456,11 @@ class ParentDetailRendersAttachmentsTest(_AttachmentTestCase):
             format="multipart",
         )
         self.assertEqual(resp.status_code, 201)
-        att_id = resp.data["id"]
+        att_id = resp.data["id"] # pyright: ignore[reportAttributeAccessIssue]
 
         resp = self.client.get(f"/tasks/tasks/{self.task.pk}/")
         self.assertEqual(resp.status_code, 200)
-        attachments = resp.data["attachments"]
+        attachments = resp.data["attachments"] # pyright: ignore[reportAttributeAccessIssue]
         self.assertEqual(len(attachments), 1)
         self.assertEqual(attachments[0]["id"], att_id)
         self.assertEqual(attachments[0]["file_type"], "image")
@@ -469,13 +475,139 @@ class ParentDetailRendersAttachmentsTest(_AttachmentTestCase):
             format="multipart",
         )
         self.assertEqual(resp.status_code, 201)
-        att_id = resp.data["id"]
+        att_id = resp.data["id"] # pyright: ignore[reportAttributeAccessIssue]
 
         resp = self.client.get(f"/proposals/proposals/{self.prop.pk}/")
         self.assertEqual(resp.status_code, 200)
-        attachments = resp.data["attachments"]
+        attachments = resp.data["attachments"] # pyright: ignore[reportAttributeAccessIssue]
         self.assertEqual(len(attachments), 1)
         self.assertEqual(attachments[0]["id"], att_id)
         self.assertEqual(attachments[0]["file_type"], "document")
         self.assertEqual(attachments[0]["uploaded_by"]["username"], "creator")
+
+
+# ── tus 可续传上传（#19）：大文件（>50MB 图/视频）经 drf-tus → 统一 Attachment ──
+class TusUploadTest(_AttachmentTestCase):
+    """单一接缝：HTTP（tus 协议 POST 创建 / PATCH 分片）。只断言外部结果——Attachment
+    行是否正确创建/拒绝、tus 会话是否回收；不测 drf-tus 内部。
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.creator = User.objects.create_user(username="creator", password="x")
+        self.outsider = User.objects.create_user(username="outsider", password="x")
+        self.president = make_president(User.objects.create_user(username="pres", password="x"))
+        self.feedback = Proposal.objects.create(
+            proposal_type="feedback", status="pending_approval",
+            title="f", feedback_category="report", creator=self.creator,
+        )
+        self.client = APIClient()
+
+    def tearDown(self):
+        TusUpload.objects.all().delete()  # 回收 temp + 落地文件，避免污染 BASE_DIR/tmp/uploads
+        super().tearDown()
+
+    def _create(self, user, *, length, filetype="image/png", filename="t.png",
+                parent_type="proposal", parent_id=None):
+        self.client.force_authenticate(user)  # pyright: ignore[reportAttributeAccessIssue]
+        meta = tus_meta(
+            filename=filename, filetype=filetype, parent_type=parent_type,
+            parent_id=parent_id if parent_id is not None else self.feedback.pk,
+        )
+        return self.client.post(
+            "/uploads/files/", content_type="application/octet-stream",
+            HTTP_TUS_RESUMABLE="1.0.0", HTTP_UPLOAD_LENGTH=str(length), HTTP_UPLOAD_METADATA=meta,
+        )
+
+    def _patch(self, location, chunk):
+        return self.client.patch(
+            location, data=chunk, content_type="application/offset+octet-stream",
+            HTTP_TUS_RESUMABLE="1.0.0", HTTP_UPLOAD_OFFSET="0",
+        )
+
+    def test_tus_upload_creates_attachment_bound_to_feedback(self):
+        chunk = b"PNG-fake-bytes"
+        resp = self._create(self.creator, length=len(chunk), filetype="image/png", filename="t.png")
+        self.assertEqual(resp.status_code, 201)
+        location = resp.get("Location") or resp["Location"]  # type: ignore[attr-defined]
+        self.assertTrue(location)
+
+        resp2 = self._patch(location, chunk)
+        self.assertEqual(resp2.status_code, 204)
+
+        att = Attachment.objects.get(proposal=self.feedback)
+        self.assertEqual(att.uploaded_by, self.creator)
+        self.assertEqual(att.file_type, "image")
+        self.assertEqual(att.file_size, len(chunk))
+        # 搬运后的附件文件落盘且有内容
+        self.assertTrue(att.file.storage.exists(att.file.name))
+
+    def test_outsider_cannot_tus_create(self):
+        self.assertEqual(self._create(self.outsider, length=4).status_code, 403)
+
+    def test_anonymous_cannot_tus_create(self):
+        self.client.force_authenticate(None)  # pyright: ignore[reportAttributeAccessIssue]
+        resp = self.client.post(
+            "/uploads/files/", content_type="application/octet-stream",
+            HTTP_TUS_RESUMABLE="1.0.0", HTTP_UPLOAD_LENGTH="4",
+            HTTP_UPLOAD_METADATA=tus_meta(parent_type="proposal", parent_id=self.feedback.pk),
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_president_cannot_tus_upload_to_feedback(self):  # 反馈 carve-out：排除社长
+        self.assertEqual(self._create(self.president, length=4).status_code, 403)
+
+    def test_missing_parent_rejected(self):
+        self.client.force_authenticate(self.creator)  # pyright: ignore[reportAttributeAccessIssue]
+        resp = self.client.post(
+            "/uploads/files/", content_type="application/octet-stream",
+            HTTP_TUS_RESUMABLE="1.0.0", HTTP_UPLOAD_LENGTH="4",
+            HTTP_UPLOAD_METADATA=tus_meta(filename="t.png", filetype="image/png"),
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_oversize_rejected_at_create(self):  # >500MB 由 drf-tus 返 413（不传字节）
+        resp = self._create(self.creator, length=600 * 1024 * 1024, filetype="video/mp4")
+        self.assertEqual(resp.status_code, 413)
+
+    def test_non_media_above_50mb_rejected(self):  # >50MB 必须图/视频
+        resp = self._create(self.creator, length=60 * 1024 * 1024, filetype="application/pdf")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_completion_reverify_rejects_when_feedback_approved(self):
+        # 创建时 pending（通过）；打补丁前反馈被审结 → 完成时复核失败，不建附件
+        chunk = b"x" * 8
+        resp = self._create(self.creator, length=len(chunk), filetype="image/png")
+        self.assertEqual(resp.status_code, 201)
+        self.feedback.status = "approved"
+        self.feedback.save()
+        resp2 = self._patch(resp.get("Location") or resp["Location"], chunk)  # type: ignore[attr-defined]
+        self.assertEqual(resp2.status_code, 204)
+        self.assertFalse(Attachment.objects.filter(proposal=self.feedback).exists())
+
+    def test_tus_quota_enforced_at_create(self):
+        with mock.patch("attachments.validation.FEEDBACK_MAX_ATTACHMENTS", 0):
+            self.assertEqual(self._create(self.creator, length=4).status_code, 400)
+
+    def test_tus_upload_to_task_creates_attachment(self):  # 非反馈父级路径
+        task = Task.objects.create(title="t", creator=self.creator, status="pending")
+        chunk = b"task-bytes"
+        resp = self._create(
+            self.creator, length=len(chunk), filetype="image/png",
+            parent_type="task", parent_id=task.pk,
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(self._patch(resp.get("Location") or resp["Location"], chunk).status_code, 204)  # type: ignore[attr-defined]
+        att = Attachment.objects.get(task=task)
+        self.assertEqual(att.uploaded_by, self.creator)
+        self.assertEqual(att.file_type, "image")
+
+    def test_stale_tus_upload_swept_on_next_create(self):  # 放弃/过期的会话由惰性清理回收
+        from datetime import timedelta
+        from django.utils import timezone
+        stale = TusUpload.objects.create(
+            upload_length=4, upload_metadata={}, expires=timezone.now() - timedelta(hours=1),
+        )
+        self._create(self.creator, length=4)  # 触发 create → sweep
+        self.assertFalse(TusUpload.objects.filter(pk=stale.pk).exists())
 

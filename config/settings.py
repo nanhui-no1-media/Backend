@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'exam_board',
     'news',
     'attachments',
+    'rest_framework_tus',
 ]
 
 MIDDLEWARE = [
@@ -61,6 +62,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'accounts.middleware.SingleSessionMiddleware',
+    # tus 可续传上传：把 Tus-* / Upload-* 请求头解析到 request 属性上。
+    'rest_framework_tus.middleware.TusMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -171,4 +174,12 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
+}
+
+# drf-tus（tus 可续传上传）。>50MB 的图/视频走 tus 通路；详见 ADR 0004（#21）。
+REST_FRAMEWORK_TUS = {
+    "MAX_FILE_SIZE": 500 * 1024 * 1024,  # 500MB——图/视频上限；>50MB 必须图/视频由 viewset 再收紧
+    "TUS_UPLOAD_DESTINATION": "tus_uploaded",  # drf-tus 落地目录（相对 MEDIA_ROOT）
+    "UPLOAD_MODEL": "attachments.TusUpload",  # 自定义模型，补 user 外键
+    # UPLOAD_DIR（临时分片）默认 BASE_DIR/tmp/uploads；UPLOAD_EXPIRES 默认 1 天。
 }
