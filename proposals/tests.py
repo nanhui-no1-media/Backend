@@ -1,4 +1,5 @@
 from django.contrib.auth.models import Group, User
+from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -30,3 +31,91 @@ class ProposalApprovePermissionTest(TestCase):
         self.client.force_authenticate(self.president)
         resp = self.client.post(f"/proposals/proposals/{self.prop.pk}/approve/")
         self.assertEqual(resp.status_code, 200)
+
+
+class FeedbackAttributionTest(TestCase):
+    """意见反馈的「署名 / 匿名」归属：署名才记录 creator，复用 is_parent_creator 授权附件。
+
+    单一接缝：HTTP（``POST /proposals/proposals/submit_feedback/``）。setUp 清缓存以
+    隔离 FeedbackAnonThrottle 的跨用例计数。
+    """
+
+    def setUp(self):
+        cache.clear()
+        self.member = User.objects.create_user(username="member", password="x")
+        self.client = APIClient()
+
+    def test_attributed_feedback_records_creator(self):
+        self.client.force_authenticate(self.member)
+        resp = self.client.post(
+            "/proposals/proposals/submit_feedback/",
+            {
+                "title": "举报",
+                "description": "证据……",
+                "feedback_category": "report",
+                "disclose_identity": True,
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["creator"]["username"], "member")
+        proposal = Proposal.objects.get(pk=resp.data["id"])
+        self.assertEqual(proposal.creator, self.member)
+        self.assertEqual(proposal.proposal_type, "feedback")
+        self.assertEqual(proposal.status, "pending_approval")
+
+    def test_anonymous_feedback_has_no_creator(self):
+        resp = self.client.post(
+            "/proposals/proposals/submit_feedback/",
+            {"title": "匿名举报", "description": "……", "feedback_category": "report"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertIsNone(resp.data["creator"])
+        self.assertIsNone(Proposal.objects.get(pk=resp.data["id"]).creator)
+
+    def test_logged_in_choosing_anonymous_has_no_creator(self):
+        # 登录用户选「匿名」：不传 disclose_identity → 仍 creator=None
+        self.client.force_authenticate(self.member)
+        resp = self.client.post(
+            "/proposals/proposals/submit_feedback/",
+            {"title": "匿名举报", "description": "……", "feedback_category": "report"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertIsNone(resp.data["creator"])
+
+    def test_disclose_without_login_rejected(self):
+        resp = self.client.post(
+            "/proposals/proposals/submit_feedback/",
+            {
+                "title": "举报", "description": "……", "feedback_category": "report",
+                "disclose_identity": True,
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+
+class FeedbackReturnDisabledTest(TestCase):
+    """反馈是单向投递箱（跟进走线下）：社长只能通过/拒绝，不可打回(returned)。"""
+
+    def setUp(self):
+        cache.clear()
+        self.president = _president(User.objects.create_user(username="pres", password="x"))
+        self.feedback = Proposal.objects.create(
+            proposal_type="feedback", status="pending_approval",
+            title="f", feedback_category="report",
+        )
+        self.client = APIClient()
+
+    def test_feedback_cannot_be_returned(self):
+        self.client.force_authenticate(self.president)
+        resp = self.client.post(
+            f"/proposals/proposals/{self.feedback.pk}/return_proposal/",
+            {"reason": "请补充材料"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.feedback.refresh_from_db()
+        self.assertEqual(self.feedback.status, "pending_approval")  # 状态未被翻成 returned

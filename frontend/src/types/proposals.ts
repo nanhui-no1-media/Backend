@@ -88,6 +88,8 @@ export interface FeedbackFormData {
   description: string;
   feedback_category: FeedbackCategory | "";
   contact?: string;
+  // 署名提交（登录用户显式选择）：记录 creator、对社长可见、方可附媒体。
+  disclose_identity?: boolean;
 }
 
 export const PROPOSAL_TYPE_LABELS: Record<ProposalType, string> = {

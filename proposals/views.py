@@ -113,13 +113,24 @@ class ProposalViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], url_path="submit_feedback",
             throttle_classes=[FeedbackAnonThrottle])
     def submit_feedback(self, request):
-        """意见反馈/举报：公开匿名提交（无创建人）"""
+        """意见反馈/举报：可匿名（默认）或署名（登录后显式选择）提交。
+
+        - 匿名：``creator=None``（未登录只能走这条；登录用户选「匿名」也走这条），仅纯文字。
+        - 署名：登录用户传 ``disclose_identity=True``，记录 ``creator``、对社长可见，方可附媒体。
+          媒体天然携带上传者身份，与匿名互斥。
+        """
         data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
         data["proposal_type"] = "feedback"
+        disclose_identity = bool(data.pop("disclose_identity", False))
+        if disclose_identity and not request.user.is_authenticated:
+            return Response(
+                {"detail": "署名提交需要登录"}, status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = ProposalDetailSerializer(data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        proposal = serializer.save()  # creator 保持为 None；create() 设 status=pending_approval
-        # 反馈无创建人，无法走站内通信通知（社长在列表中查看新反馈）
+        creator = request.user if (disclose_identity and request.user.is_authenticated) else None
+        proposal = serializer.save(creator=creator)  # create() 设 status=pending_approval
+        # 反馈无站内通信通知（社长在列表中查看新反馈）
         return Response(
             ProposalDetailSerializer(proposal, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
@@ -164,6 +175,9 @@ class ProposalViewSet(viewsets.ModelViewSet):
     def return_proposal(self, request, pk=None):
         """打回（可编辑后重新提交）"""
         proposal = self.get_object()
+        # 反馈是单向投递箱（跟进走线下）：不可打回，社长仅通过/拒绝。
+        if proposal.proposal_type == "feedback":
+            return Response({"detail": "反馈不可打回，请使用通过或拒绝"}, status=status.HTTP_400_BAD_REQUEST)
         if proposal.status != "pending_approval":
             return Response({"detail": "当前状态不可打回"}, status=status.HTTP_400_BAD_REQUEST)
         reason = request.data.get("reason", "").strip()

@@ -141,6 +141,109 @@ class UploadProposalPermissionTest(_AttachmentTestCase):
         self.assertEqual(self._post(self.outsider).status_code, 403)
 
 
+# ── 反馈附件上传权限（carve-out：仅署名创建者 + 仅审结前，社长被排除）──
+class FeedbackUploadPermissionTest(_AttachmentTestCase):
+    def setUp(self):
+        super().setUp()
+        self.creator = User.objects.create_user(username="creator", password="x")
+        self.outsider = User.objects.create_user(username="outsider", password="x")
+        self.president = make_president(User.objects.create_user(username="pres", password="x"))
+        self.client = APIClient()
+        self.feedback = Proposal.objects.create(
+            proposal_type="feedback", status="pending_approval",
+            title="f", feedback_category="report", creator=self.creator,
+        )
+
+    def _post(self, user, proposal=None):
+        self.client.force_authenticate(user)
+        return self.client.post(
+            "/attachments/",
+            {"file": upload(), "proposal_id": (proposal or self.feedback).pk},
+            format="multipart",
+        )
+
+    def test_president_cannot_upload_to_feedback(self):  # carve-out：排除社长上传
+        self.assertEqual(self._post(self.president).status_code, 403)
+
+    def test_creator_can_upload_to_own_pending_feedback(self):
+        self.assertEqual(self._post(self.creator).status_code, 201)
+
+    def test_outsider_cannot_upload_to_feedback(self):
+        self.assertEqual(self._post(self.outsider).status_code, 403)
+
+    def test_upload_locked_after_feedback_approved(self):
+        self.feedback.status = "approved"
+        self.feedback.save()
+        self.assertEqual(self._post(self.creator).status_code, 403)
+
+    def test_upload_locked_after_feedback_rejected(self):
+        self.feedback.status = "rejected"
+        self.feedback.save()
+        self.assertEqual(self._post(self.creator).status_code, 403)
+
+    def test_upload_locked_after_feedback_withdrawn(self):
+        # 仅 pending_approval 期间可传；其余状态（含 withdrawn）一律锁死
+        self.feedback.status = "withdrawn"
+        self.feedback.save()
+        self.assertEqual(self._post(self.creator).status_code, 403)
+
+
+# ── 反馈附件配额（每条 ≤9 个 / 总 ≤2GB）──
+class FeedbackQuotaTest(_AttachmentTestCase):
+    def setUp(self):
+        super().setUp()
+        self.creator = User.objects.create_user(username="creator", password="x")
+        self.client = APIClient()
+        self.client.force_authenticate(self.creator)
+        self.feedback = Proposal.objects.create(
+            proposal_type="feedback", status="pending_approval",
+            title="f", creator=self.creator,
+        )
+
+    def _post(self):
+        return self.client.post(
+            "/attachments/", {"file": upload(), "proposal_id": self.feedback.pk}, format="multipart",
+        )
+
+    def test_count_cap_rejects_extra(self):
+        self.assertEqual(self._post().status_code, 201)  # 第一张 ok
+        with mock.patch("attachments.views.FEEDBACK_MAX_ATTACHMENTS", 1):
+            self.assertEqual(self._post().status_code, 400)  # 超个数上限
+
+    def test_total_size_cap_rejects_extra(self):
+        self.assertEqual(self._post().status_code, 201)  # 第一张 ok
+        with mock.patch("attachments.views.FEEDBACK_MAX_TOTAL_BYTES", 1):
+            self.assertEqual(self._post().status_code, 400)  # 超总大小上限
+
+
+# ── 反馈附件删除：社长「能删不能传」（上传 carve-out 排除社长，删除沿用通用规则）──
+class DeletePermissionFeedbackTest(_AttachmentTestCase):
+    def setUp(self):
+        super().setUp()
+        self.creator = User.objects.create_user(username="creator", password="x")
+        self.president = make_president(User.objects.create_user(username="pres", password="x"))
+        self.outsider = User.objects.create_user(username="outsider", password="x")
+        self.client = APIClient()
+        self.feedback = Proposal.objects.create(
+            proposal_type="feedback", status="pending_approval",
+            title="f", creator=self.creator,
+        )
+        # creator 在待审期上传一张
+        self.client.force_authenticate(self.creator)
+        resp = self.client.post(
+            "/attachments/", {"file": upload(), "proposal_id": self.feedback.pk}, format="multipart",
+        )
+        self.attachment_id = resp.data["id"]
+
+    def test_president_can_delete_feedback_attachment(self):  # 审核违规媒体
+        self.client.force_authenticate(self.president)
+        self.assertEqual(self.client.delete(f"/attachments/{self.attachment_id}/").status_code, 204)
+
+    def test_outsider_cannot_delete_feedback_attachment(self):
+        self.client.force_authenticate(self.outsider)
+        self.assertEqual(self.client.delete(f"/attachments/{self.attachment_id}/").status_code, 403)
+
+
 # ── 恰一父级 ──
 class ParentValidationTest(_AttachmentTestCase):
     def setUp(self):

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { api } from "../api/client";
 import { proposalApi } from "../api/proposals";
+import { attachmentApi } from "../api/attachments";
 import {
   ProposalListItem,
   ProposalType,
@@ -22,6 +23,9 @@ interface CurrentUser {
   username: string;
   can_view_feedback?: boolean;
 }
+
+// 同步上传通路的单文件上限；>50MB 的图/视频将在 #19 走 tus。
+const MAX_SYNC_BYTES = 50 * 1024 * 1024;
 
 export default function ProposalListPage() {
   const navigate = useNavigate();
@@ -44,6 +48,10 @@ export default function ProposalListPage() {
   const [fbContact, setFbContact] = useState("");
   const [fbSubmitting, setFbSubmitting] = useState(false);
   const [fbSuccess, setFbSuccess] = useState(false);
+  // 署名反馈（登录用户）：记录身份、可附图片/视频证据
+  const [fbAttributed, setFbAttributed] = useState(false);
+  const [fbFiles, setFbFiles] = useState<File[]>([]);
+  const [fbUploading, setFbUploading] = useState(false);
 
   useEffect(() => {
     api.me()
@@ -86,6 +94,10 @@ export default function ProposalListPage() {
       setError("标题和内容不能为空");
       return;
     }
+    if (fbAttributed && fbFiles.some((f) => f.size > MAX_SYNC_BYTES)) {
+      setError("单个文件不能超过 50MB");
+      return;
+    }
     setFbSubmitting(true);
     setError("");
     const data: FeedbackFormData = {
@@ -95,13 +107,23 @@ export default function ProposalListPage() {
       feedback_category: fbCategory,
     };
     if (fbContact.trim()) data.contact = fbContact.trim();
+    if (fbAttributed) data.disclose_identity = true;
     try {
-      await proposalApi.submitFeedback(data);
+      const created = await proposalApi.submitFeedback(data);
+      // 署名反馈：按返回的 id 同步挂附件（≤50MB）；大文件见 #19
+      if (fbAttributed && fbFiles.length) {
+        setFbUploading(true);
+        for (const f of fbFiles) {
+          await attachmentApi.upload({ proposalId: created.id, file: f });
+        }
+      }
       setFbSuccess(true);
       setFbTitle("");
       setFbDesc("");
       setFbContact("");
       setFbCategory("suggestion");
+      setFbAttributed(false);
+      setFbFiles([]);
       if (canViewFeedback && typeFilter === "feedback") setReloadKey((k) => k + 1);
       setTimeout(() => setFbSuccess(false), 5000);
     } catch (err: any) {
@@ -110,6 +132,7 @@ export default function ProposalListPage() {
         : err.message);
     } finally {
       setFbSubmitting(false);
+      setFbUploading(false);
     }
   };
 
@@ -217,7 +240,7 @@ export default function ProposalListPage() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5h16v12H7l-3 3z" /></svg>
                 提交意见反馈 / 举报
               </div>
-              <div className="fb-hint">无需登录，匿名提交，仅社长可见。</div>
+              <div className="fb-hint">可匿名或署名（登录后）提交，仅社长可见。</div>
             </div>
             <span className="fb-toggle">{showFeedbackForm ? "收起" : "展开"}
               <svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
@@ -255,7 +278,19 @@ export default function ProposalListPage() {
                   <label className="label">详细内容 <span className="hint">*</span></label>
                   <textarea className="textarea" value={fbDesc} onChange={(e) => setFbDesc(e.target.value)} placeholder="详细描述你的建议 / 投诉 / 举报内容…" rows={4} required />
                 </div>
-                <div><button className="btn btn-primary" type="submit" disabled={fbSubmitting}>{fbSubmitting ? "提交中…" : "匿名提交"}</button></div>
+                {isLoggedIn && (
+                  <div className="field">
+                    <label className="label">署名 <span className="hint">（登录用户）</span></label>
+                    <label className="fb-attrib">
+                      <input type="checkbox" checked={fbAttributed} onChange={(e) => { setFbAttributed(e.target.checked); if (!e.target.checked) setFbFiles([]); }} />
+                      <span>署名提交 —— 社长可见我的身份，可附带图片 / 视频证据</span>
+                    </label>
+                    {fbAttributed && (
+                      <input type="file" multiple accept="image/*,video/*" onChange={(e) => setFbFiles(Array.from(e.target.files || []))} />
+                    )}
+                  </div>
+                )}
+                <div><button className="btn btn-primary" type="submit" disabled={fbSubmitting || fbUploading}>{fbUploading ? "上传附件中…" : fbSubmitting ? "提交中…" : fbAttributed ? "署名提交" : "匿名提交"}</button></div>
               </form>
             </div>
           )}
