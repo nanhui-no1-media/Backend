@@ -626,3 +626,36 @@ class TusUploadTest(_AttachmentTestCase):
         self._create(self.creator, length=4)  # 触发 create → sweep
         self.assertFalse(TusUpload.objects.filter(pk=stale.pk).exists())
 
+
+# ── news 父级（#新闻视频）──
+class AttachmentNewsParentTest(_AttachmentTestCase):
+    """Attachment 可挂 news 父级；task/proposal/news 三选一。"""
+
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import User
+        from news.models import News
+        self.user = User.objects.create_user(username="author", password="x")
+        self.news = News.objects.create(title="n", author=self.user, is_published=True)
+        self.task = Task.objects.create(title="t", creator=self.user, status="pending")
+
+    def test_news_only_attachment_valid(self):
+        att = Attachment(
+            uploaded_by=self.user, news=self.news,
+            file=upload("v.mp4", b"x", "video/mp4"),
+            file_type="video", file_name="v.mp4", file_size=1,
+        )
+        att.full_clean()  # 不抛
+        att.save()
+        self.assertEqual(Attachment.objects.get(pk=att.pk).news_id, self.news.pk)
+
+    def test_news_and_task_rejected(self):
+        from django.db import IntegrityError
+        att = Attachment(
+            uploaded_by=self.user, news=self.news, task=self.task,
+            file=upload("v.mp4", b"x", "video/mp4"),
+            file_type="video", file_name="v.mp4", file_size=1,
+        )
+        with self.assertRaises(IntegrityError):
+            att.save()
+
