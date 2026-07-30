@@ -5,6 +5,7 @@ import RichTextEditor from "../components/RichTextEditor";
 import { api } from "../api/client";
 import { newsApi } from "../api/news";
 import { taskApi } from "../api/tasks";
+import { attachmentApi } from "../api/attachments";
 import { type NewsCategory, CATEGORY_LABELS } from "../types/news";
 import type { Tag } from "../types/tasks";
 import "../styles/news.css";
@@ -32,6 +33,7 @@ export default function NewsFormPage() {
   const navigate = useNavigate();
   const isEdit = !!id;
   const fileRef = useRef<HTMLInputElement>(null);
+  const newsIdRef = useRef<number | null>(id ? Number(id) : null);
   // 仅「新建」模式启用本地草稿自动保存（编辑模式以服务器为单一数据源）
   const draftKey = `news-draft-${id || "new"}`;
   const draftSupported = !isEdit;
@@ -139,6 +141,30 @@ export default function NewsFormPage() {
     setRteKey((k) => k + 1);
   };
 
+  const uploadNewsVideo = async (file: File, onProgress: (ratio: number) => void): Promise<string> => {
+    // 新建且尚未保存：先存一份服务端草稿拿到 id（tus/Attachment 必须挂已存在的 news_id）
+    if (!newsIdRef.current) {
+      const draftFd = new FormData();
+      draftFd.append("title", title.trim() || "未命名草稿");
+      draftFd.append("category", category);
+      draftFd.append("content", content);
+      draftFd.append("summary", summary);
+      draftFd.append("is_published", "false");
+      const draft = await newsApi.create(draftFd);
+      newsIdRef.current = draft.id;
+      setDraftRestored(false);  // 草稿已在服务端，本地草稿不再相关
+    }
+    const att = await attachmentApi.uploadRouted({
+      parentType: "news", parentId: newsIdRef.current, file, onProgress,
+    });
+    if (att && att.file_url) return att.file_url;
+    // tus（>50MB）异步完成：回拉详情，取最新一条视频附件的 URL
+    const fresh = await newsApi.get(newsIdRef.current);
+    const latest = (fresh.attachments || []).find((a) => a.file_type === "video");
+    if (!latest) throw new Error("视频处理中，请稍后重试");
+    return latest.file_url;
+  };
+
   const submit = async () => {
     if (!title.trim()) { setError("请填写标题。"); return; }
     setSaving(true);
@@ -153,7 +179,10 @@ export default function NewsFormPage() {
       fd.append("is_published", String(isPublished));
       tagIds.forEach((tid) => fd.append("tag_ids", String(tid)));
       if (cover) fd.append("cover_image", cover);
-      const saved = isEdit ? await newsApi.update(Number(id), fd) : await newsApi.create(fd);
+      const saved = newsIdRef.current
+        ? await newsApi.update(newsIdRef.current, fd)
+        : await newsApi.create(fd);
+      if (!newsIdRef.current) newsIdRef.current = saved.id;
       if (draftSupported) localStorage.removeItem(draftKey);
       navigate(`/news/${saved.id}`);
     } catch (e: any) {
@@ -255,6 +284,8 @@ export default function NewsFormPage() {
             onStats={setChars}
             minHeight={560}
             imageUpload={(f) => newsApi.uploadImage(f).then((d) => d.url)}
+            videoUpload={uploadNewsVideo}
+            videoEmbed
             wordImport
             placeholder="开始撰写正文，或从 Word 导入…"
           />
