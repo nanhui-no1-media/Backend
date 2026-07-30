@@ -12,6 +12,8 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { useRef, useState, type ReactNode } from "react";
 import "./RichTextEditor.css";
 // mammoth 经动态 import() 按需加载（见 importWord），并已 code-split 到独立 chunk。
+import { Video } from "./rte/VideoNode";
+import { parseVideoEmbed } from "../utils/videoEmbed";
 
 interface Props {
   content: string;
@@ -29,6 +31,10 @@ interface Props {
   imageUpload?: (file: File) => Promise<string>;
   /** 启用「导入 Word」(.docx → HTML) 按钮。 */
   wordImport?: boolean;
+  /** 视频上传：传入即启用「上传视频」按钮；返回上传后的视频 URL（可带进度）。 */
+  videoUpload?: (file: File, onProgress: (ratio: number) => void) => Promise<string>;
+  /** 启用「嵌入视频链接」按钮（外链转 embed）。 */
+  videoEmbed?: boolean;
 }
 
 /* 小图标（仅用于「动作」类按钮：图片 / 链接 / 导入 Word） */
@@ -48,24 +54,37 @@ const Icon = {
       <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /><path d="M9 13h6M9 17h4" />
     </svg>
   ),
+  video: (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="5" width="14" height="14" rx="2" /><path d="M17 9l4-2v10l-4-2" />
+    </svg>
+  ),
 };
 
 const Toolbar = ({
   editor,
   imageUpload,
   wordImport,
+  videoUpload,
+  videoEmbed,
   importing,
   onInsertImage,
   onAddLink,
   onImportWord,
+  onInsertVideoFile,
+  onInsertVideoEmbed,
 }: {
   editor: ReturnType<typeof useEditor>;
   imageUpload?: Props["imageUpload"];
   wordImport?: boolean;
+  videoUpload?: Props["videoUpload"];
+  videoEmbed?: boolean;
   importing: boolean;
   onInsertImage: () => void;
   onAddLink: () => void;
   onImportWord: () => void;
+  onInsertVideoFile: () => void;
+  onInsertVideoEmbed: () => void;
 }) => {
   if (!editor) return null;
 
@@ -108,8 +127,18 @@ const Toolbar = ({
         {btn("— 分割线", () => editor!.chain().focus().setHorizontalRule().run(), false, "分割线")}
       </div>
 
-      {(imageUpload || wordImport) && <span className="rte-spacer" />}
+      {(imageUpload || wordImport || videoUpload || videoEmbed) && <span className="rte-spacer" />}
       <div className="rte-group rte-actions">
+        {videoEmbed && (
+          <button type="button" className="rte-action" onClick={onInsertVideoEmbed} title="嵌入视频链接（B站/YouTube/腾讯/优酷）">
+            {Icon.video} 嵌入视频
+          </button>
+        )}
+        {videoUpload && (
+          <button type="button" className="rte-action" onClick={onInsertVideoFile} title="上传视频文件">
+            {Icon.video} 上传视频
+          </button>
+        )}
         {imageUpload && (
           <button type="button" className="rte-action" onClick={onInsertImage} title="插入图片">{Icon.image} 图片</button>
         )}
@@ -135,11 +164,15 @@ export default function RichTextEditor({
   minHeight,
   imageUpload,
   wordImport,
+  videoUpload,
+  videoEmbed,
 }: Props) {
   const imageInput = useRef<HTMLInputElement>(null);
   const wordInput = useRef<HTMLInputElement>(null);
+  const videoInput = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [err, setErr] = useState("");
+  const [videoProgress, setVideoProgress] = useState<number | null>(null);
   // 用 ref 持有最新回调，避免 useEditor 闭包过期
   const onChangeRef = useRef(onChange); onChangeRef.current = onChange;
   const onStatsRef = useRef(onStats); onStatsRef.current = onStats;
@@ -158,6 +191,7 @@ export default function RichTextEditor({
       TableCell,
       TableHeader,
       TiptapImage.configure({ inline: true }),
+      Video,
       Placeholder.configure({ placeholder }),
     ],
     content,
@@ -226,6 +260,33 @@ export default function RichTextEditor({
     }
   };
 
+  const insertVideoFile = async (file: File | null) => {
+    if (!file || !editor || !videoUpload) return;
+    setErr("");
+    setVideoProgress(null);
+    try {
+      const src = await videoUpload(file, setVideoProgress);
+      editor.chain().focus().insertVideo({ kind: "file", src, provider: null }).run();
+    } catch (e: any) {
+      setErr(e?.message || "视频上传失败");
+    } finally {
+      setVideoProgress(null);
+    }
+  };
+
+  const insertVideoEmbed = () => {
+    if (!editor) return;
+    const url = window.prompt("粘贴视频链接（B站 / YouTube / 腾讯 / 优酷）", "https://");
+    if (url === null) return;
+    const parsed = parseVideoEmbed(url);
+    if (!parsed) {
+      setErr("不支持的视频链接，请粘贴 B站 / YouTube / 腾讯 / 优酷 的视频页地址");
+      return;
+    }
+    setErr("");
+    editor.chain().focus().insertVideo({ kind: "embed", src: parsed.src, provider: parsed.provider }).run();
+  };
+
   if (!editable) {
     return (
       <div className="rte-readonly">
@@ -240,13 +301,25 @@ export default function RichTextEditor({
         editor={editor}
         imageUpload={imageUpload}
         wordImport={wordImport}
+        videoUpload={videoUpload}
+        videoEmbed={videoEmbed}
         importing={importing}
         onInsertImage={() => imageInput.current?.click()}
         onAddLink={addLink}
         onImportWord={() => wordInput.current?.click()}
+        onInsertVideoFile={() => videoInput.current?.click()}
+        onInsertVideoEmbed={insertVideoEmbed}
       />
       <EditorContent editor={editor} className="rte-content" />
       {err && <div className="rte-err">{err}</div>}
+      {videoProgress != null && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "6px 0" }}>
+          <span>视频上传 {Math.round(videoProgress * 100)}%</span>
+          <div style={{ flex: 1, height: 6, background: "#e5e7eb", borderRadius: 4, overflow: "hidden" }}>
+            <div style={{ width: `${Math.round(videoProgress * 100)}%`, height: "100%", background: "#2563eb", transition: "width .2s" }} />
+          </div>
+        </div>
+      )}
       <input
         ref={imageInput} type="file" accept="image/*" className="rte-file"
         onChange={(e) => { insertImage(e.target.files?.[0] ?? null); e.target.value = ""; }}
@@ -254,6 +327,10 @@ export default function RichTextEditor({
       <input
         ref={wordInput} type="file" accept=".docx" className="rte-file"
         onChange={(e) => { importWord(e.target.files?.[0] ?? null); e.target.value = ""; }}
+      />
+      <input
+        ref={videoInput} type="file" accept="video/*" className="rte-file"
+        onChange={(e) => { insertVideoFile(e.target.files?.[0] ?? null); e.target.value = ""; }}
       />
     </div>
   );
