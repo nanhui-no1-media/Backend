@@ -10,14 +10,16 @@
 社长被排除（不上传证据到别人反馈）。**删除**走 ``can_manage_parent_attachments``（通用规则），
 并额外允许附件上传者删除自己上传的（用户故事 #12）。故社长对反馈「能删不能传」。
 """
+from news.models import News
 from proposals.models import Proposal
 from tasks.lifecycle import is_active_participant
 from tasks.models import Task
 
 
 def is_parent_creator(user, parent):
-    """父级创建者（任务/申报的 creator）。"""
-    return parent.creator_id is not None and parent.creator_id == user.pk
+    """父级创建者（任务/申报的 creator）。News 用 author 维度，此处对无 creator 的父级返回 False。"""
+    creator_id = getattr(parent, "creator_id", None)
+    return creator_id is not None and creator_id == user.pk
 
 
 # 「任务活跃参与者」谓词已收口到 tasks.lifecycle.is_active_participant
@@ -25,11 +27,13 @@ def is_parent_creator(user, parent):
 
 
 def has_parent_manage_permission(user, parent):
-    """父级管理权限：任务 = tasks.manage_tasks；申报 = proposals.change_proposal。"""
+    """父级管理权限：任务 = tasks.manage_tasks；申报 = proposals.change_proposal；新闻 = news.change_news。"""
     if isinstance(parent, Task):
         return user.has_perm("tasks.manage_tasks")
     if isinstance(parent, Proposal):
         return user.has_perm("proposals.change_proposal")
+    if isinstance(parent, News):
+        return user.has_perm("news.change_news")
     return False
 
 

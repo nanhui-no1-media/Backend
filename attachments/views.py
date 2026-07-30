@@ -3,6 +3,7 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from news.models import News
 from proposals.models import Proposal
 from tasks.models import Task
 
@@ -19,7 +20,7 @@ class AttachmentViewSet(
 ):
     """统一附件：仅提供创建（上传）与删除；列表随父级详情返回。"""
 
-    queryset = Attachment.objects.select_related("uploaded_by", "task", "proposal")
+    queryset = Attachment.objects.select_related("uploaded_by", "task", "proposal", "news")
     serializer_class = AttachmentSerializer
     permission_classes = [IsAuthenticated]
 
@@ -38,17 +39,22 @@ class AttachmentViewSet(
 
         task_id = request.data.get("task_id")
         proposal_id = request.data.get("proposal_id")
-        has_task = task_id not in (None, "")
-        has_proposal = proposal_id not in (None, "")
-        if has_task == has_proposal:  # 同时传或都不传
+        news_id = request.data.get("news_id")
+        candidates = [
+            ("task", task_id, Task),
+            ("proposal", proposal_id, Proposal),
+            ("news", news_id, News),
+        ]
+        specified = [(kind, pid, model) for (kind, pid, model) in candidates if pid not in (None, "")]
+        if len(specified) != 1:
             return Response(
-                {"detail": "必须且只能指定一个父级（task_id 或 proposal_id）"},
+                {"detail": "必须且只能指定一个父级（task_id / proposal_id / news_id）"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
+        kind, pid, parent_model = specified[0]
         try:
-            parent = Task.objects.get(pk=task_id) if has_task else Proposal.objects.get(pk=proposal_id)
-        except (Task.DoesNotExist, Proposal.DoesNotExist, ValueError, TypeError):
+            parent = parent_model.objects.get(pk=pid)
+        except (parent_model.DoesNotExist, ValueError, TypeError):
             return Response(
                 {"detail": "指定的父级不存在"}, status=status.HTTP_404_NOT_FOUND,
             )
@@ -67,6 +73,7 @@ class AttachmentViewSet(
             uploaded_by=request.user,
             task=parent if isinstance(parent, Task) else None,
             proposal=parent if isinstance(parent, Proposal) else None,
+            news=parent if isinstance(parent, News) else None,
             file=file,
             file_type=file_type,
             file_name=file.name,
@@ -80,7 +87,7 @@ class AttachmentViewSet(
     # ── 删除：DELETE /attachments/{id}/ ──
     def destroy(self, request, *args, **kwargs):
         attachment = self.get_object()
-        parent = attachment.task or attachment.proposal
+        parent = attachment.task or attachment.proposal or attachment.news
         # 统一规则；此外附件上传者始终可删自己上传的（用户故事 #12）。
         allowed = (
             can_manage_parent_attachments(request.user, parent)

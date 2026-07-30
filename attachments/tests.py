@@ -494,7 +494,9 @@ class TusUploadTest(_AttachmentTestCase):
 
     def setUp(self):
         super().setUp()
+        from django.contrib.auth.models import Permission
         self.creator = User.objects.create_user(username="creator", password="x")
+        self.creator.user_permissions.add(Permission.objects.get(codename="change_news"))
         self.outsider = User.objects.create_user(username="outsider", password="x")
         self.president = make_president(User.objects.create_user(username="pres", password="x"))
         self.feedback = Proposal.objects.create(
@@ -626,6 +628,20 @@ class TusUploadTest(_AttachmentTestCase):
         self._create(self.creator, length=4)  # 触发 create → sweep
         self.assertFalse(TusUpload.objects.filter(pk=stale.pk).exists())
 
+    def test_tus_upload_to_news_creates_attachment(self):  # 新闻视频父级路径
+        from news.models import News
+        news = News.objects.create(title="n", author=self.creator, is_published=True)
+        chunk = b"news-video-bytes"
+        resp = self._create(
+            self.creator, length=len(chunk), filetype="video/mp4", filename="v.mp4",
+            parent_type="news", parent_id=news.pk,
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(self._patch(resp.get("Location") or resp["Location"], chunk).status_code, 204)  # type: ignore[attr-defined]
+        att = Attachment.objects.get(news=news)
+        self.assertEqual(att.uploaded_by, self.creator)
+        self.assertEqual(att.file_type, "video")
+
 
 # ── news 父级（#新闻视频）──
 class AttachmentNewsParentTest(_AttachmentTestCase):
@@ -658,4 +674,30 @@ class AttachmentNewsParentTest(_AttachmentTestCase):
         )
         with self.assertRaises(IntegrityError):
             att.save()
+
+
+# ── news 父级上传权限（#新闻视频）──
+class UploadNewsPermissionTest(_AttachmentTestCase):
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import Permission
+        from news.models import News
+        self.author = User.objects.create_user(username="author", password="x")
+        self.author.user_permissions.add(Permission.objects.get(codename="change_news"))
+        self.outsider = User.objects.create_user(username="outsider", password="x")
+        self.news = News.objects.create(title="n", author=self.author, is_published=True)
+        self.client = APIClient()
+
+    def _post(self, user):
+        self.client.force_authenticate(user)  # pyright: ignore[reportAttributeAccessIssue]
+        return self.client.post(
+            "/attachments/", {"file": upload("v.mp4", b"x", "video/mp4"), "news_id": self.news.pk},
+            format="multipart",
+        )
+
+    def test_news_author_can_upload(self):
+        self.assertEqual(self._post(self.author).status_code, 201)
+
+    def test_outsider_cannot_upload_to_news(self):
+        self.assertEqual(self._post(self.outsider).status_code, 403)
 
