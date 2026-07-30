@@ -205,3 +205,16 @@ a.news-item:hover h3 { color: var(--brand-700); }
   .compose-foot { position: static; }
 }
 
+/* 正文内嵌视频 / 外链播放器：响应式、圆角；iframe 用 aspect-ratio 维持 16:9（无需包裹 div，避免 bleach 剥离 div） */
+.prose video,
+.prose iframe {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-md);
+  display: block;
+  margin: var(--s-4) auto;
+}
+.prose iframe {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
