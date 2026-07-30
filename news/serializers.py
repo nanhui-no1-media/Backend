@@ -8,6 +8,8 @@ from tasks.models import Tag
 from tasks.serializers import SimpleUserSerializer
 
 from .models import News
+from attachments.models import Attachment
+from attachments.serializers import AttachmentSerializer
 
 # 正文 HTML 白名单：与前端 RichTextEditor（TipTap：StarterKit + TaskList + Table + Image）输出对齐。
 # 服务端清洗可挡住信息组成员绕过编辑器、直接经 API 注入的 <script>/事件处理器/javascript: 等。
@@ -121,6 +123,14 @@ class NewsListSerializer(serializers.ModelSerializer):
         return _absolute_cover_url(obj, self.context.get("request"))
 
 
+class NewsAttachmentSerializer(AttachmentSerializer):
+    """新闻详情用的精简附件视图：不含 uploaded_by（详情匿名可读）。复用父类 get_file_url。"""
+
+    class Meta:
+        model = Attachment
+        fields = ["id", "file_url", "file_type", "file_name", "file_size"]
+
+
 class NewsDetailSerializer(serializers.ModelSerializer):
     """详情序列化：含正文、相关阅读；写入接受封面文件与 tag_ids。"""
 
@@ -129,6 +139,7 @@ class NewsDetailSerializer(serializers.ModelSerializer):
     cover_image = serializers.ImageField(write_only=True, required=False, allow_null=True)
     cover_image_url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField()
+    attachments = NewsAttachmentSerializer(many=True, read_only=True)
 
     tag_ids = serializers.PrimaryKeyRelatedField(
         queryset=Tag.objects.all(), many=True, required=False, write_only=True, source="tags",
@@ -141,7 +152,7 @@ class NewsDetailSerializer(serializers.ModelSerializer):
             "cover_image", "cover_image_url",
             "author", "tags", "tag_ids",
             "featured", "views", "is_published", "published_at",
-            "related", "created_at", "updated_at",
+            "related", "created_at", "updated_at", "attachments",
         ]
         read_only_fields = ["author", "views", "published_at", "created_at", "updated_at"]
 
