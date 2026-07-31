@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django_filters',
     'common',
     'accounts',
+    'about',
     'tasks',
     'messaging',
     'proposals',
