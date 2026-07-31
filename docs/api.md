@@ -63,7 +63,8 @@ GET /auth/me/
       "can_manage_tags": true,
       "can_approve_proposals": true,
       "can_change_proposals": true,
-      "can_view_feedback": true
+      "can_view_feedback": true,
+      "can_edit_about": false
     }
   },
   "profile": {
@@ -138,7 +139,8 @@ GET /auth/profile/
       "can_manage_tags": true,
       "can_approve_proposals": true,
       "can_change_proposals": true,
-      "can_view_feedback": true
+      "can_view_feedback": true,
+      "can_edit_about": false
     }
   },
   "profile": {

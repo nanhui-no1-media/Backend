@@ -15,6 +15,7 @@
 | `/proposals` | 活动申报、意见反馈接口 |
 | `/attachments` | 统一附件接口（上传/删除） |
 | `/messaging` | 站内消息、任务讨论接口 |
+| `/about` | 关于页（公开读 / 授权写） |
 | `/media` | 用户上传文件（头像、附件等） |
 | `/admin` | 管理后台（可选） |
 
@@ -115,7 +116,8 @@ fetch("/auth/profile/update/", {
       "can_manage_tags": true,
       "can_approve_proposals": true,
       "can_change_proposals": true,
-      "can_view_feedback": true
+      "can_view_feedback": true,
+      "can_edit_about": false
     }
   },
   "profile": {
@@ -128,7 +130,7 @@ fetch("/auth/profile/update/", {
 }
 ```
 
-其中 `avatar`、`birthday` 等可选字段未设置时为 `null`，`gender` 取值为 `"M"`（男）、`"F"`（女）、`"O"`（其他）或空字符串。`user.permissions` 为能力字典（7 项语义化布尔，由后端 `user.has_perm(...)` 派生）：`can_manage_news` / `can_manage_tasks` / `can_assign_task` / `can_manage_tags` / `can_approve_proposals` / `can_change_proposals` / `can_view_feedback`。前端据此门禁 UI（写新闻、任务流转、申报审批/编辑、查看反馈等），实际操作仍由后端按权限校验（见「任务系统 · 权限模型」）。
+其中 `avatar`、`birthday` 等可选字段未设置时为 `null`，`gender` 取值为 `"M"`（男）、`"F"`（女）、`"O"`（其他）或空字符串。`user.permissions` 为能力字典（8 项语义化布尔，由后端 `user.has_perm(...)` 派生）：`can_manage_news` / `can_manage_tasks` / `can_assign_task` / `can_manage_tags` / `can_approve_proposals` / `can_change_proposals` / `can_view_feedback` / `can_edit_about`（关于页编辑，持 `about.change_aboutpage`）。前端据此门禁 UI（写新闻、任务流转、申报审批/编辑、查看反馈、关于页编辑等），实际操作仍由后端按权限校验（见「任务系统 · 权限模型」）。
 
 ### 列表查询（分页 / 过滤 / 搜索 / 排序）
 
@@ -381,6 +383,19 @@ const initial = displayName.charAt(0).toUpperCase();
 - 进入会话后应调 `mark_read` 把 `unread_count` 清零。
 - 权限：仅会话参与者可读/发消息。
 
+## 关于页 `/about/`
+
+站点「关于我们」单页，公开可读、授权可编辑（保存即发布，无草稿/版本）。
+
+| 接口 | 方法 | 权限 | 说明 |
+|------|------|------|------|
+| `/about/` | GET | 公开（含匿名） | 返回 `{title, content, updated_at}` |
+| `/about/` | PUT | `about.change_aboutpage` | 更新 title + 正文（content 经富文本净化）；返回更新后对象 |
+
+- 正文为富文本 HTML，与新闻正文同款净化白名单（图片/视频/表格等）。
+- 编辑入口：`/auth/me/` 的 `user.permissions.can_edit_about` 为真时，前端显示「编辑」按钮。
+- 该权限默认不挂任何组，需在 Django admin 用「组管理」授予（如信息组或新建「站长」组）。
+
 ## URL 路由约定
 
 Django 的路由规则：
@@ -393,11 +408,12 @@ Django 的路由规则：
 | `/proposals/*` | Django API（申报/反馈） |
 | `/attachments/*` | Django API（统一附件） |
 | `/messaging/*` | Django API（消息/讨论） |
+| `/about/*` | Django API（关于页） |
 | `/static/*` | 静态文件 |
 | `/media/*` | 用户上传文件 |
 | 其他所有路径 | 返回 `index.html`（SPA） |
 
-前端路由不受限制，Django 会将所有非后端路径交给前端处理。路径选择只需避开 `/admin/`、`/auth/`、`/tasks/`、`/proposals/`、`/attachments/`、`/messaging/`、`/static/`、`/media/` 即可。
+前端路由不受限制，Django 会将所有非后端路径交给前端处理。路径选择只需避开 `/admin/`、`/auth/`、`/tasks/`、`/proposals/`、`/attachments/`、`/messaging/`、`/about/`、`/static/`、`/media/` 即可。
 
 ## 部署模式
 
