@@ -7,6 +7,7 @@ from .models import Profile
 
 class ProfileInline(admin.StackedInline):
     model = Profile
+    fk_name = "user"  # Profile 有 user + verified_by 两个 FK→User，须指明内联绑哪个
     can_delete = False
 
 

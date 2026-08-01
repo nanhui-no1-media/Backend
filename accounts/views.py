@@ -1,6 +1,11 @@
 import json
+import logging
 from datetime import timedelta
+
 from django.conf import settings
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
@@ -14,12 +19,24 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.core.mail import send_mail
 
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
-from .models import Profile, UserSession
-from .utils import SESSION_HISTORY_LIMIT
+from .models import Profile, IdentityProof, UserSession
+from .tokens import email_verification_token
+from .throttles import RegisterThrottle, ResendVerificationThrottle
+from .turnstile import verify_turnstile
+from .utils import SESSION_HISTORY_LIMIT, get_client_ip
 from .visibility import content_visibility, profile_view_for
+
+logger = logging.getLogger(__name__)
 
 LOGIN_PROTECTION_SECONDS = 600  # 登录保护窗口：登录后 10 分钟内他方新会话登录被拒
 CONTENT_LIMIT = 15  # 个人中心每个内容 tab 返回的最近条数
+
+# 自助注册（#28）证明材料约束
+PROOF_MIN_COUNT = 1
+PROOF_MAX_COUNT = 3
+PROOF_MAX_BYTES = 5 * 1024 * 1024  # 单张 ≤ 5MB
+PROOF_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+IDENTITY_CHOICE_KEYS = {key for key, _label in Profile.IDENTITY_CHOICES}
 
 
 def _json_body(request):
@@ -36,6 +53,31 @@ def _form_errors(form):
     for error in form.non_field_errors():
         errors.append(error)
     return errors[0] if len(errors) == 1 else errors
+
+
+def _send_verification_email(user):
+    """发邮箱验证邮件（链接 = FRONTEND_URL + #/verify-email?uid=&token=）。
+
+    令牌绑定 user.email + email_verified（见 accounts.tokens）。发信失败仅记日志、不抛——
+    账号已建，用户可走「重发验证邮件」（#29）补发，不因 SMTP 抖动回滚注册。
+    """
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = email_verification_token.make_token(user)
+    link = f"{settings.FRONTEND_URL}/#/verify-email?uid={uid}&token={token}"
+    try:
+        send_mail(
+            subject="邮箱验证 - 南汇一中传媒社",
+            message=(
+                "你好！请点击下方链接完成邮箱验证（注册后首次登录需要）：\n\n"
+                f"{link}\n\n"
+                "如果你没有注册过本社团账号，请忽略此邮件。"
+            ),
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            recipient_list=[user.email],
+            fail_silently=True,
+        )
+    except Exception:
+        logger.exception("发送邮箱验证邮件失败: user_pk=%s", user.pk)
 
 
 @require_POST
@@ -172,6 +214,99 @@ def password_reset_confirm_view(request):
     user.set_password(form.cleaned_data["new_password"])
     user.save()
     return JsonResponse({"message": "Password has been reset successfully."})
+
+
+@require_POST
+def register_view(request):
+    """自助注册（#28）：访客提交 → 建号（未验证）→ 发验证邮件。
+
+    multipart：username / password+password2 / real_name / identity / email /
+    turnstile_token / proof_files[]（1~3 张，jpg/png/webp，单张 ≤5MB）。一个事务建
+    User(is_active=True) + Profile（显式未验证）+ IdentityProof。发信失败不回滚。
+    限流 register scope（每 IP 5/日），Turnstile 在 DEBUG/未配 secret 时跳过。
+    """
+    # 限流优先：挡机器刷号（在所有校验之前）。
+    if not RegisterThrottle().allow_request(request, None):
+        return JsonResponse({"error": "注册请求过于频繁，请稍后再试。"}, status=429)
+
+    username = (request.POST.get("username") or "").strip()
+    password = request.POST.get("password") or ""
+    password2 = request.POST.get("password2") or ""
+    real_name = (request.POST.get("real_name") or "").strip()
+    identity = (request.POST.get("identity") or "").strip()
+    email = (request.POST.get("email") or "").strip().lower()  # 邮箱全局大小写不敏感：归一化小写存储
+    turnstile_token = request.POST.get("turnstile_token") or ""
+    proof_files = request.FILES.getlist("proof_files")
+
+    errors = []
+
+    if not username:
+        errors.append("用户名不能为空")
+    if not email:
+        errors.append("邮箱不能为空")
+    if not real_name:
+        errors.append("真实姓名不能为空")
+    if identity not in IDENTITY_CHOICE_KEYS:
+        errors.append("请选择有效身份（在校生 / 外校生 / 毕业生）")
+
+    if password != password2:
+        errors.append("两次输入的密码不一致")
+    if password:
+        try:
+            validate_password(password)
+        except ValidationError as e:
+            errors.extend(e.messages)
+
+    # 唯一性：用户名、邮箱均大小写不敏感
+    if username and User.objects.filter(username__iexact=username).exists():
+        errors.append("该用户名已被占用")
+    if email and User.objects.filter(email__iexact=email).exists():
+        errors.append("该邮箱已注册")
+
+    # 证明材料：数量 / 类型 / 大小
+    if len(proof_files) < PROOF_MIN_COUNT:
+        errors.append(f"请至少上传 {PROOF_MIN_COUNT} 张身份证明照片")
+    elif len(proof_files) > PROOF_MAX_COUNT:
+        errors.append(f"身份证明最多 {PROOF_MAX_COUNT} 张")
+    for f in proof_files:
+        if f.size > PROOF_MAX_BYTES:
+            errors.append(f"证明材料「{f.name}」超过 5MB 上限")
+        if f.content_type not in PROOF_ALLOWED_TYPES:
+            errors.append(f"证明材料「{f.name}」格式不支持（仅 JPG / PNG / WebP）")
+
+    if errors:
+        return JsonResponse({"error": errors[0] if len(errors) == 1 else errors}, status=400)
+
+    # Turnstile 人机校验（DEBUG / 未配 secret 时 verify_turnstile 直接放行）
+    if not verify_turnstile(turnstile_token, get_client_ip(request)):
+        return JsonResponse({"error": "人机校验失败，请刷新后重试。"}, status=400)
+
+    try:
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=username, email=email, password=password, is_active=True
+            )
+            # 自助注册：显式置未验证（profile 默认 True 是信任态，此处覆盖为待验证）。
+            Profile.objects.create(
+                user=user,
+                real_name=real_name,
+                identity=identity,
+                email_verified=False,
+                identity_verified=False,
+            )
+            for f in proof_files:
+                IdentityProof.objects.create(user=user, file=f)
+    except Exception:
+        logger.exception("注册建号失败: username=%s", username)
+        return JsonResponse({"error": "注册失败，请稍后重试。"}, status=500)
+
+    # 发验证邮件（失败不回滚；用户可走「重发」补发）。
+    _send_verification_email(user)
+
+    return JsonResponse(
+        {"message": "注册成功，请查收邮件完成邮箱验证。", "user": {"id": user.id, "username": user.username}},
+        status=201,
+    )
 
 
 def _get_or_create_profile(user):

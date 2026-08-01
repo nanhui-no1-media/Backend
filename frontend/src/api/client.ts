@@ -21,6 +21,9 @@ export const api = {
   getCsrf: () =>
     request("/csrf/"),
 
+  register: (data: FormData) =>
+    request("/register/", { method: "POST", body: data }),
+
   passwordReset: (email: string) =>
     request("/password-reset/", { method: "POST", body: JSON.stringify({ email }) }),
 

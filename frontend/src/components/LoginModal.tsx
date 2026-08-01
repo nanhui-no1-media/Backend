@@ -107,7 +107,7 @@ export default function LoginModal({
         <div className="modal-head">
           <div>
             <h3 id="auth-title">登录</h3>
-            <p>账户由信息组统一分发</p>
+            <p>南汇一中传媒社</p>
           </div>
           <button className="modal-close" aria-label="关闭" type="button" onClick={handleDismiss}>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -115,10 +115,6 @@ export default function LoginModal({
         </div>
 
         <form id="auth-form" className="modal-body" autoComplete="off" onSubmit={handleSubmit}>
-          <div className="alert alert-info">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v4h1" /></svg>
-            <span>账户由信息组统一分发，无自助注册入口。</span>
-          </div>
           {error && (
             <div className="alert alert-danger">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
@@ -151,7 +147,10 @@ export default function LoginModal({
           <button className="btn btn-primary btn-block" type="submit" form="auth-form" disabled={loading}>
             {loading ? "登录中…" : "登录"}
           </button>
-          <p className="hint center">没有账号？联系信息组 →</p>
+          <p className="hint center">
+            没有账号？{" "}
+            <a href="#" onClick={(e) => { e.preventDefault(); onClose(); navigate("/register"); }}>注册 →</a>
+          </p>
         </div>
       </div>
     </div>
