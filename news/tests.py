@@ -54,6 +54,16 @@ def _info(user):
     return user
 
 
+class NewsContentSanitizeTest(TestCase):
+    """NewsDetailSerializer.validate_content 仍经 sanitize_html（与 common 共享净化）。"""
+
+    def test_validate_content_strips_script(self):
+        from news.serializers import NewsDetailSerializer
+        out = NewsDetailSerializer().validate_content("<p>ok</p><script>alert(1)</script>")
+        self.assertNotIn("<script", out)
+        self.assertIn("ok", out)
+
+
 class NewsPermissionTest(TestCase):
     def setUp(self):
         self.author = _info(User.objects.create_user(username="info", password="x"))

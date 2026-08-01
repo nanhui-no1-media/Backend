@@ -4,6 +4,7 @@ import urllib.parse
 from django.utils import timezone
 from rest_framework import serializers
 
+from common.rich_text import sanitize_html
 from tasks.models import Tag
 from tasks.serializers import SimpleUserSerializer
 
@@ -140,6 +141,7 @@ class NewsDetailSerializer(serializers.ModelSerializer):
     cover_image_url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField()
     attachments = NewsAttachmentSerializer(many=True, read_only=True)
+    attachments = NewsAttachmentSerializer(many=True, read_only=True)
 
     tag_ids = serializers.PrimaryKeyRelatedField(
         queryset=Tag.objects.all(), many=True, required=False, write_only=True, source="tags",
@@ -152,6 +154,7 @@ class NewsDetailSerializer(serializers.ModelSerializer):
             "cover_image", "cover_image_url",
             "author", "tags", "tag_ids",
             "featured", "views", "is_published", "published_at",
+            "related", "created_at", "updated_at", "attachments",
             "related", "created_at", "updated_at", "attachments",
         ]
         read_only_fields = ["author", "views", "published_at", "created_at", "updated_at"]
@@ -172,7 +175,7 @@ class NewsDetailSerializer(serializers.ModelSerializer):
 
     def validate_content(self, value):
         # 服务端清洗：防止绕过编辑器注入恶意 HTML（XSS）
-        return _sanitize_content(value or "")
+        return sanitize_html(value or "")
 
     def validate_cover_image(self, value):
         # 与头像校验一致：限制大小与类型（客户端 2MB 检查可被直接 API 调用绕过）

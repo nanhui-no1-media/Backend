@@ -12,7 +12,7 @@ from proposals.models import Proposal
 from proposals.notifications import proposal_approvers
 
 from accounts.permissions import IsIdentityVerified
-from .models import Conversation, Message, MessageReadStatus, unread_message_count
+from .models import Conversation, Message, MessageReadStatus, unread_message_count, unread_message_count
 from .permissions import IsConversationParticipant
 from .serializers import ConversationSerializer, MessageSerializer
 

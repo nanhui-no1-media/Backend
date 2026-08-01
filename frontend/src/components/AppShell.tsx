@@ -226,9 +226,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <a href="#" onClick={(e) => { e.preventDefault(); go("/tasks"); }}>任务</a>
           </div>
           <div>
-            <h5>社团</h5>
-            <a href="#" onClick={(e) => { e.preventDefault(); go("/"); }}>社团简介</a>
-            <a href="#" onClick={(e) => { e.preventDefault(); go("/"); }}>关于网站</a>
+            <h5>关于</h5>
+            <a href="#" onClick={(e) => { e.preventDefault(); go("/about"); }}>关于我们</a>
           </div>
           <div>
             <h5>账户</h5>
