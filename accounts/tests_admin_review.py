@@ -1,11 +1,15 @@
 """admin 身份审核台（#31）：证明鉴权下载 + 通过/停用 action + 动作权限收口。"""
+from datetime import timedelta
+
 from django.contrib import admin
 from django.contrib.auth.models import Permission, User
+from django.contrib.sessions.models import Session
 from django.core import mail
 from django.test import RequestFactory, TestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 
-from accounts.models import IdentityProof, Profile
+from accounts.models import IdentityProof, Profile, UserSession
 from accounts.admin import ProfileAdmin, approve_identity, disable_account
 
 PNG_BYTES = bytes.fromhex(
@@ -93,6 +97,16 @@ class AdminReviewActionsTest(TestCase):
         self.assertFalse(self.target.is_active)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("停用", mail.outbox[0].subject)
+
+    def test_disable_account_revokes_active_sessions(self):
+        # 停用应立即吊销既有会话，否则被停用账号仍可用当前会话直到过期
+        key = "x" * 40
+        Session.objects.create(session_key=key, session_data="x",
+                               expire_date=timezone.now() + timedelta(days=1))
+        UserSession.objects.create(user=self.target, session_key=key, is_current=True)
+        disable_account(self.ma, self._req(self.reviewer), Profile.objects.filter(pk=self.target.profile.pk))
+        self.assertFalse(Session.objects.filter(session_key=key).exists())  # 强制登出
+        self.assertFalse(UserSession.objects.get(user=self.target, session_key=key).is_current)
 
     def test_get_actions_hidden_without_perm(self):
         # 无 can_review_identity 的 staff 看不到审核动作

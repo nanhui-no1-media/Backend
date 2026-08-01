@@ -121,6 +121,14 @@ class RegisterViewTest(TestCase):
         resp = self.post(fields, files)
         self.assertEqual(resp.status_code, 400)
 
+    def test_empty_password_rejected(self):
+        # 修复前：password="" / password2="" 会绕过 validate_password（if password 守卫）
+        # 且 create_user(password="") 建 unusable 账号；现须显式 400。
+        fields, _ = valid_payload(password="", password2="")
+        resp = self.post(fields, [proof()])
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(User.objects.filter(username="newbie").exists())
+
     def test_missing_real_name_rejected(self):
         fields, files = valid_payload(real_name="")
         self.assertEqual(self.post(fields, files).status_code, 400)

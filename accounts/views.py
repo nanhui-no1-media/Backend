@@ -205,8 +205,9 @@ def password_reset_view(request):
         send_mail(
             subject="Password Reset",
             message=f"{settings.FRONTEND_URL}/#/reset-password?uid={uid}&token={token}",
-            from_email="webmaster@localhost",
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
             recipient_list=[email],
+            fail_silently=True,
         )
 
     return JsonResponse({"message": "If an account with that email exists, a reset link has been sent."})
@@ -269,6 +270,8 @@ def register_view(request):
     if identity not in IDENTITY_CHOICE_KEYS:
         errors.append("请选择有效身份（在校生 / 外校生 / 毕业生）")
 
+    if not password:
+        errors.append("密码不能为空")
     if password != password2:
         errors.append("两次输入的密码不一致")
     if password:

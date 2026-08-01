@@ -6,7 +6,20 @@ from django.core.mail import send_mail
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import IdentityProof, Profile
+from .models import IdentityProof, Profile, UserSession
+
+
+def _revoke_user_sessions(user):
+    """立即吊销用户既有会话：删 Django Session 行（强制登出）+ 清 UserSession.is_current。
+
+    is_active=False 只挡新登录；不吊销既有会话的话，被停用账号仍可用当前会话直到过期。
+    """
+    from django.contrib.sessions.models import Session
+
+    keys = list(UserSession.objects.filter(user=user).values_list("session_key", flat=True))
+    UserSession.objects.filter(user=user).update(is_current=False)
+    if keys:
+        Session.objects.filter(session_key__in=keys).delete()
 
 
 # ---- 审核动作（#31）----
@@ -54,6 +67,7 @@ def disable_account(modeladmin, request, queryset):
         if user.is_active:
             user.is_active = False
             user.save(update_fields=["is_active"])
+            _revoke_user_sessions(user)  # 立即吊销既有会话，防被停用账号继续访问
         send_mail(
             subject="账号已被停用 - 南汇一中传媒社",
             message="你的账号已被停用。如有疑问，请联系信息组。",
