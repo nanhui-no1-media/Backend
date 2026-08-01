@@ -60,6 +60,9 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+# 用户上传：公开媒体（头像等）与私有媒体（身份证明等审计留底）均不入库
+media/
+private_media/
 
 # Flask stuff:
 instance/

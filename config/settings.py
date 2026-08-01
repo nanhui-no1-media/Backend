@@ -13,20 +13,45 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# 拉取项目根 .env（.gitignore，不入库）。本地开发放 SECRET_KEY / SMTP 授权码 /
+# Turnstile secret 等运行期密钥；生产由进程环境提供，.env 缺失时 load_dotenv 安静返回。
+load_dotenv()
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _email_backend_for(host_user):
+    """邮件后端选择：配了 SMTP 用户名 → 163 SMTP（SSL/465）；否则 dev 用 console。
+
+    既有密码重置邮件自动走此后端（dev 打终端、prod SMTP），无需改密码重置代码。
+    """
+    if host_user:
+        return "django.core.mail.backends.smtp.EmailBackend"
+    return "django.core.mail.backends.console.ConsoleEmailBackend"
+
+
+def _parse_allowed_hosts(raw):
+    """ALLOWED_HOSTS：env 逗号分隔 → list；未配置返回 []（dev 本地由 DEBUG 兜底）。"""
+    return [h.strip() for h in raw.split(",") if h.strip()] if raw else []
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-8725+3f=oec+rp*g+(dq_86xa$87!1)40k9)r@zc&oyc8&db%+'
+# 密钥 / 调试 / 允许主机全部走环境变量（模板见 .env.example）。下列默认值仅保本地开箱即用；
+# 生产务必通过 .env / 进程环境覆盖（尤其 SECRET_KEY，默认值是公开占位、不安全）。
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY",
+    "django-insecure-8725+3f=oec+rp*g+(dq_86xa$87!1)40k9)r@zc&oyc8&db%+",
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get("DJANGO_DEBUG", "1").lower() in ("1", "true", "yes", "on")
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = _parse_allowed_hosts(os.environ.get("ALLOWED_HOSTS", ""))
 
 
 # Application definition
@@ -143,17 +168,37 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
-EMAIL_BACKEND = "django.core.mail.backends.console.ConsoleEmailBackend"
+# ---- 邮件 / SMTP ----
+# 163 邮箱 SMTP：配了 EMAIL_HOST_USER（+ EMAIL_HOST_PASSWORD 授权码）即切到 SMTP，
+# 否则 dev 用 console 后端（邮件打终端，便于本地调试注册 / 重置流程）。
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_BACKEND = _email_backend_for(EMAIL_HOST_USER)
+if EMAIL_HOST_USER:
+    EMAIL_HOST = "smtp.163.com"
+    EMAIL_PORT = 465
+    EMAIL_USE_SSL = True
+    DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 LOGIN_URL = "/login/"
 
-# Origin of the frontend, used to build links sent to users (e.g. password-reset email).
-# Override via the FRONTEND_URL env var in production.
+# Origin of the frontend, used to build links sent to users (e.g. password-reset /
+# verify-email email). Override via the FRONTEND_URL env var in production.
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
-# Media files (user uploads)
+# Media files (公开用户上传：头像等)
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# 私有媒体（身份证明等审计留底）：绝不经公开 MEDIA_URL 暴露，由带鉴权的视图服务。
+# 注意：DEBUG 下 config/urls.py 会用 static(MEDIA_URL) 公开服务整个 MEDIA_ROOT，
+# 故私有存储必须落在 MEDIA_ROOT 之外（见 #31 / ADR 0002）。
+PRIVATE_MEDIA_ROOT = BASE_DIR / "private_media"
+
+# ---- Cloudflare Turnstile（人机校验，自助注册用）----
+# sitekey 公开（前端常量）；secret 走 .env。DEBUG 或未配 secret 时跳过校验（本地可测）。
+TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "")
+TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "")
 
 # Django REST Framework
 REST_FRAMEWORK = {
@@ -166,6 +211,10 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         # 匿名意见反馈/举报：每个 IP 每天 10 条
         'feedback_anon': '10/day',
+        # 自助注册：每个 IP 每天 5 次（防机器刷号，配合 Turnstile）
+        'register': '5/day',
+        # 重发邮箱验证邮件：每个 IP 每小时 5 次（防滥用，兼顾丢信重发）
+        'resend_verification': '5/hour',
     },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
