@@ -64,6 +64,12 @@ uv run python manage.py test accounts      # 运行 accounts 应用测试
 > 栈：**Nginx + Gunicorn(WSGI) + SQLite + systemd**；uv 管理（自带托管 CPython 3.14）。
 > 不含 HTTPS、不含 PostgreSQL——社团内部 / 低敏感场景的极简部署。
 
+> 💡 **自动化**：仓库根有三个脚本，路径全部相对仓库（在哪 clone 都行）——
+> `sudo ./deploy.sh`（裸机一键：建 deploy 用户、装依赖、构建、写 `club.service`+nginx+sudoers、起服务）；
+> `./start.sh`（`exec gunicorn`，被 unit 的 ExecStart 调，也可手动前台单跑）；
+> `./update.sh`（备份 DB → 停服 → `git pull --ff-only` → uv sync → 前端 build → migrate → collectstatic → 启动 + 存活检查；**任一步失败自动回滚**到旧版）。
+> 下面各节是脚本背后等价的手工步骤（便于理解 / 排障）。
+
 ### 架构（单源 SPA）
 
 React 构建到 `frontend/dist/`，由 Django 经 `TEMPLATES` + `STATICFILES_DIRS` + catch-all `re_path` 直接伺服。线上是**一个域名**：
@@ -99,8 +105,7 @@ cd /srv/club
 git clone https://github.com/nanhui-no1-media/Backend.git .
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source $HOME/.local/bin/env
-uv sync --frozen          # 读 uv.lock；uv 自动拉托管版 CPython 3.14，建好 .venv
-uv add gunicorn           # 生产运行时依赖（pyproject 默认没有）
+uv sync --frozen          # 读 uv.lock；uv 自动拉托管版 CPython 3.14，建好 .venv（含 gunicorn）
 ```
 
 ### 3. 构建前端
@@ -111,29 +116,30 @@ npm ci && npm run build   # 产出 frontend/dist/，Django 直接伺服
 cd /srv/club
 ```
 
-### 4. 加固 `config/settings.py`（必做）
+### 4. 配置 / 密钥（已 env 化，**勿手改 settings.py**）
 
-当前是 dev 值（`DEBUG=True`、`ALLOWED_HOSTS=[]`）。把顶部三行改成环境变量驱动（dev 默认值不变，开发机照常跑）：
-
-```python
-import os
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-8725+3f=oec+rp*g+(dq_86xa$87!1)40k9)r@zc&oyc8&db%+")
-DEBUG = os.environ.get("DJANGO_DEBUG", "1").lower() in ("1", "true", "yes")
-ALLOWED_HOSTS = [h for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if h]
-```
-
-`DATABASES` 保持 SQLite 不动。
+`config/settings.py` 在 #27 已改为环境变量驱动（`python-dotenv` 顶部 `load_dotenv()`，读
+`SECRET_KEY` / `DJANGO_DEBUG` / `ALLOWED_HOSTS` / `FRONTEND_URL` / `EMAIL_*` / `TURNSTILE_*`；
+邮件后端按 `EMAIL_HOST_USER` 自动选 163 SMTP 或 console；`PRIVATE_MEDIA_ROOT` 私有存储）。
+模板见入库的 `.env.example`——**复制成 `.env` 填值即可，不要再去改 settings.py**。
 
 > - **不要**加 `SESSION_COOKIE_SECURE` / `SECURE_SSL_REDIRECT` 之类——HTTP 下会把会话 cookie 直接弄失效。
-> - 同源 SPA 的 CSRF 一般同源就过。真遇到 403，再加 `DJANGO_CSRF_TRUSTED_ORIGINS=http://club.example.com` 并在 settings 里解析。
-> - 邮件：默认 `console` 后端在 prod 下把密码重置邮件打到 Gunicorn 日志（`journalctl`）而非发送。不需要就忽略；需要时再接 SMTP。
+> - 同源 SPA 的 CSRF 一般同源就过。真遇到 403，再加 `CSRF_TRUSTED_ORIGINS`（在 settings 里解析一个 env）。
+> - 邮件：配了 `EMAIL_HOST_USER`/`EMAIL_HOST_PASSWORD` 即走 163 SMTP 发验证/重置邮件；留空则 console（打到 journalctl）。
 
-### 5. 环境变量（`/srv/club/.env`，`chmod 600`，**不进 git**）
+### 5. 环境变量（`.env`，`chmod 600`，**不进 git**）
+
+照 `.env.example` 填：
 
 ```bash
 DJANGO_DEBUG=0
-DJANGO_ALLOWED_HOSTS=club.example.com
-# DJANGO_SECRET_KEY=...   # 可选；不改就用代码里的 dev key（内部工具可接受）
+ALLOWED_HOSTS=club.example.com,1.2.3.4
+FRONTEND_URL=http://club.example.com
+SECRET_KEY=...                 # 强随机；内部工具可省略（回退 dev 占位）
+# 发邮件才填（163 授权码，非登录密码）：
+# EMAIL_HOST_USER=...
+# EMAIL_HOST_PASSWORD=...
+# TURNSTILE_SITE_KEY=...  TURNSTILE_SECRET_KEY=...
 ```
 
 ### 6. migrate + 静态 + 超级用户
@@ -235,8 +241,17 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### 10. 后续更新流程
 
+一键（推荐，自带备份 + 失败自动回滚，以 `deploy` 用户跑）：
+
 ```bash
-cd /srv/club
+cd <仓库目录>
+./update.sh
+```
+
+等价的手工步骤：
+
+```bash
+cd <仓库目录>
 git pull && uv sync --frozen
 ( cd frontend && npm ci && npm run build )
 set -a; source .env; set +a
