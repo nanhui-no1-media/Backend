@@ -1,0 +1,106 @@
+"""admin 身份审核台（#31）：证明鉴权下载 + 通过/停用 action + 动作权限收口。"""
+from django.contrib import admin
+from django.contrib.auth.models import Permission, User
+from django.core import mail
+from django.test import RequestFactory, TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+from accounts.models import IdentityProof, Profile
+from accounts.admin import ProfileAdmin, approve_identity, disable_account
+
+PNG_BYTES = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+    "890000000d49444154789c63f8cf00000003000100184bbb6e0000000049454e44ae426082"
+)
+
+
+def grant_review(user):
+    user.user_permissions.add(Permission.objects.get(codename="can_review_identity"))
+    return User.objects.get(pk=user.pk)  # 刷新，避免本实例权限缓存过期
+
+
+class IdentityProofDownloadViewTest(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="owner", password="p", email="o@e.com")
+        self.other = User.objects.create_user(username="other", password="p")
+        self.reviewer = grant_review(User.objects.create_user(username="rev", password="p"))
+        self.proof = IdentityProof.objects.create(
+            user=self.owner, file=SimpleUploadedFile("p.png", PNG_BYTES, content_type="image/png")
+        )
+
+    def test_owner_can_download(self):
+        c = self._client(self.owner)
+        resp = c.get(f"/auth/identity-proof/{self.proof.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.streaming)  # FileResponse 流式
+
+    def test_reviewer_can_download(self):
+        c = self._client(self.reviewer)
+        self.assertEqual(c.get(f"/auth/identity-proof/{self.proof.pk}/").status_code, 200)
+
+    def test_other_user_forbidden(self):
+        c = self._client(self.other)
+        self.assertEqual(c.get(f"/auth/identity-proof/{self.proof.pk}/").status_code, 403)
+
+    def test_anonymous_redirected_to_login(self):
+        from django.test import Client
+        self.assertEqual(Client().get(f"/auth/identity-proof/{self.proof.pk}/").status_code, 302)
+
+    def test_missing_file_404(self):
+        # 物理文件被删 → 404（非 500）
+        path = self.proof.file.path
+        self.proof.file.storage.delete(self.proof.file.name)
+        c = self._client(self.owner)
+        self.assertEqual(c.get(f"/auth/identity-proof/{self.proof.pk}/").status_code, 404)
+
+    def _client(self, user):
+        from django.test import Client
+        c = Client()
+        c.force_login(user)
+        return c
+
+
+class AdminReviewActionsTest(TestCase):
+    def setUp(self):
+        self.reviewer = grant_review(User.objects.create_user(username="rev", password="p"))
+        self.staff_no_perm = User.objects.create_user(username="staff", password="p")
+        self.target = User.objects.create_user(username="tgt", password="p", email="t@e.com")
+        Profile.objects.update_or_create(
+            user=self.target, defaults={"email_verified": True, "identity_verified": False}
+        )
+        self.factory = RequestFactory()
+        self.ma = ProfileAdmin(Profile, admin.site)
+        # message_user 依赖 messages 中间件；RequestFactory 裸请求没有，stub 掉（动作逻辑不受影响）
+        self.ma.message_user = lambda *a, **k: None
+
+    def _req(self, user):
+        req = self.factory.post("/")
+        req.user = user
+        return req
+
+    def test_approve_identity_sets_verified_and_emails(self):
+        approve_identity(self.ma, self._req(self.reviewer), Profile.objects.filter(pk=self.target.profile.pk))
+        self.target.profile.refresh_from_db()
+        self.assertTrue(self.target.profile.identity_verified)
+        self.assertIsNotNone(self.target.profile.verified_at)
+        self.assertEqual(self.target.profile.verified_by, self.reviewer)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("通过", mail.outbox[0].subject)
+
+    def test_disable_account_sets_inactive_and_emails(self):
+        disable_account(self.ma, self._req(self.reviewer), Profile.objects.filter(pk=self.target.profile.pk))
+        self.target.refresh_from_db()
+        self.assertFalse(self.target.is_active)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("停用", mail.outbox[0].subject)
+
+    def test_get_actions_hidden_without_perm(self):
+        # 无 can_review_identity 的 staff 看不到审核动作
+        actions = self.ma.get_actions(self._req(self.staff_no_perm))
+        self.assertNotIn("approve_identity", actions)
+        self.assertNotIn("disable_account", actions)
+
+    def test_get_actions_shown_with_perm(self):
+        actions = self.ma.get_actions(self._req(self.reviewer))
+        self.assertIn("approve_identity", actions)
+        self.assertIn("disable_account", actions)

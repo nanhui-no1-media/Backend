@@ -1,12 +1,14 @@
 import json
 import logging
+import mimetypes
 from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, HttpResponseForbidden, JsonResponse
+from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 from django.contrib.auth import login, logout as auth_logout
@@ -368,6 +370,28 @@ def resend_verification_view(request):
         _send_verification_email(user)
 
     return JsonResponse({"message": "如果该邮箱已注册且尚未验证，验证邮件已重发。"})
+
+
+@login_required
+def identity_proof_file_view(request, pk):
+    """身份证明鉴权下载（#31）：仅本人或持 can_review_identity 者可读。
+
+    文件存 PRIVATE_MEDIA_ROOT 私有存储，绝不经公开 MEDIA_URL 暴露（DEBUG 下亦然——
+    config/urls.py 的 static(MEDIA_URL) 只服务 MEDIA_ROOT，私有存储在其外）。
+    """
+    proof = get_object_or_404(IdentityProof, pk=pk)
+    user = request.user
+    if proof.user_id != user.pk and not user.has_perm("accounts.can_review_identity"):
+        return HttpResponseForbidden("无权访问该身份证明。")
+
+    if not proof.file.storage.exists(proof.file.name):
+        raise Http404("证明文件不存在")
+
+    content_type, _ = mimetypes.guess_type(proof.file.name)
+    return FileResponse(
+        proof.file.open("rb"),
+        content_type=content_type or "image/jpeg",
+    )
 
 
 def _get_or_create_profile(user):
