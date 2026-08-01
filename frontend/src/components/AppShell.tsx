@@ -13,6 +13,7 @@ interface AppShellUser {
 interface AppShellProfile {
   nickname?: string;
   avatar?: string | null;
+  identity_verified?: boolean;
 }
 
 const NAV: { label: string; path: string }[] = [
@@ -194,6 +195,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
+      {/* Tier-2 待审核提示（#30）：邮箱已验证但身份未审核，写权限暂不可用。常驻条。 */}
+      {user && profile.identity_verified === false && (
+        <div className="identity-banner" role="status">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v4h1" /></svg>
+          <span>你的身份证明待审核，发帖 / 发消息 / 建申报暂不可用。审核通过后即可正常使用。</span>
+        </div>
+      )}
+
       <main className="page">{children}</main>
 
       <footer className="footer">
@@ -206,7 +215,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <p className="footer-note">
               上海市南汇第一中学 · 传媒社<br />
               校园影像与新媒体作品策展门户<br />
-              账户由信息组统一分发
+              自助注册 · 信息组核审
             </p>
           </div>
           <div>

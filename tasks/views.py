@@ -25,6 +25,7 @@ from .permissions import (
     CanModifyTask,
     CanViewTask,
 )
+from accounts.permissions import IsIdentityVerified
 from .serializers import (
     SimpleUserSerializer,
     TagSerializer,
@@ -71,14 +72,22 @@ class TaskViewSet(viewsets.ModelViewSet):
             return TaskListSerializer
         return TaskDetailSerializer
 
+    # 身份门槛（#30）：建任务 / 认领 / 提交完成 / 取消 / 改删（pending）需身份已审核；
+    # 审批类（approve_*/reject_*）与分派（assign，社长）不在新门槛范围（见 #26）。
+    _IDENTITY_GATED = {"create", "claim", "complete", "cancel", "update", "partial_update", "destroy"}
+
     def get_permissions(self):
         if self.action == "create":
-            return [IsAuthenticated(), CanCreateTask()]
-        if self.action in ("update", "partial_update", "destroy"):
-            return [IsAuthenticated(), CanModifyTask()]
-        if self.action == "assign":
-            return [IsAuthenticated(), CanAssignTask()]
-        return [IsAuthenticated(), CanViewTask()]
+            perms = [IsAuthenticated(), CanCreateTask()]
+        elif self.action in ("update", "partial_update", "destroy"):
+            perms = [IsAuthenticated(), CanModifyTask()]
+        elif self.action == "assign":
+            perms = [IsAuthenticated(), CanAssignTask()]
+        else:
+            perms = [IsAuthenticated(), CanViewTask()]
+        if self.action in self._IDENTITY_GATED:
+            perms.append(IsIdentityVerified())
+        return perms
 
     def get_queryset(self):
         return super().get_queryset()

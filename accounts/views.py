@@ -429,6 +429,9 @@ def _profile_response(user, profile):
             "birthday": profile.birthday.isoformat() if profile.birthday else None,
             "gender": profile.gender,
             "bio": profile.bio,
+            # 自助注册验证状态（#30）：前端据此显 Tier-2 待审核提示条
+            "email_verified": profile.email_verified,
+            "identity_verified": profile.identity_verified,
         },
     }
 

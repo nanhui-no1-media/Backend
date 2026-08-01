@@ -23,6 +23,7 @@ from .serializers import (
     ProposalListSerializer,
 )
 from .throttles import FeedbackAnonThrottle
+from accounts.permissions import IsIdentityVerified
 
 
 def transition_overdue_proposals():
@@ -77,20 +78,25 @@ class ProposalViewSet(viewsets.ModelViewSet):
             return ProposalListSerializer
         return ProposalDetailSerializer
 
+    # 身份门槛（#30）：建申报 / 投票 / 撤回 / 重交需身份已审核。
+    # submit_feedback 故意保留 AllowAny（匿名意见反馈 / 举报通道，需保护举报人；
+    # spec「提反馈」指已登录场景的申报反馈，无对应独立动作，故不在此 gate）。
+    _IDENTITY_GATED = {"create", "vote", "resubmit", "withdraw"}
+
     def get_permissions(self):
         if self.action == "submit_feedback":
             return [AllowAny()]  # 反馈/举报：公开提交，无需登录
-        if self.action == "create":
-            return [IsAuthenticated(), CanCreateProposal()]  # 活动申报需登录
-        if self.action in ("update", "partial_update", "destroy", "resubmit"):
-            return [IsAuthenticated(), CanModifyProposal()]
-        if self.action in ("approve", "return_proposal", "reject"):
-            return [IsAuthenticated(), CanApproveProposal()]
-        if self.action == "vote":
-            return [IsAuthenticated(), CanVoteProposal()]
-        if self.action == "withdraw":
-            return [IsAuthenticated(), CanWithdrawProposal()]
-        return [IsAuthenticated(), CanViewProposal()]
+        perms = (
+            [IsAuthenticated(), CanCreateProposal()] if self.action == "create"
+            else [IsAuthenticated(), CanModifyProposal()] if self.action in ("update", "partial_update", "destroy", "resubmit")
+            else [IsAuthenticated(), CanApproveProposal()] if self.action in ("approve", "return_proposal", "reject")
+            else [IsAuthenticated(), CanVoteProposal()] if self.action == "vote"
+            else [IsAuthenticated(), CanWithdrawProposal()] if self.action == "withdraw"
+            else [IsAuthenticated(), CanViewProposal()]
+        )
+        if self.action in self._IDENTITY_GATED:
+            perms.append(IsIdentityVerified())
+        return perms
 
     def get_queryset(self):
         # 惰性流转逾期投票

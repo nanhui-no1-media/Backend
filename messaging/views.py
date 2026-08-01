@@ -11,6 +11,7 @@ from tasks.models import Task
 from proposals.models import Proposal
 from proposals.notifications import proposal_approvers
 
+from accounts.permissions import IsIdentityVerified
 from .models import Conversation, Message, MessageReadStatus, unread_message_count
 from .permissions import IsConversationParticipant
 from .serializers import ConversationSerializer, MessageSerializer
@@ -22,7 +23,19 @@ class ConversationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsConversationParticipant]
     filterset_fields = ["conversation_type", "task", "proposal"]
 
-    def get_queryset(self):
+    # 身份门槛（#30）：仅「写 / 建会话」动作需身份已审核；读（messages / unread_count /
+    # mark_read / list / retrieve）不挂，保持 Tier-2 只读。
+    _IDENTITY_GATED = {
+        "send_message", "start_private", "get_task_conversation", "get_proposal_conversation",
+    }
+
+    def get_permissions(self):
+        perms = [IsAuthenticated(), IsConversationParticipant()]
+        if self.action in self._IDENTITY_GATED:
+            perms.append(IsIdentityVerified())
+        return perms
+
+    def get_queryset(self): # pyright: ignore[reportIncompatibleMethodOverride]
         return (
             Conversation.objects
             .filter(participants=self.request.user)
