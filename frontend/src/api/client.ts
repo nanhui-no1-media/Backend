@@ -24,6 +24,12 @@ export const api = {
   register: (data: FormData) =>
     request("/register/", { method: "POST", body: data }),
 
+  verifyEmail: (uid: string, token: string) =>
+    request(`/verify-email/?uid=${encodeURIComponent(uid)}&token=${encodeURIComponent(token)}`),
+
+  resendVerification: (email: string) =>
+    request("/resend-verification/", { method: "POST", body: JSON.stringify({ email }) }),
+
   passwordReset: (email: string) =>
     request("/password-reset/", { method: "POST", body: JSON.stringify({ email }) }),
 

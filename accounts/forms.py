@@ -21,7 +21,8 @@ class LoginForm(forms.Form):
             return username
         email = self.cleaned_data["email"]
         try:
-            return User.objects.get(email=email).username
+            # 邮箱大小写不敏感（注册时归一化为小写存储）
+            return User.objects.get(email__iexact=email).username
         except User.DoesNotExist:
             return None
 

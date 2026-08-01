@@ -18,6 +18,8 @@ export interface SupersedeTakeover {
 export type ApiError =
   | { kind: "session_superseded"; takeover: SupersedeTakeover }
   | { kind: "login_protection"; retryAfter: number }
+  | { kind: "account_disabled" }            // 账号已停用（自助注册三态之一）
+  | { kind: "email_not_verified"; email: string }  // 邮箱未验证，登录被拒（提示重发）
   | { kind: "network" }              // 断网 / 超时 / 响应非 JSON
   | { kind: "auth" }                 // 401（非挤号）
   | { kind: "forbidden" }            // 403
@@ -37,6 +39,8 @@ type ResponseOutcome<T> =
 export const REASON = {
   SESSION_SUPERSEDED: "session_superseded",
   LOGIN_PROTECTION: "login_protection",
+  ACCOUNT_DISABLED: "account_disabled",
+  EMAIL_NOT_VERIFIED: "email_not_verified",
 } as const;
 
 // ---- 纯映射：HTTP 响应 → 类型化结果 ----
@@ -49,6 +53,12 @@ export function classifyHttpResponse(status: number, data: any): ApiError {
   }
   if (reason === REASON.LOGIN_PROTECTION && typeof data?.retry_after === "number") {
     return { kind: "login_protection", retryAfter: data.retry_after };
+  }
+  if (reason === REASON.ACCOUNT_DISABLED) {
+    return { kind: "account_disabled" };
+  }
+  if (reason === REASON.EMAIL_NOT_VERIFIED) {
+    return { kind: "email_not_verified", email: typeof data?.email === "string" ? data.email : "" };
   }
   if (status === 401) return { kind: "auth" };
   if (status === 403) return { kind: "forbidden" };
@@ -85,6 +95,10 @@ export function humanizeApiError(err: ApiError): string {
         (mins > 0 ? `（约 ${mins} 分钟后可重试）` : "")
       );
     }
+    case "account_disabled":
+      return "账号已被停用，请联系信息组。";
+    case "email_not_verified":
+      return "请先验证邮箱后再登录。";
     case "network":
       return "网络连接失败，请检查网络后重试。";
     case "auth":

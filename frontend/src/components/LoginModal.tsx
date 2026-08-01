@@ -31,6 +31,7 @@ export default function LoginModal({
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
+  const [resendEmail, setResendEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -50,6 +51,7 @@ export default function LoginModal({
       return;
     }
     setLoading(true);
+    setResendEmail("");
     try {
       if (method === "username") await api.login(account.trim(), password);
       else await api.loginWithEmail(account.trim(), password);
@@ -74,6 +76,16 @@ export default function LoginModal({
       // 登录保护期：类型化结果驱动 ETA 文案（删除手写分钟换算，#16）
       if (apiError?.kind === "login_protection") {
         setError(humanizeApiError(apiError));
+        return;
+      }
+      // 自助注册三态：账号已停用 / 邮箱未验证（后者附「重发验证邮件」入口）
+      if (apiError?.kind === "account_disabled") {
+        setError(humanizeApiError(apiError));
+        return;
+      }
+      if (apiError?.kind === "email_not_verified") {
+        setError(humanizeApiError(apiError));
+        setResendEmail(apiError.email);
         return;
       }
       // 登录专用英文串（Invalid credentials 等）优先映射；其余按类型回退通用中文文案（#7 故事 7）。
@@ -119,6 +131,11 @@ export default function LoginModal({
             <div className="alert alert-danger">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
               <span>{error}</span>
+            </div>
+          )}
+          {resendEmail && (
+            <div className="hint center">
+              <a href="#" onClick={(e) => { e.preventDefault(); onClose(); navigate(`/verify-email-pending?email=${encodeURIComponent(resendEmail)}`); }}>重发验证邮件 →</a>
             </div>
           )}
           <div className="seg seg-sm" role="tablist" aria-label="登录方式">

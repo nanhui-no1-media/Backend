@@ -9,7 +9,7 @@ from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
-from django.contrib.auth import authenticate, login, logout as auth_logout
+from django.contrib.auth import login, logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
@@ -94,12 +94,30 @@ def login_view(request):
     if username is None:
         return JsonResponse({"error": "Invalid credentials"}, status=401)
 
-    user = authenticate(request, username=username, password=form.cleaned_data["password"])
-    if user is None:
+    # 用 check_password 而非 authenticate：密码正确后再区分「停用 / 未验证」，
+    # 错误密码统一回 401，不泄露账号存在性与状态（防枚举）。
+    candidate = User.objects.filter(username=username).first()
+    if candidate is None or not candidate.check_password(form.cleaned_data["password"]):
         return JsonResponse({"error": "Invalid credentials"}, status=401)
 
+    # 密码正确 → 确为本人，可安全揭示账号状态（自助注册三态：未验证 / 已停用 / 放行）。
+    if not candidate.is_active:
+        return JsonResponse(
+            {"error": "账号已停用，请联系信息组。", "reason": "account_disabled"},
+            status=403,
+        )
+    if not _email_verified(candidate):
+        return JsonResponse(
+            {
+                "error": "请先验证邮箱后再登录。",
+                "reason": "email_not_verified",
+                "email": candidate.email,
+            },
+            status=403,
+        )
+
     # 10 分钟登录保护：该账号已有当前会话且登录未满窗口、且非同一会话再认证 → 拒绝
-    existing = UserSession.objects.filter(user=user, is_current=True).first()
+    existing = UserSession.objects.filter(user=candidate, is_current=True).first()
     if existing:
         age = timezone.now() - existing.created_at
         same_session = existing.session_key == request.session.session_key
@@ -114,8 +132,8 @@ def login_view(request):
                 status=409,
             )
 
-    login(request, user)
-    return JsonResponse({"user": {"id": user.id, "username": user.username, "email": user.email}}) # type: ignore
+    login(request, candidate)
+    return JsonResponse({"user": {"id": candidate.id, "username": candidate.username, "email": candidate.email}}) # type: ignore
 
 
 
@@ -309,9 +327,67 @@ def register_view(request):
     )
 
 
+@require_GET
+def verify_email_view(request):
+    """邮箱验证（#29）：GET /auth/verify-email/?uid=&token= → 校验通过则置 email_verified=True。
+
+    令牌绑定 user.email + email_verified（见 tokens），故改邮箱或已验证后旧令牌失效。
+    """
+    user = _user_from_uid(request.GET.get("uid", ""))
+    token = request.GET.get("token", "")
+    if user is None or not email_verification_token.check_token(user, token):
+        return JsonResponse({"error": "验证链接无效或已过期。", "reason": "invalid"}, status=400)
+
+    profile = _get_or_create_profile(user)
+    if not profile.email_verified:
+        profile.email_verified = True
+        profile.save(update_fields=["email_verified"])
+    return JsonResponse({"message": "邮箱验证成功，现在可以登录了。"})
+
+
+@require_POST
+def resend_verification_view(request):
+    """重发验证邮件（#29）：POST {email}，resend_verification scope 限流。
+
+    不泄密：无论邮箱是否存在 / 是否已验证，返回同样提示（防账号探测）。
+    只对「存在、启用、未验证」的账号真正发信。
+    """
+    if not ResendVerificationThrottle().allow_request(request, None):
+        return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
+
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    email = (body.get("email") or "").strip().lower()
+    if not email:
+        return JsonResponse({"error": "请输入邮箱。"}, status=400)
+
+    user = User.objects.filter(email__iexact=email).first()
+    if user is not None and user.is_active and not _email_verified(user):
+        _send_verification_email(user)
+
+    return JsonResponse({"message": "如果该邮箱已注册且尚未验证，验证邮件已重发。"})
+
+
 def _get_or_create_profile(user):
     profile, _ = Profile.objects.get_or_create(user=user)
     return profile
+
+
+def _email_verified(user):
+    """登录门槛：profile.email_verified。无 profile 的存量 / admin 用户视为已验证（保持既有行为）。"""
+    profile = getattr(user, "profile", None)
+    return profile is None or profile.email_verified
+
+
+def _user_from_uid(uid):
+    """uid（urlsafe_base64）→ User；非法返回 None。"""
+    try:
+        user_id = force_str(urlsafe_base64_decode(uid))
+        return User.objects.get(pk=user_id)
+    except (User.DoesNotExist, ValueError, TypeError, OverflowError):
+        return None
 
 
 def _capabilities(user):
