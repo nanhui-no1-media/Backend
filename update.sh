@@ -93,6 +93,11 @@ if ! sudo systemctl is-active --quiet "$SERVICE"; then
 fi
 
 trap - ERR
+
+# 更新确认成功：本次回滚快照使命已达（失败回滚路径已在上面用过它），清掉避免堆积。
+# 想留一份「上一已知良好」做手动恢复的话，把这行换成保留/改名即可。
+rm -f "$DB_BAK"
+
 echo
 echo "✅ 更新完成：$OLD_HEAD → $(git rev-parse HEAD)"
 echo "日志：journalctl -u $SERVICE -f"
