@@ -64,10 +64,11 @@ uv run python manage.py test accounts      # 运行 accounts 应用测试
 > 栈：**Nginx + Gunicorn(WSGI) + SQLite + systemd**；uv 管理（自带托管 CPython 3.14）。
 > 不含 HTTPS、不含 PostgreSQL——社团内部 / 低敏感场景的极简部署。
 
-> 💡 **自动化**：仓库根有三个脚本，路径全部相对仓库（在哪 clone 都行）——
+> 💡 **自动化**：仓库根有四个脚本，路径全部相对仓库（在哪 clone 都行）——
 > `sudo ./deploy.sh`（裸机一键：建 deploy 用户、装依赖、构建、写 `club.service`+nginx+sudoers、起服务）；
 > `./start.sh`（`exec gunicorn`，被 unit 的 ExecStart 调，也可手动前台单跑）；
-> `./update.sh`（备份 DB → 停服 → `git pull --ff-only` → uv sync → 前端 build → migrate → collectstatic → 启动 + 存活检查；**任一步失败自动回滚**到旧版）。
+> `./update.sh`（备份 DB → 停服 → `git pull --ff-only` → uv sync → 前端 build → migrate → collectstatic → 启动 + 存活检查；**任一步失败自动回滚**到旧版）；
+> `sudo ./reset.sh`（清除 deploy 生成的全部产物——systemd/nginx/sudoers 配置 + `.venv`/`node_modules`/`dist`/`staticfiles`/`run`/`backups`/`.env`/`db.sqlite3`，便于反复调试干净重部署；`--keep-data` 保留 `.env` 与 DB）。
 > 下面各节是脚本背后等价的手工步骤（便于理解 / 排障）。
 
 ### 架构（单源 SPA）
