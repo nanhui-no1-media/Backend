@@ -93,7 +93,10 @@ React 构建到 `frontend/dist/`，由 Django 经 `TEMPLATES` + `STATICFILES_DIR
 
 ```bash
 apt update && apt upgrade -y
-apt install -y build-essential curl git nginx nodejs npm
+apt install -y build-essential curl git nginx sqlite3 ca-certificates gnupg
+# Ubuntu 仓库的 nodejs 与 npm 互斥（24.04 已知冲突）——Node.js 走 NodeSource 官方源（含 npm）
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt install -y nodejs
 adduser --disabled-password --gecos "" deploy
 mkdir -p /srv/club && chown deploy:deploy /srv/club
 ```

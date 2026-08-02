@@ -37,9 +37,17 @@ echo "/etc/nginx/sites-available/$SERVICE_NAME、/etc/sudoers.d/$SERVICE_NAME，
 read -rp "回车继续，Ctrl-C 中止。"
 
 # ---- 1. 系统依赖（幂等）----
-echo "==> 安装系统依赖：nginx nodejs npm git curl build-essential sqlite3"
+# Ubuntu 仓库的 nodejs 与 npm 互斥（24.04 已知冲突，且 npm 缺一堆 node-* 依赖），
+# 故 Node.js 走 NodeSource 官方源（自带 npm、版本新），不装 Ubuntu 的 nodejs/npm。
+echo "==> 安装系统依赖：build-essential curl git nginx sqlite3 ca-certificates gnupg"
 apt-get update -y
-apt-get install -y build-essential curl git nginx nodejs npm sqlite3
+apt-get install -y build-essential curl git nginx sqlite3 ca-certificates gnupg
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "==> 安装 Node.js 22.x（NodeSource；自带 npm）"
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  apt-get install -y nodejs
+fi
 
 # ---- 2. deploy 用户（幂等）----
 if ! id -u "$APP_USER" >/dev/null 2>&1; then
