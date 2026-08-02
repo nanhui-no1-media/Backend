@@ -61,9 +61,9 @@ sudo -iu "$APP_USER" bash -lc "
   uv sync --frozen
 "
 
-# ---- 5. 前端构建（依赖变化才 npm ci）----
+# ---- 5. 前端构建（每次都 npm ci：按 lockfile 确定性安装，避免 node_modules 残缺/漏依赖）----
 echo "==> 前端构建 → frontend/dist/"
-sudo -iu "$APP_USER" bash -lc "cd '$DIR/frontend' && ( [ -d node_modules ] || npm ci ) && npm run build"
+sudo -iu "$APP_USER" bash -lc "cd '$DIR/frontend' && npm ci && npm run build"
 
 # ---- 6. .env（缺则从模板复制；绝不覆盖既有，chmod 600）----
 if [ ! -f "$DIR/.env" ]; then

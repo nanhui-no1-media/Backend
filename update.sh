@@ -34,7 +34,7 @@ rollback() {
   echo "❌ 更新失败，自动回滚到 $OLD_HEAD …" >&2
   git reset --hard "$OLD_HEAD"
   uv sync --frozen
-  ( cd frontend && ( [ -d node_modules ] || npm ci ) && npm run build ) || echo "⚠️  旧版前端重建失败，请人工排查" >&2
+  ( cd frontend && npm ci && npm run build ) || echo "⚠️  旧版前端重建失败，请人工排查" >&2
   if [ -f "$DB_BAK" ]; then
     cp -f "$DB_BAK" "$DB"
     echo "已还原 DB 快照 $DB_BAK" >&2
@@ -75,8 +75,8 @@ git pull --ff-only
 echo "==> uv sync --frozen"
 uv sync --frozen
 
-echo "==> 前端构建（依赖变化才 npm ci）"
-( cd frontend && ( [ -d node_modules ] || npm ci ) && npm run build )
+echo "==> 前端构建（npm ci 按 lockfile 确定性安装）"
+( cd frontend && npm ci && npm run build )
 
 echo "==> migrate"
 uv run python manage.py migrate
