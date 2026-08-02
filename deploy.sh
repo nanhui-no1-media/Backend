@@ -183,7 +183,7 @@ cat > "/etc/sudoers.d/$SERVICE_NAME" <<SUDOERS
 $APP_USER ALL=(ALL) NOPASSWD: $SYSTEMCTL start $SERVICE_NAME, $SYSTEMCTL stop $SERVICE_NAME, $SYSTEMCTL restart $SERVICE_NAME, $SYSTEMCTL is-active $SERVICE_NAME
 SUDOERS
 chmod 440 "/etc/sudoers.d/$SERVICE_NAME"
-visudo -cf
+visudo -c -f "/etc/sudoers.d/$SERVICE_NAME"
 
 # ---- 11. enable + start ----
 systemctl daemon-reload
