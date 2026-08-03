@@ -177,11 +177,10 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
         user = request.user
         # 反馈/举报仅有 view_feedback 权限者可见；活动申报对所有登录用户开放
+        # （viewset 已 IsAuthenticated，此处不必再判登录态）
         if proposal.proposal_type == "feedback":
             if not user.has_perm("proposals.view_feedback"):
                 return Response({"detail": "无权访问"}, status=status.HTTP_403_FORBIDDEN)
-        if not user.is_authenticated:
-            return Response({"detail": "请先登录"}, status=status.HTTP_401_UNAUTHORIZED)
 
         conversation, _ = Conversation.objects.get_or_create(
             conversation_type="proposal",

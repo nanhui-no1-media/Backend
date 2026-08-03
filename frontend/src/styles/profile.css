@@ -14,9 +14,10 @@
 .profile-hero-meta { flex: 1; min-width: 220px; }
 .profile-hero-name { display: flex; align-items: center; gap: var(--s-3); font-size: 24px; }
 .profile-role-badge { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: var(--r-pill); color: #fff; }
-.badge-role-president { background: var(--warning); }
-.badge-role-info { background: var(--brand-600); }
-.badge-role-member { background: var(--ink-400); }
+.badge-role-superadmin { background: var(--warning); }
+.badge-role-admin { background: var(--brand-600); }
+.badge-role-user { background: var(--ink-400); }
+.badge-role-visitor { background: var(--surface-2); color: var(--muted); }
 .profile-hero-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .profile-hero-bio { margin-top: var(--s-2); max-width: 60ch; }
 .profile-hero-edit { align-self: flex-end; }

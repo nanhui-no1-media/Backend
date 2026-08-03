@@ -33,6 +33,29 @@ npm run build                              # Production build → frontend/dist/
 - Database: SQLite (default, dev only)
 - New Django apps: `uv run python manage.py startapp <name>` → add to `INSTALLED_APPS` in `config/settings.py`
 
+## Access control
+
+**控制访问 = 定义一个权限，用 `has_perm` 判定；绝不检查组名。** 权限由组分配、组决定身份、组由人手动管。四个正交轴各管一摊：
+
+| 轴 | 来源 | 用途 |
+|---|---|---|
+| 身份徽章 | 登录态 + `is_superuser`/`is_staff`/`identity_verified` | 展示（访客/用户/管理员/超级管理员） |
+| 角色能力 | `has_perm(...)` | **全部访问控制** |
+| 组成员身份 | `user.groups` | 仅作「所属组」纯文本展示 |
+| 对象所有权 | `creator==user` | 每行组合规则 |
+
+硬规则：
+
+- 权限词汇用 Django 默认 CRUD（`view`/`add`/`change`/`delete`，免费）+ 命名工作流权限（`Meta.permissions`，如 `approve_proposal`）；不造 `create_news` 这种重复。
+- 访问控制走**命名 DRF `BasePermission` 子类**（挂 `permission_classes`）；状态机守卫（"pending 才能改"）不是访问控制，放 `lifecycle.py`。视图 `permission_classes` 应能独立说明"谁能访问"。
+- 前端吃**语义化 `can_*` 能力布尔**（`accounts/views.py:_capabilities`），不吃原始权限代号；能力是纯角色投影，对象级"能不能动这条"由前端拿 `is_owner`/对象字段另行组合。
+- 读默认走「身份 + 可见性」（`accounts/visibility.py`），不查 `view` 权限；仅敏感读（如 `view_feedback`）用专门 `view_*` 权限。
+- 组**名**只作惰性展示文本，**绝不**进分支条件（含徽章——徽章按身份态四档派生，不从组名）。
+- `is_superuser` 是唯一应用访问逃生舱；`is_staff` 在应用访问里零权限（只登 Django admin + 触发「管理员」徽章）。
+- 拆新权限三条触发：持有者可能不同 / 前端门禁独立 affordance / 需独立审计；否则用最粗的已有权限。
+
+详见 `docs/adr/0005-access-control-principle.md`。
+
 ## Agent skills
 
 ### Issue tracker

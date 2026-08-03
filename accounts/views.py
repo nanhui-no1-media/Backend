@@ -431,16 +431,23 @@ def _capabilities(user):
     }
 
 
-ROLE_PRIORITY = ["社长", "信息组"]  # 前者优先；都不在则归 "member"
-
-
 def _role_for(user):
-    """主角色 {label, variant}：社长 > 信息组 > 成员。variant 供前端配色。"""
-    user_groups = set(user.groups.values_list("name", flat=True))
-    for name in ROLE_PRIORITY:
-        if name in user_groups:
-            return {"label": name, "variant": "president" if name == "社长" else "info"}
-    return {"label": "成员", "variant": "member"}
+    """身份徽章 {label, variant}：超管 > 管理员 > 用户 > 访客（ADR-0005 决策 7）。
+
+    与组、权限解耦——纯身份态派生；variant 供前端徽章配色。「访客」含匿名与已登录
+    未过身份审核者；无 profile 的存量 / admin / 测试用户视为已审核（信任态，与
+    ``accounts.permissions.IsIdentityVerified`` 一致）。
+    """
+    if not user.is_authenticated:
+        return {"label": "访客", "variant": "visitor"}
+    if user.is_superuser:
+        return {"label": "超级管理员", "variant": "superadmin"}
+    if user.is_staff:
+        return {"label": "管理员", "variant": "admin"}
+    profile = getattr(user, "profile", None)
+    if profile is None or profile.identity_verified:
+        return {"label": "用户", "variant": "user"}
+    return {"label": "访客", "variant": "visitor"}
 
 
 def _profile_response(user, profile):
