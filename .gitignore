@@ -229,3 +229,4 @@ __marimo__/
 .playwright-mcp/
 
 .idea/
+frontend/node_modules/
