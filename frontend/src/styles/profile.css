@@ -78,6 +78,8 @@
 .verify-card-actions:empty { display: none; }
 .verify-email-form { display: flex; gap: var(--s-2); flex-wrap: wrap; }
 .verify-email-form input { flex: 1 1 220px; min-width: 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); }
+.verify-manual-form { display: flex; flex-direction: column; gap: var(--s-2); align-items: flex-start; }
+.verify-manual-form input[type="text"] { padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); width: 100%; max-width: 320px; }
 .verify-card-msg { margin: var(--s-2) 0 0; font-size: 13px; }
 .verify-card-err { margin: var(--s-2) 0 0; font-size: 13px; color: var(--danger, #c0392b); }
 

@@ -63,6 +63,39 @@ def approve_identity(modeladmin, request, queryset):
 approve_identity.short_description = "通过身份审核"
 
 
+def reject_identity(modeladmin, request, queryset):
+    """驳回身份审核：manual 通道置 rejected，并发邮件提示可在面板重交（#38）。
+
+    驳回 ≠ 停用账号：账号仍可登录（访客）、可重交证明；仅 manual 通道记驳回态。
+    """
+    count = 0
+    for obj in queryset.select_related("user"):
+        user = obj.user
+        if not request.user.has_perm("accounts.can_review_identity"):
+            continue
+        verification, _ = Verification.objects.get_or_create(
+            user=user, channel=Verification.CHANNEL_MANUAL,
+            defaults={"status": Verification.STATUS_REJECTED},
+        )
+        if verification.status != Verification.STATUS_REJECTED:
+            verification.status = Verification.STATUS_REJECTED
+            verification.verified_at = None
+            verification.verified_by = None
+            verification.save(update_fields=["status", "verified_at", "verified_by"])
+        send_mail(
+            subject="身份审核已驳回 - 南汇一中传媒社",
+            message="你的身份证明未通过审核。请在「账号验证」面板重新提交更清晰的证明材料。",
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            recipient_list=[user.email],
+            fail_silently=True,
+        )
+        count += 1
+    modeladmin.message_user(request, f"已驳回 {count} 个账号的身份审核。")
+
+
+reject_identity.short_description = "驳回身份审核"
+
+
 def disable_account(modeladmin, request, queryset):
     """停用账号：置 is_active=False，并发邮件通知当事人联系信息组。
 
@@ -91,7 +124,7 @@ def disable_account(modeladmin, request, queryset):
 disable_account.short_description = "停用账号"
 
 
-_IDENTITY_ACTIONS = (approve_identity, disable_account)
+_IDENTITY_ACTIONS = (approve_identity, reject_identity, disable_account)
 
 
 class _IdentityReviewActionsMixin:

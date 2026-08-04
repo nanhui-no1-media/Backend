@@ -107,6 +107,53 @@ function EmailCard({ card, onChanged }: { card: ChannelCard; onChanged: () => vo
   );
 }
 
+function ManualCard({ card, onChanged }: { card: ChannelCard; onChanged: () => void }) {
+  const [realName, setRealName] = useState("");
+  const [files, setFiles] = useState<FileList | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  const canSubmit = card.status === "none" || card.status === "rejected";
+  if (!canSubmit) return <CardShell card={card} />;
+
+  const submit = () => {
+    if (!realName || !files || files.length === 0) return;
+    const fd = new FormData();
+    fd.append("real_name", realName);
+    Array.from(files).forEach((f) => fd.append("proof_files", f));
+    setSubmitting(true);
+    setErr("");
+    setMsg("");
+    api.verificationManualSubmit(fd)
+      .then(() => {
+        setMsg("身份证明已提交，等待管理员审核。");
+        setRealName("");
+        setFiles(null);
+        onChanged();
+      })
+      .catch((e: any) => setErr(e.message || "提交失败"))
+      .finally(() => setSubmitting(false));
+  };
+
+  const label = card.status === "rejected" ? "重新提交" : "提交身份证明";
+  return (
+    <CardShell card={card}>
+      <div className="verify-manual-form">
+        <input type="text" placeholder="真实姓名" value={realName} disabled={submitting}
+               onChange={(e) => setRealName(e.target.value)} />
+        <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={submitting}
+               onChange={(e) => setFiles(e.target.files)} />
+        <button className="btn btn-sm btn-primary" type="button"
+                disabled={submitting || !realName || !files || files.length === 0}
+                onClick={submit}>{label}</button>
+      </div>
+      {msg && <p className="muted verify-card-msg">{msg}</p>}
+      {err && <p className="verify-card-err">{err}</p>}
+    </CardShell>
+  );
+}
+
 export default function VerificationPanel() {
   const [data, setData] = useState<VerificationStatus | null>(null);
   const [err, setErr] = useState("");
@@ -148,7 +195,7 @@ export default function VerificationPanel() {
           c.channel === "email" ? (
             <EmailCard key={c.channel} card={c} onChanged={load} />
           ) : (
-            <CardShell key={c.channel} card={c} />
+            <ManualCard key={c.channel} card={c} onChanged={load} />
           )
         )}
       </div>

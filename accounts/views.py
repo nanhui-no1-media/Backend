@@ -36,6 +36,12 @@ CONTENT_LIMIT = 15  # 个人中心每个内容 tab 返回的最近条数
 
 IDENTITY_CHOICE_KEYS = {key for key, _label in Profile.IDENTITY_CHOICES}
 
+# 人工通道身份证明约束（#38，与自助注册原证明约束一致）
+PROOF_MIN_COUNT = 1
+PROOF_MAX_COUNT = 3
+PROOF_MAX_BYTES = 5 * 1024 * 1024  # 单张 ≤ 5MB
+PROOF_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
 
 def _json_body(request):
     try:
@@ -231,6 +237,61 @@ def verification_email_bind_view(request):
 
     _send_verification_email(user)
     return JsonResponse({"message": "验证邮件已发送，请查收。"})
+
+
+@require_POST
+@login_required
+def verification_manual_submit_view(request):
+    """人工审批通道：提交身份证明（#38 / ADR-0006）。
+
+    multipart：real_name + proof_files[]（1~3 张 jpg/png/webp，单张 ≤5MB）。把 manual 通道置
+    pending + IdentityProof 累加（永久留底，审核通过后亦不删）。仅当 manual 当前 none / rejected
+    可提交（pending 审核中、已通过 不可重复）。real_name 写入 Profile（人工审核需知真实姓名）。
+    """
+    real_name = (request.POST.get("real_name") or "").strip()
+    proof_files = request.FILES.getlist("proof_files")
+
+    errors = []
+    if not real_name:
+        errors.append("请填写真实姓名")
+    if len(proof_files) < PROOF_MIN_COUNT:
+        errors.append(f"请至少上传 {PROOF_MIN_COUNT} 张身份证明照片")
+    elif len(proof_files) > PROOF_MAX_COUNT:
+        errors.append(f"身份证明最多 {PROOF_MAX_COUNT} 张")
+    for f in proof_files:
+        if f.size > PROOF_MAX_BYTES:
+            errors.append(f"证明材料「{f.name}」超过 5MB 上限")
+        if f.content_type not in PROOF_ALLOWED_TYPES:
+            errors.append(f"证明材料「{f.name}」格式不支持（仅 JPG / PNG / WebP）")
+    if errors:
+        return JsonResponse({"error": errors[0] if len(errors) == 1 else errors}, status=400)
+
+    user = request.user
+    existing = user.verifications.filter(channel=Verification.CHANNEL_MANUAL).first()
+    # 审核中 / 已通过 → 不可重复提交（驳回后重交才允许）
+    if existing is not None and existing.status in (
+        Verification.STATUS_PENDING, Verification.STATUS_APPROVED,
+    ):
+        return JsonResponse({"error": "当前不可提交（审核中或已通过）"}, status=400)
+
+    with transaction.atomic():
+        # none → 建 pending；rejected（重交）→ 回 pending + 清旧审核痕迹
+        Verification.objects.update_or_create(
+            user=user, channel=Verification.CHANNEL_MANUAL,
+            defaults={
+                "status": Verification.STATUS_PENDING,
+                "verified_at": None,
+                "verified_by": None,
+            },
+        )
+        for f in proof_files:
+            IdentityProof.objects.create(user=user, file=f)
+        profile = _get_or_create_profile(user)
+        if profile.real_name != real_name:
+            profile.real_name = real_name
+            profile.save(update_fields=["real_name"])
+
+    return JsonResponse({"message": "身份证明已提交，等待管理员审核。"})
 
 
 @login_required
