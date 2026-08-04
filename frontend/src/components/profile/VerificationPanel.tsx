@@ -107,8 +107,17 @@ function EmailCard({ card, onChanged }: { card: ChannelCard; onChanged: () => vo
   );
 }
 
+const IDENTITY_OPTIONS: { value: string; label: string }[] = [
+  { value: "student", label: "在校生" },
+  { value: "external", label: "外校生" },
+  { value: "graduate", label: "毕业生" },
+  { value: "parent", label: "家长" },
+  { value: "teacher", label: "教师" },
+];
+
 function ManualCard({ card, onChanged }: { card: ChannelCard; onChanged: () => void }) {
   const [realName, setRealName] = useState("");
+  const [identity, setIdentity] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState("");
@@ -118,9 +127,10 @@ function ManualCard({ card, onChanged }: { card: ChannelCard; onChanged: () => v
   if (!canSubmit) return <CardShell card={card} />;
 
   const submit = () => {
-    if (!realName || !files || files.length === 0) return;
+    if (!realName || !identity || !files || files.length === 0) return;
     const fd = new FormData();
     fd.append("real_name", realName);
+    fd.append("identity", identity);
     Array.from(files).forEach((f) => fd.append("proof_files", f));
     setSubmitting(true);
     setErr("");
@@ -129,6 +139,7 @@ function ManualCard({ card, onChanged }: { card: ChannelCard; onChanged: () => v
       .then(() => {
         setMsg("身份证明已提交，等待管理员审核。");
         setRealName("");
+        setIdentity("");
         setFiles(null);
         onChanged();
       })
@@ -142,10 +153,23 @@ function ManualCard({ card, onChanged }: { card: ChannelCard; onChanged: () => v
       <div className="verify-manual-form">
         <input type="text" placeholder="真实姓名" value={realName} disabled={submitting}
                onChange={(e) => setRealName(e.target.value)} />
-        <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={submitting}
-               onChange={(e) => setFiles(e.target.files)} />
+        <select className="verify-manual-identity" value={identity} disabled={submitting}
+                onChange={(e) => setIdentity(e.target.value)}>
+          <option value="" disabled>请选择身份</option>
+          {IDENTITY_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <div className="verify-manual-upload">
+          <label className="verify-manual-upload-label">学生证或其他证明材料（敏感信息可打码）</label>
+          <input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={submitting}
+                 onChange={(e) => setFiles(e.target.files)} />
+          <p className="muted verify-manual-privacy">
+            我们重视你的信息安全：证明材料存于私有存储，仅本人与审核员可见，仅用于身份核验。
+          </p>
+        </div>
         <button className="btn btn-sm btn-primary" type="button"
-                disabled={submitting || !realName || !files || files.length === 0}
+                disabled={submitting || !realName || !identity || !files || files.length === 0}
                 onClick={submit}>{label}</button>
       </div>
       {msg && <p className="muted verify-card-msg">{msg}</p>}

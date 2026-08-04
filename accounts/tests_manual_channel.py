@@ -44,9 +44,9 @@ class ManualSubmitTest(TestCase):
         c.force_login(self.user)
         return c
 
-    def _submit(self, client, *, real_name="李四", files=None):
+    def _submit(self, client, *, real_name="李四", identity="student", files=None):
         fs = files if files is not None else [proof()]
-        data = {"real_name": real_name, "proof_files": fs if isinstance(fs, list) else [fs]}
+        data = {"real_name": real_name, "identity": identity, "proof_files": fs if isinstance(fs, list) else [fs]}
         return client.post(SUBMIT, data=data)
 
     # ---- 提交 ----
@@ -70,8 +70,27 @@ class ManualSubmitTest(TestCase):
 
     def test_submit_requires_real_name(self):
         c = self._client()
-        resp = c.post(SUBMIT, data={"real_name": "", "proof_files": proof()})
+        resp = c.post(SUBMIT, data={"real_name": "", "identity": "student", "proof_files": proof()})
         self.assertEqual(resp.status_code, 400)
+
+    def test_submit_requires_identity(self):
+        c = self._client()
+        resp = c.post(SUBMIT, data={"real_name": "李四", "proof_files": proof()})  # 无 identity
+        self.assertEqual(resp.status_code, 400)
+
+    def test_submit_rejects_invalid_identity(self):
+        c = self._client()
+        resp = self._submit(c, identity="alien")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_submit_accepts_parent_and_teacher(self):
+        for ident in ("parent", "teacher"):
+            user = User.objects.create_user(username=f"u_{ident}", password="p")
+            c = Client()
+            c.force_login(user)
+            resp = self._submit(c, real_name="测", identity=ident)
+            self.assertEqual(resp.status_code, 200, f"{ident} 应被接受: {resp.content}")
+            self.assertEqual(User.objects.get(username=f"u_{ident}").profile.identity, ident)
 
     def test_submit_requires_proof(self):
         c = self._client()

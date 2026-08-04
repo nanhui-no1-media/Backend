@@ -147,8 +147,8 @@ class RegisterViewTest(TestCase):
 
     # ---- 字段校验 ----
     def test_invalid_identity_rejected_when_provided(self):
-        # identity 可选；填了须合法枚举
-        self.assertEqual(self.post(valid_payload(identity="teacher")).status_code, 400)
+        # identity 可选；填了须合法枚举（teacher 现为合法身份，用非法值测）
+        self.assertEqual(self.post(valid_payload(identity="alien")).status_code, 400)
 
     def test_invalid_email_format_rejected(self):
         self.assertEqual(self.post(valid_payload(email="not-an-email")).status_code, 400)
