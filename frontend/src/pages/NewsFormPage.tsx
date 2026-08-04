@@ -285,7 +285,7 @@ export default function NewsFormPage() {
             minHeight={560}
             imageUpload={(f) => newsApi.uploadImage(f).then((d) => d.url)}
             videoUpload={uploadNewsVideo}
-            videoEmbed
+            iframeEmbed
             wordImport
             placeholder="开始撰写正文，或从 Word 导入…"
           />

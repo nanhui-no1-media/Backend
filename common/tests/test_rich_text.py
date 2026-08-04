@@ -7,30 +7,66 @@ class RichTextSanitizeTest(SimpleTestCase):
     """共享净化器 sanitize_html 的白名单契约。
 
     被 news（新闻正文）与 about（关于页正文）共用——任何放宽都意味着全站富文本
-    暴露面变化。覆盖：视频外链嵌入闸门、脚本/事件/协议清洗、白名单标签与属性放行。
+    暴露面变化。覆盖：iframe 嵌入闸门、脚本/事件/协议清洗、白名单标签与属性放行。
+
+    iframe 策略（2026-08-04 起）：允许任意 https iframe（不再做平台域白名单），补偿控制
+    = 仅 https + 剥 srcdoc + 服务端统一盖 sandbox（不含 allow-top-navigation）。编辑者
+    为受信角色；视觉钓鱼不归代码管。
     """
 
     def _clean(self, html):
         return sanitize_html(html)
 
-    # ---- 视频外链嵌入闸门 ----
-    def test_keeps_bilibili_iframe(self):
-        html = '<iframe src="https://player.bilibili.com/player.html?bvid=BV1xx911x7x"></iframe>'
-        out = self._clean(html)
-        self.assertIn("player.bilibili.com", out)
+    # ---- iframe 嵌入闸门（任意 https iframe；非域白名单）----
+    def test_keeps_arbitrary_https_iframe(self):
+        out = self._clean('<iframe src="https://embed.example.com/widget"></iframe>')
+        self.assertIn("embed.example.com", out)
         self.assertIn("<iframe", out)
 
-    def test_strips_unknown_iframe_host(self):
-        out = self._clean('<iframe src="https://evil.com/player.html"></iframe>')
-        self.assertNotIn("evil.com", out)
+    def test_strips_http_iframe_src(self):
+        # http src 被剥 → 空壳 iframe 被清（https 详情页本来也会被浏览器 mixed-content 拦）
+        out = self._clean('<iframe src="http://embed.example.com/widget"></iframe>')
+        self.assertNotIn("embed.example.com", out)
         self.assertNotIn("<iframe", out)
 
-    def test_strips_iframe_event_handler(self):
+    def test_strips_iframe_srcdoc(self):
+        # srcdoc 可内嵌任意 HTML/JS，必须剥离——即使同时带 https src 作掩护
         out = self._clean(
-            '<iframe src="https://player.bilibili.com/player.html?bvid=BV1xx911x7x" onload="alert(1)"></iframe>'
+            '<iframe src="https://embed.example.com/x" srcdoc="<script>alert(1)</script>"></iframe>'
         )
-        self.assertIn("player.bilibili.com", out)
+        self.assertIn("embed.example.com", out)  # 合法 https src 保留
+        self.assertNotIn("srcdoc", out)
+        self.assertNotIn("<script", out)
+
+    def test_strips_iframe_event_handler(self):
+        out = self._clean('<iframe src="https://embed.example.com/x" onload="alert(1)"></iframe>')
+        self.assertIn("embed.example.com", out)
         self.assertNotIn("onload", out)
+
+    def test_iframe_forced_sandbox(self):
+        # 服务端统一盖 sandbox 戳（用户未给）
+        out = self._clean('<iframe src="https://embed.example.com/x"></iframe>')
+        self.assertIn('sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"', out)
+
+    def test_iframe_user_sandbox_overridden_no_top_navigation(self):
+        # 用户粘的 sandbox（含 allow-top-navigation）必须被覆盖；出来只有一枚统一戳、且无 top-nav
+        out = self._clean(
+            '<iframe src="https://embed.example.com/x" sandbox="allow-scripts allow-top-navigation"></iframe>'
+        )
+        self.assertIn('sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"', out)
+        self.assertNotIn("allow-top-navigation", out)
+        self.assertEqual(out.count("sandbox="), 1)
+
+    def test_iframe_user_allow_overridden(self):
+        # 用户给的 allow（含 camera/geolocation 等 Permissions-Policy）必须被覆盖为只含播放所需
+        out = self._clean(
+            '<iframe src="https://embed.example.com/x" allow="camera; microphone; geolocation; payment"></iframe>'
+        )
+        self.assertIn('allow="autoplay; fullscreen; picture-in-picture"', out)
+        self.assertNotIn("camera", out)
+        self.assertNotIn("geolocation", out)
+        self.assertNotIn("payment", out)
+        self.assertEqual(out.count("allow="), 1)
 
     def test_keeps_video_tag(self):
         out = self._clean('<video src="https://cdn.example.com/x.mp4" controls></video>')

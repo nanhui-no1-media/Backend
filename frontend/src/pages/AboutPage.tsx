@@ -116,7 +116,7 @@ export default function AboutPage() {
               content={draftContent}
               onChange={setDraftContent}
               imageUpload={(f: File) => newsApi.uploadImage(f).then((d) => d.url)}
-              videoEmbed
+              iframeEmbed
               minHeight={480}
             />
             {saveError && (

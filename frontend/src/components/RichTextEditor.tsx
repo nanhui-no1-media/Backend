@@ -13,7 +13,8 @@ import { useRef, useState, type ReactNode } from "react";
 import "./RichTextEditor.css";
 // mammoth 经动态 import() 按需加载（见 importWord），并已 code-split 到独立 chunk。
 import { Video } from "./rte/VideoNode";
-import { parseVideoEmbed } from "../utils/videoEmbed";
+import { Iframe } from "./rte/IframeNode";
+import { parseIframeEmbed } from "../utils/iframeEmbed";
 
 interface Props {
   content: string;
@@ -33,11 +34,11 @@ interface Props {
   wordImport?: boolean;
   /** 视频上传：传入即启用「上传视频」按钮；返回上传后的视频 URL（可带进度）。 */
   videoUpload?: (file: File, onProgress: (ratio: number) => void) => Promise<string>;
-  /** 启用「嵌入视频链接」按钮（外链转 embed）。 */
-  videoEmbed?: boolean;
+  /** 启用「插入网页 iframe」按钮（粘贴 <iframe> 嵌入代码，src 须为 https）。 */
+  iframeEmbed?: boolean;
 }
 
-/* 小图标（仅用于「动作」类按钮：图片 / 链接 / 导入 Word） */
+/* 小图标（仅用于「动作」类按钮：图片 / 链接 / 导入 Word / 嵌入网页） */
 const Icon = {
   image: (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -59,6 +60,11 @@ const Icon = {
       <rect x="3" y="5" width="14" height="14" rx="2" /><path d="M17 9l4-2v10l-4-2" />
     </svg>
   ),
+  embed: (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
+    </svg>
+  ),
 };
 
 const Toolbar = ({
@@ -66,25 +72,25 @@ const Toolbar = ({
   imageUpload,
   wordImport,
   videoUpload,
-  videoEmbed,
+  iframeEmbed,
   importing,
   onInsertImage,
   onAddLink,
   onImportWord,
   onInsertVideoFile,
-  onInsertVideoEmbed,
+  onInsertIframe,
 }: {
   editor: ReturnType<typeof useEditor>;
   imageUpload?: Props["imageUpload"];
   wordImport?: boolean;
   videoUpload?: Props["videoUpload"];
-  videoEmbed?: boolean;
+  iframeEmbed?: boolean;
   importing: boolean;
   onInsertImage: () => void;
   onAddLink: () => void;
   onImportWord: () => void;
   onInsertVideoFile: () => void;
-  onInsertVideoEmbed: () => void;
+  onInsertIframe: () => void;
 }) => {
   if (!editor) return null;
 
@@ -127,11 +133,11 @@ const Toolbar = ({
         {btn("— 分割线", () => editor!.chain().focus().setHorizontalRule().run(), false, "分割线")}
       </div>
 
-      {(imageUpload || wordImport || videoUpload || videoEmbed) && <span className="rte-spacer" />}
+      {(imageUpload || wordImport || videoUpload || iframeEmbed) && <span className="rte-spacer" />}
       <div className="rte-group rte-actions">
-        {videoEmbed && (
-          <button type="button" className="rte-action" onClick={onInsertVideoEmbed} title="嵌入视频链接（B站/YouTube/腾讯/优酷）">
-            {Icon.video} 嵌入视频
+        {iframeEmbed && (
+          <button type="button" className="rte-action" onClick={onInsertIframe} title="插入网页嵌入代码（<iframe>…</iframe>，src 须为 https）">
+            {Icon.embed} 嵌入网页
           </button>
         )}
         {videoUpload && (
@@ -165,7 +171,7 @@ export default function RichTextEditor({
   imageUpload,
   wordImport,
   videoUpload,
-  videoEmbed,
+  iframeEmbed,
 }: Props) {
   const imageInput = useRef<HTMLInputElement>(null);
   const wordInput = useRef<HTMLInputElement>(null);
@@ -192,6 +198,7 @@ export default function RichTextEditor({
       TableHeader,
       TiptapImage.configure({ inline: true }),
       Video,
+      Iframe,
       Placeholder.configure({ placeholder }),
     ],
     content,
@@ -266,7 +273,7 @@ export default function RichTextEditor({
     setVideoProgress(null);
     try {
       const src = await videoUpload(file, setVideoProgress);
-      editor.chain().focus().insertVideo({ kind: "file", src, provider: null }).run();
+      editor.chain().focus().insertVideo({ src }).run();
     } catch (e: any) {
       setErr(e?.message || "视频上传失败");
     } finally {
@@ -274,17 +281,17 @@ export default function RichTextEditor({
     }
   };
 
-  const insertVideoEmbed = () => {
+  const insertIframe = () => {
     if (!editor) return;
-    const url = window.prompt("粘贴视频链接（B站 / YouTube / 腾讯 / 优酷）", "https://");
-    if (url === null) return;
-    const parsed = parseVideoEmbed(url);
+    const raw = window.prompt("粘贴网页嵌入代码（<iframe>…</iframe>；src 须为 https://）", "");
+    if (raw === null) return;
+    const parsed = parseIframeEmbed(raw);
     if (!parsed) {
-      setErr("不支持的视频链接，请粘贴 B站 / YouTube / 腾讯 / 优酷 的视频页地址");
+      setErr("无法识别：请粘贴包含 <iframe> 的嵌入代码，且 src 须为 https://");
       return;
     }
     setErr("");
-    editor.chain().focus().insertVideo({ kind: "embed", src: parsed.src, provider: parsed.provider }).run();
+    editor.chain().focus().insertIframe(parsed).run();
   };
 
   if (!editable) {
@@ -302,13 +309,13 @@ export default function RichTextEditor({
         imageUpload={imageUpload}
         wordImport={wordImport}
         videoUpload={videoUpload}
-        videoEmbed={videoEmbed}
+        iframeEmbed={iframeEmbed}
         importing={importing}
         onInsertImage={() => imageInput.current?.click()}
         onAddLink={addLink}
         onImportWord={() => wordInput.current?.click()}
         onInsertVideoFile={() => videoInput.current?.click()}
-        onInsertVideoEmbed={insertVideoEmbed}
+        onInsertIframe={insertIframe}
       />
       <EditorContent editor={editor} className="rte-content" />
       {err && <div className="rte-err">{err}</div>}
