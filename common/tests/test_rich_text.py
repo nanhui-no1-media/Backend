@@ -29,6 +29,15 @@ class RichTextSanitizeTest(SimpleTestCase):
         self.assertNotIn("embed.example.com", out)
         self.assertNotIn("<iframe", out)
 
+    def test_keeps_protocol_relative_iframe(self):
+        # 协议相对（//host）在 https 站点即 https；常见 embed 惯例（如网易云音乐外链播放器）
+        out = self._clean(
+            '<iframe src="//music.163.com/outchain/player?type=2&id=3414488371&auto=1&height=66"></iframe>'
+        )
+        self.assertIn("music.163.com", out)
+        self.assertIn("<iframe", out)
+        self.assertIn('sandbox="', out)  # 协议相对也照常盖 sandbox 戳
+
     def test_strips_iframe_srcdoc(self):
         # srcdoc 可内嵌任意 HTML/JS，必须剥离——即使同时带 https src 作掩护
         out = self._clean(

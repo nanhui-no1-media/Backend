@@ -13,7 +13,8 @@ export function parseIframeEmbed(
   const iframe = doc.querySelector("iframe");
   if (!iframe) return null;
   const src = (iframe.getAttribute("src") || "").trim();
-  if (!/^https:\/\//i.test(src)) return null;
+  // 接受 https:// 或协议相对 //host（后者在 https 站点即 https；常见 embed 惯例，如网易云外链播放器）
+  if (!/^https:\/\//i.test(src) && !src.startsWith("//")) return null;
   const title = iframe.getAttribute("title") || undefined;
   return title ? { src, title } : { src };
 }

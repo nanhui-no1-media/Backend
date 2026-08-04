@@ -22,7 +22,8 @@ _ALLOWED_TAGS = [
 
 # iframe 策略（2026-08-04 起）：允许任意 https iframe（不再做平台域白名单）——编辑者
 # （信息组 / about 编辑）为受信角色。补偿控制：
-#   - 仅 https（http / 相对 / javascript: 的 src 一律剥，剥后空壳 iframe 由正则清除）；
+#   - src 仅放行 https 或协议相对 //host（//host 在 https 站点即 https，常见 embed 惯例）；
+#     http / 相对路径 / javascript: 一律剥，剥后空壳 iframe 由正则清除；
 #   - srcdoc 一律剥（防内嵌任意 HTML/JS，即便带 https src 作掩护）；
 #   - 用户给的 sandbox 与 allow（Permissions-Policy）一律作废，由服务端统一盖戳（见
 #     _IFRAME_SANDBOX / _IFRAME_ALLOW）——sandbox 故意不给 allow-top-navigation（防 top-nav
@@ -39,14 +40,21 @@ _IFRAME_ALLOW = "autoplay; fullscreen; picture-in-picture"
 
 
 def _iframe_attr_filter(tag, name, value):
-    """bleach 属性回调：iframe 的 src 仅放行 https（http / 相对 / javascript: 一律剥，剥后
-    空壳 iframe 由 _IFRAME_WITHOUT_SRC_RE 清除）；其余属性须在安全白名单内（srcdoc / sandbox /
-    allow / onload 等不在内 → 剥离；sandbox 与 allow 由 _stamp_iframe_attrs 统一盖戳）。"""
+    """bleach 属性回调：iframe 的 src 仅放行 https 或协议相对 //host（后者在 https 站点即 https，
+    是常见 embed 惯例，如网易云外链播放器）；http / 相对路径 / javascript: 一律剥，剥后空壳 iframe
+    由 _IFRAME_WITHOUT_SRC_RE 清除。其余属性须在安全白名单内（srcdoc / sandbox / allow / onload 等
+    不在内 → 剥离；sandbox 与 allow 由 _stamp_iframe_attrs 统一盖戳）。"""
     if name == "src":
         try:
-            return urllib.parse.urlparse(value).scheme == "https"
+            parsed = urllib.parse.urlparse(value)
         except (ValueError, TypeError):
             return False
+        if parsed.scheme == "https":
+            return True
+        # 协议相对（//host）：scheme 空、netloc 非空 → 在 https 站点即 https
+        if parsed.scheme == "" and parsed.netloc:
+            return True
+        return False
     return name in _IFRAME_SAFE_ATTRS
 
 

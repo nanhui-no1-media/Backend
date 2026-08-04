@@ -205,16 +205,17 @@ a.news-item:hover h3 { color: var(--brand-700); }
   .compose-foot { position: static; }
 }
 
-/* 正文内嵌视频 / iframe 嵌入：响应式、圆角；iframe 用 aspect-ratio 维持 16:9（无需包裹 div，避免 bleach 剥离 div） */
+/* 正文内嵌视频 / iframe 嵌入：响应式、圆角。
+   iframe 无显式宽高 → aspect-ratio 维持 16:9（视频）；有显式宽高（如音乐播放器条）→ 按其值。 */
 .prose video,
 .prose iframe {
   max-width: 100%;
-  height: auto;
   border-radius: var(--r-md);
   display: block;
   margin: var(--s-4) auto;
 }
-.prose iframe {
+.prose video { height: auto; }
+.prose iframe:not([width]) {
   width: 100%;
   aspect-ratio: 16 / 9;
 }
