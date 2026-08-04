@@ -81,7 +81,7 @@ class ProposalViewSet(viewsets.ModelViewSet):
     # 身份门槛（#30）：建申报 / 投票 / 撤回 / 重交需身份已审核。
     # submit_feedback 故意保留 AllowAny（匿名意见反馈 / 举报通道，需保护举报人；
     # spec「提反馈」指已登录场景的申报反馈，无对应独立动作，故不在此 gate）。
-    _IDENTITY_GATED = {"create", "vote", "resubmit", "withdraw"}
+    _VERIFIED_GATED = {"create", "vote", "resubmit", "withdraw"}
 
     def get_permissions(self):
         if self.action == "submit_feedback":
@@ -94,7 +94,7 @@ class ProposalViewSet(viewsets.ModelViewSet):
             else [IsAuthenticated(), CanWithdrawProposal()] if self.action == "withdraw"
             else [IsAuthenticated(), CanViewProposal()]
         )
-        if self.action in self._IDENTITY_GATED:
+        if self.action in self._VERIFIED_GATED:
             perms.append(IsVerified())
         return perms
 

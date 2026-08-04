@@ -25,13 +25,13 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     # 身份门槛（#30）：仅「写 / 建会话」动作需身份已审核；读（messages / unread_count /
     # mark_read / list / retrieve）不挂，保持 Tier-2 只读。
-    _IDENTITY_GATED = {
+    _VERIFIED_GATED = {
         "send_message", "start_private", "get_task_conversation", "get_proposal_conversation",
     }
 
     def get_permissions(self):
         perms = [IsAuthenticated(), IsConversationParticipant()]
-        if self.action in self._IDENTITY_GATED:
+        if self.action in self._VERIFIED_GATED:
             perms.append(IsVerified())
         return perms
 
