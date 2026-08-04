@@ -9,6 +9,7 @@ urlpatterns = [
     path("identity-proof/<int:pk>/", views.identity_proof_file_view, name="identity_proof_file"),
     path("logout/", views.logout_view, name="logout"),
     path("me/", views.me_view, name="me"),
+    path("verification/", views.verification_status_view, name="verification_status"),
     path("sessions/", views.sessions_view, name="sessions"),
     path("csrf/", views.csrf_token_view, name="csrf_token"),
     path("password-reset/", views.password_reset_view, name="password_reset"),

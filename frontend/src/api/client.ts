@@ -15,6 +15,9 @@ export const api = {
   me: () =>
     request("/me/"),
 
+  verificationStatus: () =>
+    request("/verification/"),
+
   listSessions: () =>
     request("/sessions/"),
 

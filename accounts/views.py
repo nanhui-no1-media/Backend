@@ -153,6 +153,28 @@ def logout_view(request):
     return JsonResponse({"message": "Logged out"})
 
 
+@require_GET
+@login_required
+def verification_status_view(request):
+    """账号验证状态（#36）：总 is_verified + 各通道当前状态，数据驱动面板铺卡。
+
+    每个已定义通道一卡，按 CHANNELS 序。无 Verification 行的通道 status="none"（前端映射
+    「未绑定 / 未提交」）。通道对象键集与前端 VerificationPanel 契约（见契约测试）。
+    """
+    user = request.user
+    rows = {v.channel: v for v in user.verifications.all()}
+    channels = []
+    for channel, _label in Verification.CHANNELS:
+        v = rows.get(channel)
+        channels.append({
+            "channel": channel,
+            "status": v.status if v else "none",
+            "identifier": v.identifier if v else "",
+            "verified_at": v.verified_at.isoformat() if v and v.verified_at else None,
+        })
+    return JsonResponse({"is_verified": is_verified(user), "channels": channels})
+
+
 @login_required
 def me_view(request):
     profile = _get_or_create_profile(request.user)

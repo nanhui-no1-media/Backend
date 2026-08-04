@@ -11,11 +11,13 @@ import PasswordPanel from "../components/profile/PasswordPanel";
 import SessionsPanel from "../components/profile/SessionsPanel";
 import ContentListPanel from "../components/profile/ContentListPanel";
 import PermissionsPanel from "../components/profile/PermissionsPanel";
+import VerificationPanel from "../components/profile/VerificationPanel";
 import type { UserProfileData } from "../types/profile";
 import "../styles/profile.css";
 
 const SELF_TABS = [
   { key: "profile", label: "资料编辑" },
+  { key: "verification", label: "账号验证" },
   { key: "password", label: "改密码" },
   { key: "sessions", label: "登录记录" },
   { key: "news", label: "我的新闻", divider: true },
@@ -104,6 +106,7 @@ export default function UserProfile() {
             <ProfileSideNav tabs={tabs} active={active} onPick={setTab} />
             <div className="profile-panel">
               {active === "profile" && <ProfileEditPanel onSaved={onProfileSaved} />}
+              {active === "verification" && <VerificationPanel />}
               {active === "password" && <PasswordPanel />}
               {active === "sessions" && <SessionsPanel />}
               {active === "news" && <ContentListPanel userId={uid} type="news" selfView />}

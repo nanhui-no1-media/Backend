@@ -7,7 +7,8 @@
 from django.contrib.auth.models import AnonymousUser, User
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
-from django.test import RequestFactory, TestCase, TransactionTestCase
+from django.test import Client, RequestFactory, TestCase, TransactionTestCase
+from django.utils import timezone
 
 from accounts.models import Verification, is_verified
 from accounts.permissions import IsVerified
@@ -144,3 +145,110 @@ class VerificationDefaultTrustMigrationTest(TransactionTestCase):
         User = self.apps_after.get_model("auth", "User")
         u = User.objects.get(username="selfreg")
         self.assertFalse(Verification.objects.filter(user=u).exists())
+
+
+# 通道对象的字段键集（前后端契约，#36）：与前端 VerificationPanel 的 VERIFICATION_CARD_FIELDS 对齐。
+VERIFICATION_CARD_FIELDS = {"channel", "status", "identifier", "verified_at"}
+
+
+class VerificationStatusEndpointTest(TestCase):
+    """GET /auth/verification/（#36）：各通道当前状态 + 总 is_verified，数据驱动面板铺卡。"""
+
+    URL = "/auth/verification/"
+
+    def _get(self, user):
+        c = Client()
+        c.force_login(user)
+        return c.get(self.URL)
+
+    def test_requires_login(self):
+        self.assertEqual(Client().get(self.URL).status_code, 302)
+
+    def test_unverified_user_all_channels_none(self):
+        u = User.objects.create_user(username="u", password="p")
+        data = self._get(u).json()
+        self.assertFalse(data["is_verified"])
+        channels = {c["channel"]: c for c in data["channels"]}
+        self.assertEqual(set(channels), {"email", "manual"})  # 每定义通道一卡
+        self.assertEqual(channels["email"]["status"], "none")
+        self.assertEqual(channels["manual"]["status"], "none")
+
+    def test_email_pending_shown_not_verified(self):
+        u = User.objects.create_user(username="u", password="p")
+        Verification.objects.create(
+            user=u, channel=Verification.CHANNEL_EMAIL,
+            status=Verification.STATUS_PENDING, identifier="u@e.com",
+        )
+        data = self._get(u).json()
+        self.assertFalse(data["is_verified"])  # pending 不算已验证
+        email = {c["channel"]: c for c in data["channels"]}["email"]
+        self.assertEqual(email["status"], "pending")
+        self.assertEqual(email["identifier"], "u@e.com")
+
+    def test_manual_approved_is_verified(self):
+        u = User.objects.create_user(username="u", password="p")
+        Verification.objects.create(
+            user=u, channel=Verification.CHANNEL_MANUAL,
+            status=Verification.STATUS_APPROVED, verified_at=timezone.now(),
+        )
+        data = self._get(u).json()
+        self.assertTrue(data["is_verified"])
+        manual = {c["channel"]: c for c in data["channels"]}["manual"]
+        self.assertEqual(manual["status"], "approved")
+        self.assertIsNotNone(manual["verified_at"])
+
+    def test_manual_rejected_shown(self):
+        u = User.objects.create_user(username="u", password="p")
+        Verification.objects.create(
+            user=u, channel=Verification.CHANNEL_MANUAL, status=Verification.STATUS_REJECTED,
+        )
+        data = self._get(u).json()
+        self.assertFalse(data["is_verified"])
+        manual = {c["channel"]: c for c in data["channels"]}["manual"]
+        self.assertEqual(manual["status"], "rejected")
+
+    def test_channels_in_defined_order(self):
+        u = User.objects.create_user(username="u", password="p")
+        channels = [c["channel"] for c in self._get(u).json()["channels"]]
+        self.assertEqual(channels, ["email", "manual"])  # CHANNELS 定义序
+
+    def test_channel_object_keyset(self):
+        # 钉死通道对象键集（前后端契约的「后端半」；前端半见 VerificationPanelContractTest）
+        u = User.objects.create_user(username="u", password="p")
+        channels = self._get(u).json()["channels"]
+        for card in channels:
+            self.assertEqual(set(card.keys()), VERIFICATION_CARD_FIELDS)
+
+
+class VerificationPanelContractTest(TestCase):
+    """前后端键集契约（#36）：状态端点通道集 + 通道对象键集 == 前端 VerificationPanel 预期。"""
+
+    def test_backend_keyset_matches_frontend_panel(self):
+        import re
+        from pathlib import Path
+
+        ts_path = (
+            Path(__file__).resolve().parents[1]
+            / "frontend" / "src" / "components" / "profile" / "VerificationPanel.tsx"
+        )
+        src = ts_path.read_text(encoding="utf-8")
+
+        # 前端 VERIFICATION_CHANNELS = ["email", "manual"]
+        ch_match = re.search(r"VERIFICATION_CHANNELS\s*=\s*\[([^\]]*)\]", src)
+        self.assertIsNotNone(ch_match, "前端未定义 VERIFICATION_CHANNELS")
+        fe_channels = set(re.findall(r'"([a-z]+)"', ch_match.group(1)))
+
+        # 前端 VERIFICATION_CARD_FIELDS = ["channel", "status", ...]
+        fd_match = re.search(r"VERIFICATION_CARD_FIELDS\s*=\s*\[([^\]]*)\]", src)
+        self.assertIsNotNone(fd_match, "前端未定义 VERIFICATION_CARD_FIELDS")
+        fe_fields = set(re.findall(r'"([a-z_]+)"', fd_match.group(1)))
+
+        u = User.objects.create_user(username="u", password="p")
+        c = Client()
+        c.force_login(u)
+        data = c.get("/auth/verification/").json()
+        be_channels = {ch["channel"] for ch in data["channels"]}
+        be_fields = set(data["channels"][0].keys())
+
+        self.assertEqual(fe_channels, be_channels, f"通道集漂移：后端={sorted(be_channels)} 前端={sorted(fe_channels)}")
+        self.assertEqual(fe_fields, be_fields, f"通道对象键集漂移：后端={sorted(be_fields)} 前端={sorted(fe_fields)}")
