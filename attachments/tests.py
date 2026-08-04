@@ -19,6 +19,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from accounts.test_helpers import grant_verification
 from proposals.models import Proposal
 from tasks.models import Task
 
@@ -393,7 +394,8 @@ class DeleteOwnAfterTaskNotInProgressTest(_AttachmentTestCase):
 class CascadeReclaimTest(_AttachmentTestCase):
     def setUp(self):
         super().setUp()
-        self.creator = User.objects.create_user(username="creator", password="x")
+        # creator 会删 task（tasks destroy 受 IsVerified 门禁）→ 需已验证
+        self.creator = grant_verification(User.objects.create_user(username="creator", password="x"))
         self.client = APIClient()
         self.client.force_authenticate(self.creator)
         self.task = Task.objects.create(title="t", creator=self.creator, status="pending")

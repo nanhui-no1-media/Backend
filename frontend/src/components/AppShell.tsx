@@ -13,7 +13,9 @@ interface AppShellUser {
 interface AppShellProfile {
   nickname?: string;
   avatar?: string | null;
-  is_verified?: boolean;
+}
+interface AppShellRole {
+  variant?: string;
 }
 
 const NAV: { label: string; path: string }[] = [
@@ -46,6 +48,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [user, setUser] = useState<AppShellUser | null>(null);
   const [profile, setProfile] = useState<AppShellProfile>({});
+  const [roleVariant, setRoleVariant] = useState<string>("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
@@ -59,6 +62,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       .then((d: any) => {
         setUser(d.user);
         setProfile(d.profile ?? {});
+        setRoleVariant(d.role?.variant ?? "");
       })
       .catch(() => setUser(null));
   }, [authNonce]);
@@ -195,8 +199,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      {/* 未验证提示（ADR-0006）：账号未验证（访客），写权限暂不可用。常驻条，点击去验证面板。 */}
-      {user && profile.is_verified === false && (
+      {/* 未验证提示（ADR-0006 / ADR-0005）：仅访客（未验证普通成员）提示，超管 / 管理员 /
+          已验证用户不打扰。点击去验证面板。 */}
+      {user && roleVariant === "visitor" && (
         <button className="identity-banner" type="button" role="status"
                 onClick={() => go("/profile?tab=verification")}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v4h1" /></svg>

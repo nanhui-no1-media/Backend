@@ -608,6 +608,9 @@ def _profile_response(user, profile):
             "email": user.email,
             "permissions": _capabilities(user),
         },
+        # 身份徽章（ADR-0005 决策 7）：前端据此（而非单看 is_verified）决定是否提示去验证——
+        # 超管 / 管理员 / 已验证用户均不提示，仅访客（未验证普通成员）提示。
+        "role": _role_for(user),
         "profile": {
             "avatar": profile.avatar.url if profile.avatar else None,
             "nickname": profile.nickname,
