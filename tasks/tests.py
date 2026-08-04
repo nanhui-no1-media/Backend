@@ -4,6 +4,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from accounts.test_helpers import grant_verification
 from .factories import make_president
 from .models import Task, TaskClaimRequest
 
@@ -16,8 +17,8 @@ class TaskActionSmokeTest(TestCase):
     """
 
     def setUp(self):
-        self.creator = User.objects.create_user(username="creator", password="x")
-        self.member = User.objects.create_user(username="member", password="x")
+        self.creator = grant_verification(User.objects.create_user(username="creator", password="x"))
+        self.member = grant_verification(User.objects.create_user(username="member", password="x"))
         self.president = make_president(User.objects.create_user(username="pres", password="x"))
         self.client = APIClient()
 
@@ -113,7 +114,7 @@ class TaskActionSmokeTest(TestCase):
 
 class TaskEditLockTest(TestCase):
     def setUp(self):
-        self.creator = User.objects.create_user(username="creator", password="x")
+        self.creator = grant_verification(User.objects.create_user(username="creator", password="x"))
         self.president = make_president(User.objects.create_user(username="pres", password="x"))
         self.client = APIClient()
         self.task = Task.objects.create(
@@ -151,8 +152,8 @@ class TaskAvailableActionsTest(TestCase):
     """详情序列化带 available_actions（来自生命周期模块）；列表不带。"""
 
     def setUp(self):
-        self.creator = User.objects.create_user(username="creator", password="x")
-        self.assignee = User.objects.create_user(username="assignee", password="x")
+        self.creator = grant_verification(User.objects.create_user(username="creator", password="x"))
+        self.assignee = grant_verification(User.objects.create_user(username="assignee", password="x"))
         self.client = APIClient()
 
     def test_detail_includes_available_actions(self):

@@ -6,7 +6,7 @@ from django.core.mail import send_mail
 from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import IdentityProof, Profile, UserSession
+from .models import IdentityProof, Profile, UserSession, Verification, is_verified
 
 
 def _revoke_user_sessions(user):
@@ -22,27 +22,33 @@ def _revoke_user_sessions(user):
         Session.objects.filter(session_key__in=keys).delete()
 
 
-# ---- 审核动作（#31）----
-# 同时挂在 ProfileAdmin 与 IdentityProofAdmin：queryset 元素都有 .user，按 user 审批 / 停用。
-# 仅持 accounts.can_review_identity 者可用（get_actions 收口 + 动作内二次校验）。
+# ---- 审核动作（#31 / ADR-0006）----
+# 同时挂在 ProfileAdmin 与 IdentityProofAdmin：queryset 元素都有 .user，按 user 操作其
+# manual 验证通道。仅持 accounts.can_review_identity 者可用（get_actions 收口 + 动作内二次校验）。
 
 
 def approve_identity(modeladmin, request, queryset):
-    """通过身份审核：置 identity_verified=True + verified_at / verified_by，并发邮件通知。"""
+    """通过身份审核：manual 验证通道置 approved（+ verified_at / verified_by），并发邮件。
+
+    验证态单一事实源是 Verification 行（ADR-0006），不再写 Profile 布尔。任一通道 approved
+    ⇒ 账号已验证（写门禁 / 徽章 / 面板随之放行）。
+    """
     now = timezone.now()
     count = 0
-    for obj in queryset.select_related("user", "user__profile"):
+    for obj in queryset.select_related("user"):
         user = obj.user
         if not request.user.has_perm("accounts.can_review_identity"):
             continue  # 防御：get_actions 已收口，此处双保险
-        profile = getattr(user, "profile", None)
-        if profile is None:
-            profile = Profile.objects.create(user=user)
-        if not profile.identity_verified:
-            profile.identity_verified = True
-            profile.verified_at = now
-            profile.verified_by = request.user
-            profile.save(update_fields=["identity_verified", "verified_at", "verified_by"])
+        verification, _ = Verification.objects.get_or_create(
+            user=user, channel=Verification.CHANNEL_MANUAL,
+            defaults={"status": Verification.STATUS_APPROVED, "verified_at": now,
+                      "verified_by": request.user},
+        )
+        if verification.status != Verification.STATUS_APPROVED:
+            verification.status = Verification.STATUS_APPROVED
+            verification.verified_at = now
+            verification.verified_by = request.user
+            verification.save(update_fields=["status", "verified_at", "verified_by"])
         send_mail(
             subject="身份审核已通过 - 南汇一中传媒社",
             message="你的身份证明已通过审核，现在可以使用全部功能（发帖 / 发消息 / 建申报等）。",
@@ -58,7 +64,10 @@ approve_identity.short_description = "通过身份审核"
 
 
 def disable_account(modeladmin, request, queryset):
-    """停用账号：置 is_active=False，并发邮件通知当事人联系信息组。"""
+    """停用账号：置 is_active=False，并发邮件通知当事人联系信息组。
+
+    账号级动作，与验证通道无关——被停用账号既不能登录、既有会话也被立即吊销。
+    """
     count = 0
     for obj in queryset.select_related("user"):
         user = obj.user
@@ -96,14 +105,37 @@ class _IdentityReviewActionsMixin:
         return actions
 
 
+class VerifiedFilter(admin.SimpleListFilter):
+    """按账号「已验证」过滤（任一 Verification 通道 approved 即已验证）。"""
+
+    title = "验证状态"
+    parameter_name = "verified"
+
+    def lookups(self, request, model_admin):
+        return [("yes", "已验证"), ("no", "未验证")]
+
+    def queryset(self, request, qs):
+        approved = Profile.objects.filter(
+            user__pk__in=Verification.objects.filter(
+                status=Verification.STATUS_APPROVED
+            ).values_list("user_id", flat=True)
+        )
+        if self.value() == "yes":
+            return qs.filter(pk__in=approved)
+        if self.value() == "no":
+            return qs.exclude(pk__in=approved)
+        return qs
+
+
 class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
-    list_display = (
-        "user", "real_name", "identity",
-        "email_verified", "identity_verified", "verified_at", "verified_by",
-    )
-    list_filter = ("identity_verified", "email_verified", "identity")
+    list_display = ("user", "real_name", "identity", "verified")
+    list_filter = (VerifiedFilter, "identity")
     search_fields = ("user__username", "user__email", "real_name")
     actions = list(_IDENTITY_ACTIONS)
+
+    @admin.display(boolean=True, description="已验证")
+    def verified(self, obj):
+        return is_verified(obj.user)
 
 
 class IdentityProofAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
@@ -146,8 +178,7 @@ class IdentityProofAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
 
 class ProfileInline(admin.StackedInline):
     model = Profile
-    fk_name = "user"  # Profile 有 user + verified_by 两个 FK→User，须指明内联绑哪个
-    can_delete = False
+    fk_name = "user"  # Profile 仅 user 一个 FK→User；显式绑定，防后续新增 FK 时歧义
 
 
 class CustomUserAdmin(UserAdmin):

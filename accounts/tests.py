@@ -599,10 +599,10 @@ class SessionsViewTest(TestCase):
 
 
 class RoleForTest(TestCase):
-    """_role_for 按身份态派生徽章（ADR-0005 决策 7）：超管 > 管理员 > 用户 > 访客。
+    """_role_for 按身份态派生徽章（ADR-0005 决策 7 / ADR-0006）：超管 > 管理员 > 用户 > 访客。
 
-    与组、权限解耦——纯 is_superuser / is_staff / identity_verified 判定；
-    「访客」含匿名与已登录未过身份审核者。
+    与组、权限解耦——纯 is_superuser / is_staff / is_verified 判定；「用户 / 访客」分界读
+    is_verified（任一验证通道 approved 即用户，否则访客）。
     """
 
     def setUp(self):
@@ -628,14 +628,17 @@ class RoleForTest(TestCase):
         self.assertEqual(_role_for(self.user), {"label": "超级管理员", "variant": "superadmin"})
 
     def test_verified_user(self):
-        # 无 profile 的存量 / 测试用户视为已审核（信任态）→ 用户
+        # 有 approved 通道 ⇒ 用户
+        from .models import Verification
         from .views import _role_for
+        Verification.objects.create(
+            user=self.user, channel=Verification.CHANNEL_MANUAL, status=Verification.STATUS_APPROVED
+        )
         self.assertEqual(_role_for(self.user), {"label": "用户", "variant": "user"})
 
     def test_unverified_is_visitor(self):
-        from .models import Profile
+        # 无 Verification 行 ⇒ 访客（不再有「无 profile 视为已审核」后备）
         from .views import _role_for
-        Profile.objects.create(user=self.user, identity_verified=False)
         self.assertEqual(_role_for(self.user), {"label": "访客", "variant": "visitor"})
 
     def test_anonymous_is_visitor(self):

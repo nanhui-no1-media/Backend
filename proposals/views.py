@@ -23,7 +23,7 @@ from .serializers import (
     ProposalListSerializer,
 )
 from .throttles import FeedbackAnonThrottle
-from accounts.permissions import IsIdentityVerified
+from accounts.permissions import IsVerified
 
 
 def transition_overdue_proposals():
@@ -95,7 +95,7 @@ class ProposalViewSet(viewsets.ModelViewSet):
             else [IsAuthenticated(), CanViewProposal()]
         )
         if self.action in self._IDENTITY_GATED:
-            perms.append(IsIdentityVerified())
+            perms.append(IsVerified())
         return perms
 
     def get_queryset(self):

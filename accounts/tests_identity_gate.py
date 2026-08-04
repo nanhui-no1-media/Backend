@@ -1,7 +1,6 @@
-"""身份审核门槛（#30）：桶2 写操作需 identity_verified；只读与账号自理不受影响。
+"""账号验证写门槛（ADR-0006）：桶写操作需账号已验证（任一通道 approved）；只读不受影响。
 
-Tier-2 = email_verified=True（可登录）、identity_verified=False（待审核）。
-Tier-3 = 无 profile（默认信任）或 identity_verified=True。
+未验证 = 无 approved Verification 行（访客）；已验证 = 有一条 approved 通道（用户）。
 
 URL 前缀注意：config 把各 app 挂在 `tasks/` `proposals/` `messaging/` 下，各 app 路由器又
 注册同名 resource，故为 `/tasks/tasks/`、`/proposals/proposals/`、`/messaging/conversations/`。
@@ -15,7 +14,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from accounts.models import Profile
+from accounts.test_helpers import grant_verification
 from messaging.models import Conversation
 from proposals.models import Proposal
 from tasks.models import Task
@@ -25,15 +24,14 @@ PROPOSALS = "/proposals/proposals/"
 CONV = "/messaging/conversations/"
 
 
-def make_tier2(username):
-    u = User.objects.create_user(username=username, password="p")
-    Profile.objects.update_or_create(user=u, defaults={"email_verified": True, "identity_verified": False})
-    return u
-
-
-def make_tier3(username):
-    # 无 profile → 视为已审核（信任态，与历史/admin 账号一致）
+def make_unverified(username):
+    # 无 Verification 行 ⇒ 未验证（访客）
     return User.objects.create_user(username=username, password="p")
+
+
+def make_verified(username):
+    # approved manual 通道 ⇒ 已验证（用户）
+    return grant_verification(User.objects.create_user(username=username, password="p"))
 
 
 def _client(user):
@@ -48,9 +46,9 @@ def _post(client, url, payload=None):
 
 class TasksGateTest(TestCase):
     def setUp(self):
-        self.tier2 = make_tier2("tier2")
-        self.tier3 = make_tier3("tier3")
-        self.creator = make_tier3("creator")
+        self.tier2 = make_unverified("tier2")
+        self.tier3 = make_verified("tier3")
+        self.creator = make_verified("creator")
         self.task = Task.objects.create(title="gate-task", creator=self.creator, status="pending")
 
     def test_tier2_create_task_blocked(self):
@@ -75,9 +73,9 @@ class TasksGateTest(TestCase):
 
 class MessagingGateTest(TestCase):
     def setUp(self):
-        self.tier2 = make_tier2("tier2")
-        self.tier3 = make_tier3("tier3")
-        self.target = make_tier3("target")
+        self.tier2 = make_unverified("tier2")
+        self.tier3 = make_verified("tier3")
+        self.target = make_verified("target")
         # tier3 参与的会话（供 send_message）
         self.conv = Conversation.objects.create(conversation_type="private")
         self.conv.participants.set([self.tier3, self.target])
@@ -116,9 +114,9 @@ class MessagingGateTest(TestCase):
 
 class ProposalsGateTest(TestCase):
     def setUp(self):
-        self.tier2 = make_tier2("tier2")
-        self.tier3 = make_tier3("tier3")
-        self.creator = make_tier3("pcreator")
+        self.tier2 = make_unverified("tier2")
+        self.tier3 = make_verified("tier3")
+        self.creator = make_verified("pcreator")
         self.voting = Proposal.objects.create(
             title="vote-me", proposal_type="activity", status="voting",
             voting_end_at=timezone.now() + timedelta(days=1), creator=self.creator,

@@ -43,24 +43,77 @@ class Profile(models.Model):
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES, blank=True)
     bio = models.TextField(blank=True)
 
-    # ---- 自助注册（#26）：身份元数据与验证门槛 ----
-    # real_name 不公开（仅本人 / 审核员可见）；identity 是纯元数据，不影响权限。
+    # 可选资料（ADR-0006 决策 3）：real_name 不公开（仅本人 / 审核员可见），在提交身份证明
+    # 时收集；identity 是纯元数据，不影响权限。验证态不在 Profile 上——见 Verification。
     real_name = models.CharField("真实姓名", max_length=100, blank=True)
     identity = models.CharField("身份", max_length=10, choices=IDENTITY_CHOICES, blank=True)
-    # 默认 True：历史账号 / 信息组分发账号 / admin 建号 / 懒创建 profile 都视为已信任（Tier-3），
-    # 保持既有行为不变。**自助注册是唯一创建「未验证」profile 的路径**——register 视图显式置 False，
-    # 并由测试钉死「注册后不能登录 / 不能写」。default=False 会迫使引入 post_save 信号（与 admin
-    # ProfileInline 的 save_new 撞 OneToOne）或 data migration + 懒创建覆写，复杂度更高、安全收益为零。
-    email_verified = models.BooleanField("邮箱已验证", default=True)
-    identity_verified = models.BooleanField("身份已审核", default=True)
-    verified_at = models.DateTimeField("审核时间", null=True, blank=True)
-    verified_by = models.ForeignKey(
-        User, verbose_name="审核人", null=True, blank=True,
-        on_delete=models.SET_NULL, related_name="verified_profiles",
-    )
 
     def __str__(self):
         return f"{self.user.username}'s profile"
+
+
+class Verification(models.Model):
+    """验证通道当前状态（ADR-0006）：每 (user, channel) 一行，in-place 更新。
+
+    账号「已验证」⇔ 任一通道 ``status=approved``（见 :func:`is_verified`）。通道是一等公民：
+    邮箱、人工审批是通道；加通道 = 加 choices + 实现该通道流程，核心判定（任一 approved）不动。
+
+    - ``identifier`` 是通道主体：邮箱=待验地址（验证前住此、不进 ``User.email``）；人工=空。
+    - 审计走 ``IdentityProof``（人工通道证据，永久留底）；本表不留尝试历史。
+    """
+
+    CHANNEL_EMAIL = "email"
+    CHANNEL_MANUAL = "manual"
+    CHANNELS = [
+        (CHANNEL_EMAIL, "邮箱"),
+        (CHANNEL_MANUAL, "人工审批"),
+    ]
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUSES = [
+        (STATUS_PENDING, "待验证"),
+        (STATUS_APPROVED, "已通过"),
+        (STATUS_REJECTED, "已驳回"),
+    ]
+
+    user = models.ForeignKey(
+        User, verbose_name="用户", on_delete=models.CASCADE, related_name="verifications"
+    )
+    channel = models.CharField("通道", max_length=20, choices=CHANNELS)
+    status = models.CharField("状态", max_length=10, choices=STATUSES, default=STATUS_PENDING)
+    identifier = models.CharField("通道标识", max_length=254, blank=True, default="")
+    verified_at = models.DateTimeField("通过时间", null=True, blank=True)
+    verified_by = models.ForeignKey(
+        User, verbose_name="审核人", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="verifications_reviewed",
+    )
+
+    class Meta:
+        verbose_name = "验证通道"
+        verbose_name_plural = "验证通道"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "channel"], name="unique_user_channel"),
+        ]
+        indexes = [models.Index(fields=["user", "status"])]
+        ordering = ["user", "channel"]
+
+    def __str__(self):
+        return f"{self.user.username} · {self.get_channel_display()} · {self.get_status_display()}"
+
+
+def is_verified(user):
+    """账号「已验证」单一计算源（ADR-0006）：任一验证通道 approved 即真。
+
+    驱动 写操作门禁 / 徽章 / 邮箱登录前提 / 密码重置前提 / 验证面板。无 Verification 行 ⇒
+    未验证（访客）——不再有「无 profile 视为已审核」后备（ADR-0006 决策 7）。
+
+    纯计算：不含超级用户逃生舱（那是访问控制轴，由 ``IsVerified`` 门禁承担，ADR-0005 决策 9）。
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    return user.verifications.filter(status=Verification.STATUS_APPROVED).exists()
 
 
 class IdentityProof(models.Model):

@@ -11,7 +11,7 @@ from tasks.models import Task
 from proposals.models import Proposal
 from proposals.notifications import proposal_approvers
 
-from accounts.permissions import IsIdentityVerified
+from accounts.permissions import IsVerified
 from .models import Conversation, Message, MessageReadStatus, unread_message_count
 from .permissions import IsConversationParticipant
 from .serializers import ConversationSerializer, MessageSerializer
@@ -32,7 +32,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         perms = [IsAuthenticated(), IsConversationParticipant()]
         if self.action in self._IDENTITY_GATED:
-            perms.append(IsIdentityVerified())
+            perms.append(IsVerified())
         return perms
 
     def get_queryset(self): # pyright: ignore[reportIncompatibleMethodOverride]

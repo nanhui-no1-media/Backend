@@ -6,6 +6,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.core.validators import EmailValidator
 from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -21,7 +22,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.core.mail import send_mail
 
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
-from .models import Profile, IdentityProof, UserSession
+from .models import Profile, IdentityProof, UserSession, Verification, is_verified
 from .tokens import email_verification_token
 from .throttles import RegisterThrottle, ResendVerificationThrottle
 from .turnstile import verify_turnstile
@@ -33,11 +34,6 @@ logger = logging.getLogger(__name__)
 LOGIN_PROTECTION_SECONDS = 600  # 登录保护窗口：登录后 10 分钟内他方新会话登录被拒
 CONTENT_LIMIT = 15  # 个人中心每个内容 tab 返回的最近条数
 
-# 自助注册（#28）证明材料约束
-PROOF_MIN_COUNT = 1
-PROOF_MAX_COUNT = 3
-PROOF_MAX_BYTES = 5 * 1024 * 1024  # 单张 ≤ 5MB
-PROOF_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 IDENTITY_CHOICE_KEYS = {key for key, _label in Profile.IDENTITY_CHOICES}
 
 
@@ -58,11 +54,16 @@ def _form_errors(form):
 
 
 def _send_verification_email(user):
-    """发邮箱验证邮件（链接 = FRONTEND_URL + #/verify-email?uid=&token=）。
+    """发邮箱验证邮件到 **待验邮箱**（email 通道 identifier，非 User.email）。
 
-    令牌绑定 user.email + email_verified（见 accounts.tokens）。发信失败仅记日志、不抛——
-    账号已建，用户可走「重发验证邮件」（#29）补发，不因 SMTP 抖动回滚注册。
+    链接 = FRONTEND_URL + #/verify-email?uid=&token=。令牌绑 identifier + 通道 status
+    （见 accounts.tokens）：改邮箱或验证通过后旧令牌失效。发信失败仅记日志、不抛——
+    账号已建，用户可走「重发」补发，不因 SMTP 抖动回滚。无待验邮箱则不发。
     """
+    v = user.verifications.filter(channel=Verification.CHANNEL_EMAIL).first()
+    if v is None or not v.identifier:
+        return  # 无待验邮箱：无可发（注册未留邮箱等情况）
+    recipient = v.identifier
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = email_verification_token.make_token(user)
     link = f"{settings.FRONTEND_URL}/#/verify-email?uid={uid}&token={token}"
@@ -70,12 +71,12 @@ def _send_verification_email(user):
         send_mail(
             subject="邮箱验证 - 南汇一中传媒社",
             message=(
-                "你好！请点击下方链接完成邮箱验证（注册后首次登录需要）：\n\n"
+                "你好！请点击下方链接完成邮箱验证：\n\n"
                 f"{link}\n\n"
                 "如果你没有注册过本社团账号，请忽略此邮件。"
             ),
             from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=[user.email],
+            recipient_list=[recipient],
             fail_silently=True,
         )
     except Exception:
@@ -102,21 +103,14 @@ def login_view(request):
     if candidate is None or not candidate.check_password(form.cleaned_data["password"]):
         return JsonResponse({"error": "Invalid credentials"}, status=401)
 
-    # 密码正确 → 确为本人，可安全揭示账号状态（自助注册三态：未验证 / 已停用 / 放行）。
+    # 密码正确 → 确为本人，可安全揭示账号状态（停用 / 放行）。
     if not candidate.is_active:
         return JsonResponse(
             {"error": "账号已停用，请联系信息组。", "reason": "account_disabled"},
             status=403,
         )
-    if not _email_verified(candidate):
-        return JsonResponse(
-            {
-                "error": "请先验证邮箱后再登录。",
-                "reason": "email_not_verified",
-                "email": candidate.email,
-            },
-            status=403,
-        )
+    # 登录与验证解耦（ADR-0006 决策 6）：未验证账号可登录为访客，仅 is_active 拒停用。
+    # 写操作门禁由 IsVerified 单独管（未验证能登、能读，不能写）。
 
     # 10 分钟登录保护：该账号已有当前会话且登录未满窗口、且非同一会话再认证 → 拒绝
     existing = UserSession.objects.filter(user=candidate, is_current=True).first()
@@ -239,12 +233,12 @@ def password_reset_confirm_view(request):
 
 @require_POST
 def register_view(request):
-    """自助注册（#28）：访客提交 → 建号（未验证）→ 发验证邮件。
+    """注册（ADR-0006）：建登录身份（用户名 + 密码 + Turnstile），邮箱可选。
 
-    multipart：username / password+password2 / real_name / identity / email /
-    turnstile_token / proof_files[]（1~3 张，jpg/png/webp，单张 ≤5MB）。一个事务建
-    User(is_active=True) + Profile（显式未验证）+ IdentityProof。发信失败不回滚。
-    限流 register scope（每 IP 5/日），Turnstile 在 DEBUG/未配 secret 时跳过。
+    注册↔验证分离：不再强制邮箱 / 身份证明 / real_name / identity。新号无 Verification 行 ⇒
+    未验证（访客）。若提供邮箱：建 email 通道 pending（identifier=待验地址）并发验证信，
+    ``User.email`` 保持空（待验邮箱不住 User.email）——验证通过才晋升（见 verify_email_view）。
+    real_name / identity 是可选资料（identity 若填须为合法枚举）。
     """
     # 限流优先：挡机器刷号（在所有校验之前）。
     if not RegisterThrottle().allow_request(request, None):
@@ -255,21 +249,13 @@ def register_view(request):
     password2 = request.POST.get("password2") or ""
     real_name = (request.POST.get("real_name") or "").strip()
     identity = (request.POST.get("identity") or "").strip()
-    email = (request.POST.get("email") or "").strip().lower()  # 邮箱全局大小写不敏感：归一化小写存储
+    email = (request.POST.get("email") or "").strip().lower()  # 邮箱大小写不敏感：归一化小写
     turnstile_token = request.POST.get("turnstile_token") or ""
-    proof_files = request.FILES.getlist("proof_files")
 
     errors = []
 
     if not username:
         errors.append("用户名不能为空")
-    if not email:
-        errors.append("邮箱不能为空")
-    if not real_name:
-        errors.append("真实姓名不能为空")
-    if identity not in IDENTITY_CHOICE_KEYS:
-        errors.append("请选择有效身份（在校生 / 外校生 / 毕业生）")
-
     if not password:
         errors.append("密码不能为空")
     if password != password2:
@@ -280,22 +266,22 @@ def register_view(request):
         except ValidationError as e:
             errors.extend(e.messages)
 
-    # 唯一性：用户名、邮箱均大小写不敏感
+    # 身份是可选资料；填了须是合法枚举。
+    if identity and identity not in IDENTITY_CHOICE_KEYS:
+        errors.append("请选择有效身份（在校生 / 外校生 / 毕业生）")
+
+    # 邮箱可选；填了须格式合法 + 唯一（User.email 或他人 pending identifier 均判重）。
+    if email:
+        try:
+            EmailValidator()(email)
+        except ValidationError:
+            errors.append("邮箱格式不正确")
+        if _email_taken(email):
+            errors.append("该邮箱已被占用")
+
+    # 用户名唯一（大小写不敏感）。
     if username and User.objects.filter(username__iexact=username).exists():
         errors.append("该用户名已被占用")
-    if email and User.objects.filter(email__iexact=email).exists():
-        errors.append("该邮箱已注册")
-
-    # 证明材料：数量 / 类型 / 大小
-    if len(proof_files) < PROOF_MIN_COUNT:
-        errors.append(f"请至少上传 {PROOF_MIN_COUNT} 张身份证明照片")
-    elif len(proof_files) > PROOF_MAX_COUNT:
-        errors.append(f"身份证明最多 {PROOF_MAX_COUNT} 张")
-    for f in proof_files:
-        if f.size > PROOF_MAX_BYTES:
-            errors.append(f"证明材料「{f.name}」超过 5MB 上限")
-        if f.content_type not in PROOF_ALLOWED_TYPES:
-            errors.append(f"证明材料「{f.name}」格式不支持（仅 JPG / PNG / WebP）")
 
     if errors:
         return JsonResponse({"error": errors[0] if len(errors) == 1 else errors}, status=400)
@@ -306,56 +292,66 @@ def register_view(request):
 
     try:
         with transaction.atomic():
+            # User.email 只装已验证邮箱：注册阶段留空；邮箱验证通过才晋升写入。
             user = User.objects.create_user(
-                username=username, email=email, password=password, is_active=True
+                username=username, email="", password=password, is_active=True
             )
-            # 自助注册：显式置未验证（profile 默认 True 是信任态，此处覆盖为待验证）。
-            Profile.objects.create(
-                user=user,
-                real_name=real_name,
-                identity=identity,
-                email_verified=False,
-                identity_verified=False,
-            )
-            for f in proof_files:
-                IdentityProof.objects.create(user=user, file=f)
+            Profile.objects.create(user=user, real_name=real_name, identity=identity)
+            if email:
+                Verification.objects.create(
+                    user=user, channel=Verification.CHANNEL_EMAIL,
+                    status=Verification.STATUS_PENDING, identifier=email,
+                )
     except Exception:
         logger.exception("注册建号失败: username=%s", username)
         return JsonResponse({"error": "注册失败，请稍后重试。"}, status=500)
 
-    # 发验证邮件（失败不回滚；用户可走「重发」补发）。
-    _send_verification_email(user)
+    if email:
+        _send_verification_email(user)
 
     return JsonResponse(
-        {"message": "注册成功，请查收邮件完成邮箱验证。", "user": {"id": user.id, "username": user.username}},
+        {
+            "message": "注册成功。" + ("请查收邮件完成邮箱验证。" if email else ""),
+            "user": {"id": user.id, "username": user.username},
+        },
         status=201,
     )
 
 
 @require_GET
 def verify_email_view(request):
-    """邮箱验证（#29）：GET /auth/verify-email/?uid=&token= → 校验通过则置 email_verified=True。
+    """邮箱验证：GET /auth/verify-email/?uid=&token= → email 通道 approved + 晋升 User.email。
 
-    令牌绑定 user.email + email_verified（见 tokens），故改邮箱或已验证后旧令牌失效。
+    令牌绑 identifier + 通道 status（见 tokens）：改待验邮箱或验证通过后旧令牌失效。
+    验证通过：identifier 晋升写入 User.email（绑定邮箱生效，可用邮箱登录 / 重置密码）。
     """
     user = _user_from_uid(request.GET.get("uid", ""))
     token = request.GET.get("token", "")
     if user is None or not email_verification_token.check_token(user, token):
         return JsonResponse({"error": "验证链接无效或已过期。", "reason": "invalid"}, status=400)
 
-    profile = _get_or_create_profile(user)
-    if not profile.email_verified:
-        profile.email_verified = True
-        profile.save(update_fields=["email_verified"])
-    return JsonResponse({"message": "邮箱验证成功，现在可以登录了。"})
+    v = user.verifications.filter(channel=Verification.CHANNEL_EMAIL).first()
+    if v is None or not v.identifier:
+        return JsonResponse({"error": "验证链接无效或已过期。", "reason": "invalid"}, status=400)
+
+    # approved：identifier 晋升 → User.email（绑定邮箱生效）；令牌随 status 翻转失效，不可重放。
+    if v.status != Verification.STATUS_APPROVED:
+        v.status = Verification.STATUS_APPROVED
+        v.verified_at = timezone.now()
+        v.verified_by = None  # 邮箱自证，无审核人
+        v.save(update_fields=["status", "verified_at", "verified_by"])
+    if user.email != v.identifier:
+        user.email = v.identifier
+        user.save(update_fields=["email"])
+    return JsonResponse({"message": "邮箱验证成功。"})
 
 
 @require_POST
 def resend_verification_view(request):
-    """重发验证邮件（#29）：POST {email}，resend_verification scope 限流。
+    """重发邮箱验证邮件：POST {email}，按 email 通道 identifier 查待验账号。
 
-    不泄密：无论邮箱是否存在 / 是否已验证，返回同样提示（防账号探测）。
-    只对「存在、启用、未验证」的账号真正发信。
+    不泄密：无论邮箱是否存在 / 是否在验 / 已验证，返回同样提示（防账号探测）。
+    只对「存在 pending email 通道、账号启用」的账号真正发信（发往待验 identifier）。
     """
     if not ResendVerificationThrottle().allow_request(request, None):
         return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
@@ -368,11 +364,19 @@ def resend_verification_view(request):
     if not email:
         return JsonResponse({"error": "请输入邮箱。"}, status=400)
 
-    user = User.objects.filter(email__iexact=email).first()
-    if user is not None and user.is_active and not _email_verified(user):
-        _send_verification_email(user)
+    v = (
+        Verification.objects.select_related("user")
+        .filter(
+            channel=Verification.CHANNEL_EMAIL,
+            status=Verification.STATUS_PENDING,
+            identifier__iexact=email,
+        )
+        .first()
+    )
+    if v is not None and v.user.is_active:
+        _send_verification_email(v.user)
 
-    return JsonResponse({"message": "如果该邮箱已注册且尚未验证，验证邮件已重发。"})
+    return JsonResponse({"message": "如果该邮箱正在验证中，验证邮件已重发。"})
 
 
 @login_required
@@ -402,10 +406,17 @@ def _get_or_create_profile(user):
     return profile
 
 
-def _email_verified(user):
-    """登录门槛：profile.email_verified。无 profile 的存量 / admin 用户视为已验证（保持既有行为）。"""
-    profile = getattr(user, "profile", None)
-    return profile is None or profile.email_verified
+def _email_taken(email, exclude_user=None):
+    """邮箱是否已被他账号有效持有：User.email（已验证绑定）或他人 email 通道 identifier（含 pending）。
+
+    绑定唯一性（ADR-0006 决策 10）：一个邮箱同一时刻只能被一个账号有效持有（已绑定或正在验）。
+    """
+    users = User.objects.filter(email__iexact=email)
+    vs = Verification.objects.filter(channel=Verification.CHANNEL_EMAIL, identifier__iexact=email)
+    if exclude_user is not None:
+        users = users.exclude(pk=exclude_user.pk)
+        vs = vs.exclude(user=exclude_user)
+    return users.exists() or vs.exists()
 
 
 def _user_from_uid(uid):
@@ -432,11 +443,10 @@ def _capabilities(user):
 
 
 def _role_for(user):
-    """身份徽章 {label, variant}：超管 > 管理员 > 用户 > 访客（ADR-0005 决策 7）。
+    """身份徽章 {label, variant}：超管 > 管理员 > 用户 > 访客（ADR-0005 决策 7 / ADR-0006）。
 
-    与组、权限解耦——纯身份态派生；variant 供前端徽章配色。「访客」含匿名与已登录
-    未过身份审核者；无 profile 的存量 / admin / 测试用户视为已审核（信任态，与
-    ``accounts.permissions.IsIdentityVerified`` 一致）。
+    与组、权限解耦——纯身份态派生；variant 供前端徽章配色。「用户 / 访客」分界读
+    ``is_verified``（任一验证通道通过即用户，否则访客）。
     """
     if not user.is_authenticated:
         return {"label": "访客", "variant": "visitor"}
@@ -444,8 +454,7 @@ def _role_for(user):
         return {"label": "超级管理员", "variant": "superadmin"}
     if user.is_staff:
         return {"label": "管理员", "variant": "admin"}
-    profile = getattr(user, "profile", None)
-    if profile is None or profile.identity_verified:
+    if is_verified(user):
         return {"label": "用户", "variant": "user"}
     return {"label": "访客", "variant": "visitor"}
 
@@ -464,9 +473,8 @@ def _profile_response(user, profile):
             "birthday": profile.birthday.isoformat() if profile.birthday else None,
             "gender": profile.gender,
             "bio": profile.bio,
-            # 自助注册验证状态（#30）：前端据此显 Tier-2 待审核提示条
-            "email_verified": profile.email_verified,
-            "identity_verified": profile.identity_verified,
+            # 验证态（ADR-0006）：前端据此显访客提示 / 引导去验证面板。
+            "is_verified": is_verified(user),
         },
     }
 

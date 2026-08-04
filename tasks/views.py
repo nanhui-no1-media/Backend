@@ -25,7 +25,7 @@ from .permissions import (
     CanModifyTask,
     CanViewTask,
 )
-from accounts.permissions import IsIdentityVerified
+from accounts.permissions import IsVerified
 from .serializers import (
     SimpleUserSerializer,
     TagSerializer,
@@ -86,7 +86,7 @@ class TaskViewSet(viewsets.ModelViewSet):
         else:
             perms = [IsAuthenticated(), CanViewTask()]
         if self.action in self._IDENTITY_GATED:
-            perms.append(IsIdentityVerified())
+            perms.append(IsVerified())
         return perms
 
     def get_queryset(self):
