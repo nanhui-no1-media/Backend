@@ -42,17 +42,81 @@ const STATE: Record<string, Record<ChannelStatus, { label: string; badge: string
   },
 };
 
+function CardShell({ card, children }: { card: ChannelCard; children?: React.ReactNode }) {
+  const meta = CHANNEL_META[card.channel] ?? { label: card.channel, desc: "" };
+  const st = (STATE[card.channel] ?? STATE.manual)[card.status];
+  const showPendingId = card.channel === "email" && card.status === "pending" && card.identifier;
+  const showBoundId = card.channel === "email" && card.status === "approved" && card.identifier;
+  return (
+    <div className={"verify-card verify-card-" + card.status}>
+      <div className="verify-card-head">
+        <span className="verify-card-label">{meta.label}</span>
+        <span className={"badge " + st.badge}>{st.label}</span>
+      </div>
+      {meta.desc && <p className="muted verify-card-desc">{meta.desc}</p>}
+      {showPendingId && <p className="muted verify-card-id">待验证邮箱：{card.identifier}</p>}
+      {showBoundId && <p className="muted verify-card-id">已绑定：{card.identifier}</p>}
+      {st.hint && <p className="muted verify-card-hint">{st.hint}</p>}
+      {children}
+    </div>
+  );
+}
+
+function EmailCard({ card, onChanged }: { card: ChannelCard; onChanged: () => void }) {
+  const [emailInput, setEmailInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  const bind = (email: string) => {
+    if (!email) return;
+    setSubmitting(true);
+    setErr("");
+    setMsg("");
+    api.verificationEmailBind(email)
+      .then(() => {
+        setMsg("验证邮件已发送，请查收。");
+        setEmailInput("");
+        onChanged();
+      })
+      .catch((e: any) => setErr(e.message || "操作失败"))
+      .finally(() => setSubmitting(false));
+  };
+
+  const primaryLabel = card.status === "none" ? "绑定邮箱" : "换绑邮箱";
+
+  return (
+    <CardShell card={card}>
+      <div className="verify-card-actions">
+        {card.status === "pending" && (
+          <button className="btn btn-sm" type="button" disabled={submitting}
+                  onClick={() => bind(card.identifier)}>重发验证邮件</button>
+        )}
+        <div className="verify-email-form">
+          <input type="email" inputMode="email" placeholder="email@example.com"
+                 value={emailInput} disabled={submitting}
+                 onChange={(e) => setEmailInput(e.target.value)} />
+          <button className="btn btn-sm btn-primary" type="button"
+                  disabled={submitting || !emailInput}
+                  onClick={() => bind(emailInput)}>{primaryLabel}</button>
+        </div>
+      </div>
+      {msg && <p className="muted verify-card-msg">{msg}</p>}
+      {err && <p className="verify-card-err">{err}</p>}
+    </CardShell>
+  );
+}
+
 export default function VerificationPanel() {
   const [data, setData] = useState<VerificationStatus | null>(null);
   const [err, setErr] = useState("");
 
-  useEffect(() => {
-    let alive = true;
+  const load = () => {
     api.verificationStatus()
-      .then((d: any) => { if (alive) setData(d as VerificationStatus); })
-      .catch((e: any) => { if (alive) setErr(e.message || "加载失败"); });
-    return () => { alive = false; };
-  }, []);
+      .then((d: any) => setData(d as VerificationStatus))
+      .catch((e: any) => setErr(e.message || "加载失败"));
+  };
+  useEffect(load, []);
 
   if (err) {
     return (
@@ -80,27 +144,15 @@ export default function VerificationPanel() {
           : "你的账号尚未验证（访客）——完成下列任一通道即成为已验证用户，解锁发帖 / 发消息 / 建申报等。"}
       </p>
       <div className="verify-cards">
-        {data.channels.map((c) => {
-          const meta = CHANNEL_META[c.channel] ?? { label: c.channel, desc: "" };
-          const st = (STATE[c.channel] ?? STATE.manual)[c.status];
-          const showPendingId = c.channel === "email" && c.status === "pending" && c.identifier;
-          return (
-            <div key={c.channel} className={"verify-card verify-card-" + c.status}>
-              <div className="verify-card-head">
-                <span className="verify-card-label">{meta.label}</span>
-                <span className={"badge " + st.badge}>{st.label}</span>
-              </div>
-              {meta.desc && <p className="muted verify-card-desc">{meta.desc}</p>}
-              {showPendingId && <p className="muted verify-card-id">待验证邮箱：{c.identifier}</p>}
-              {c.channel === "email" && c.status === "approved" && c.identifier && (
-                <p className="muted verify-card-id">已绑定：{c.identifier}</p>
-              )}
-              {st.hint && <p className="muted verify-card-hint">{st.hint}</p>}
-              <div className="verify-card-actions">{/* 通道动作在 #37（邮箱）/ #38（人工）接入 */}</div>
-            </div>
-          );
-        })}
+        {data.channels.map((c) =>
+          c.channel === "email" ? (
+            <EmailCard key={c.channel} card={c} onChanged={load} />
+          ) : (
+            <CardShell key={c.channel} card={c} />
+          )
+        )}
       </div>
     </div>
   );
 }
+

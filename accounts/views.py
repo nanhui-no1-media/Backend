@@ -175,6 +175,64 @@ def verification_status_view(request):
     return JsonResponse({"is_verified": is_verified(user), "channels": channels})
 
 
+@require_POST
+@login_required
+def verification_email_bind_view(request):
+    """邮箱通道绑定 / 重发 / 换邮（面板动作，#37 / ADR-0006）。
+
+    统一为「email 通道置 pending + identifier=待验地址 + 发信」，``User.email`` 不动（待验邮箱
+    不住此）——验证通过才晋升（见 verify_email_view）。故：
+      - 首次绑定 / 重发同邮箱 → 建或刷新 pending 行并发信；
+      - 换邮箱（含已验证旧邮箱）→ 回 pending(identifier=新)，旧 User.email 在新验证前仍有效；
+      - 已验证同邮箱再绑 → no-op（不降级）。
+    绑定时校验邮箱唯一（User.email 或他人 pending identifier）。
+    """
+    if not ResendVerificationThrottle().allow_request(request, None):
+        return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
+
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    email = (body.get("email") or "").strip().lower()
+    if not email:
+        return JsonResponse({"error": "请输入邮箱。"}, status=400)
+    try:
+        EmailValidator()(email)
+    except ValidationError:
+        return JsonResponse({"error": "邮箱格式不正确"}, status=400)
+
+    user = request.user
+    existing = user.verifications.filter(channel=Verification.CHANNEL_EMAIL).first()
+    # 已验证同邮箱再绑 → no-op（不降级为 pending、不重发）
+    if (
+        existing is not None
+        and existing.status == Verification.STATUS_APPROVED
+        and existing.identifier == email
+    ):
+        return JsonResponse({"message": "该邮箱已验证。"})
+
+    # 唯一性：不可绑他账号有效持有的邮箱（已验证 User.email 或他人 pending identifier）
+    if _email_taken(email, exclude_user=user):
+        return JsonResponse({"error": "该邮箱已被占用"}, status=400)
+
+    if existing is None:
+        Verification.objects.create(
+            user=user, channel=Verification.CHANNEL_EMAIL,
+            status=Verification.STATUS_PENDING, identifier=email,
+        )
+    else:
+        # 换邮箱：回 pending + 新 identifier；旧 verified_at/by 随之失效（令牌绑 status 也失效）
+        existing.status = Verification.STATUS_PENDING
+        existing.identifier = email
+        existing.verified_at = None
+        existing.verified_by = None
+        existing.save(update_fields=["status", "identifier", "verified_at", "verified_by"])
+
+    _send_verification_email(user)
+    return JsonResponse({"message": "验证邮件已发送，请查收。"})
+
+
 @login_required
 def me_view(request):
     profile = _get_or_create_profile(request.user)

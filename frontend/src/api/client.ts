@@ -18,6 +18,9 @@ export const api = {
   verificationStatus: () =>
     request("/verification/"),
 
+  verificationEmailBind: (email: string) =>
+    request("/verification/email/bind/", { method: "POST", body: JSON.stringify({ email }) }),
+
   listSessions: () =>
     request("/sessions/"),
 
