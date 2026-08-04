@@ -10,6 +10,7 @@ const CAP_LABELS: Record<string, string> = {
   can_approve_proposals: "审批申报",
   can_change_proposals: "修改申报",
   can_view_feedback: "查看反馈",
+  can_edit_about: "编辑关于",
 };
 
 /** 统一的 24x24 线性图标外壳，沿用项目内联 SVG 约定（stroke=currentColor）。 */
@@ -67,6 +68,13 @@ const CAP_ICONS: Record<string, ReactNode> = {
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </Svg>
   ),
+  can_edit_about: (
+    <Svg>
+      <circle cx={12} cy={12} r={9} />
+      <path d="M12 11v5" />
+      <path d="M12 7.5h.01" />
+    </Svg>
+  ),
 };
 
 export default function PermissionsPanel({ profile }: { profile: UserProfileData }) {
@@ -75,9 +83,6 @@ export default function PermissionsPanel({ profile }: { profile: UserProfileData
   return (
     <div className="card card-pad">
       <h2 className="profile-panel-title">权限与角色</h2>
-      <p className="muted" style={{ marginBottom: "var(--s-4)" }}>
-        所属组：{groups.length ? groups.join("、") : "（无）"}
-      </p>
       <ul className="profile-perms">
         {Object.entries(CAP_LABELS).map(([key, label]) => (
           <li key={key} className="profile-perm">
@@ -91,6 +96,9 @@ export default function PermissionsPanel({ profile }: { profile: UserProfileData
           </li>
         ))}
       </ul>
+      <p className="muted" style={{ marginTop: "var(--s-4)" }}>
+        所属组：{groups.length ? groups.join("、") : "（无）"}
+      </p>
     </div>
   );
 }

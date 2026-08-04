@@ -1,4 +1,4 @@
-export type RoleVariant = "president" | "info" | "member";
+export type RoleVariant = "visitor" | "user" | "admin" | "superadmin";
 
 export interface UserProfileData {
   user: { id: number; username: string; date_joined: string; email?: string };
@@ -32,7 +32,8 @@ export interface ContentItem {
 
 /** 角色 variant → 徽章 CSS 类（配色在 styles/profile.css） */
 export const ROLE_BADGE: Record<RoleVariant, string> = {
-  president: "badge-role-president",
-  info: "badge-role-info",
-  member: "badge-role-member",
+  visitor: "badge-role-visitor",
+  user: "badge-role-user",
+  admin: "badge-role-admin",
+  superadmin: "badge-role-superadmin",
 };

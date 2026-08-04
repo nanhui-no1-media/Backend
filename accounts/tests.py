@@ -599,25 +599,80 @@ class SessionsViewTest(TestCase):
 
 
 class RoleForTest(TestCase):
+    """_role_for 按身份态派生徽章（ADR-0005 决策 7 / ADR-0006）：超管 > 管理员 > 用户 > 访客。
+
+    与组、权限解耦——纯 is_superuser / is_staff / is_verified 判定；「用户 / 访客」分界读
+    is_verified（任一验证通道 approved 即用户，否则访客）。
+    """
+
     def setUp(self):
         self.user = User.objects.create_user(username="u", password="p")
 
-    def test_president_wins_over_info(self):
-        from django.contrib.auth.models import Group
-        self.user.groups.add(Group.objects.get_or_create(name="社长")[0])
-        self.user.groups.add(Group.objects.get_or_create(name="信息组")[0])
+    def test_superadmin(self):
+        self.user.is_superuser = True
+        self.user.save()
         from .views import _role_for
-        self.assertEqual(_role_for(self.user), {"label": "社长", "variant": "president"})
+        self.assertEqual(_role_for(self.user), {"label": "超级管理员", "variant": "superadmin"})
 
-    def test_info_group(self):
-        from django.contrib.auth.models import Group
-        self.user.groups.add(Group.objects.get_or_create(name="信息组")[0])
+    def test_admin(self):
+        self.user.is_staff = True
+        self.user.save()
         from .views import _role_for
-        self.assertEqual(_role_for(self.user), {"label": "信息组", "variant": "info"})
+        self.assertEqual(_role_for(self.user), {"label": "管理员", "variant": "admin"})
 
-    def test_plain_member(self):
+    def test_superadmin_wins_over_staff(self):
+        self.user.is_superuser = True
+        self.user.is_staff = True
+        self.user.save()
         from .views import _role_for
-        self.assertEqual(_role_for(self.user), {"label": "成员", "variant": "member"})
+        self.assertEqual(_role_for(self.user), {"label": "超级管理员", "variant": "superadmin"})
+
+    def test_verified_user(self):
+        # 有 approved 通道 ⇒ 用户
+        from .models import Verification
+        from .views import _role_for
+        Verification.objects.create(
+            user=self.user, channel=Verification.CHANNEL_MANUAL, status=Verification.STATUS_APPROVED
+        )
+        self.assertEqual(_role_for(self.user), {"label": "用户", "variant": "user"})
+
+    def test_unverified_is_visitor(self):
+        # 无 Verification 行 ⇒ 访客（不再有「无 profile 视为已审核」后备）
+        from .views import _role_for
+        self.assertEqual(_role_for(self.user), {"label": "访客", "variant": "visitor"})
+
+    def test_anonymous_is_visitor(self):
+        from django.contrib.auth.models import AnonymousUser
+        from .views import _role_for
+        self.assertEqual(_role_for(AnonymousUser()), {"label": "访客", "variant": "visitor"})
+
+
+class CapabilityKeysContractTest(TestCase):
+    """前后端能力键集契约（ADR-0005 决策 4）：后端 _capabilities 键集必须与
+    前端 PermissionsPanel.tsx 的 CAP_LABELS 键集一致，防漂移（后端加键、前端漏显）。
+    """
+
+    def test_frontend_cap_labels_match_backend_capabilities(self):
+        import re
+        from pathlib import Path
+        from .views import _capabilities
+
+        ts_path = (
+            Path(__file__).resolve().parents[1]
+            / "frontend" / "src" / "components" / "profile" / "PermissionsPanel.tsx"
+        )
+        src = ts_path.read_text(encoding="utf-8")
+        match = re.search(r"CAP_LABELS[^{]*\{([^}]*)\}", src)
+        self.assertIsNotNone(match, "未在前端找到 CAP_LABELS 块")
+        fe_keys = set(re.findall(r"([A-Za-z_]+)\s*:", match.group(1)))
+
+        user = User.objects.create_user(username="u", password="p")
+        be_keys = set(_capabilities(user).keys())
+
+        self.assertEqual(
+            fe_keys, be_keys,
+            f"能力键集漂移：后端={sorted(be_keys)} 前端={sorted(fe_keys)}",
+        )
 
 
 class UserProfileViewTest(TestCase):

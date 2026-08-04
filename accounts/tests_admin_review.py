@@ -9,7 +9,7 @@ from django.test import RequestFactory, TestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
-from accounts.models import IdentityProof, Profile, UserSession
+from accounts.models import IdentityProof, Profile, UserSession, Verification, is_verified
 from accounts.admin import ProfileAdmin, approve_identity, disable_account
 
 PNG_BYTES = bytes.fromhex(
@@ -69,9 +69,7 @@ class AdminReviewActionsTest(TestCase):
         self.reviewer = grant_review(User.objects.create_user(username="rev", password="p"))
         self.staff_no_perm = User.objects.create_user(username="staff", password="p")
         self.target = User.objects.create_user(username="tgt", password="p", email="t@e.com")
-        Profile.objects.update_or_create(
-            user=self.target, defaults={"email_verified": True, "identity_verified": False}
-        )
+        Profile.objects.create(user=self.target)  # 审核动作挂在 ProfileAdmin，需有 profile
         self.factory = RequestFactory()
         self.ma = ProfileAdmin(Profile, admin.site)
         # message_user 依赖 messages 中间件；RequestFactory 裸请求没有，stub 掉（动作逻辑不受影响）
@@ -82,12 +80,13 @@ class AdminReviewActionsTest(TestCase):
         req.user = user
         return req
 
-    def test_approve_identity_sets_verified_and_emails(self):
+    def test_approve_sets_manual_channel_approved_and_emails(self):
         approve_identity(self.ma, self._req(self.reviewer), Profile.objects.filter(pk=self.target.profile.pk))
-        self.target.profile.refresh_from_db()
-        self.assertTrue(self.target.profile.identity_verified)
-        self.assertIsNotNone(self.target.profile.verified_at)
-        self.assertEqual(self.target.profile.verified_by, self.reviewer)
+        v = Verification.objects.get(user=self.target, channel=Verification.CHANNEL_MANUAL)
+        self.assertEqual(v.status, Verification.STATUS_APPROVED)
+        self.assertEqual(v.verified_by, self.reviewer)
+        self.assertIsNotNone(v.verified_at)
+        self.assertTrue(is_verified(self.target))  # manual approved ⇒ 已验证
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("通过", mail.outbox[0].subject)
 

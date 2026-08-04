@@ -11,7 +11,7 @@ from tasks.models import Task
 from proposals.models import Proposal
 from proposals.notifications import proposal_approvers
 
-from accounts.permissions import IsIdentityVerified
+from accounts.permissions import IsVerified
 from .models import Conversation, Message, MessageReadStatus, unread_message_count
 from .permissions import IsConversationParticipant
 from .serializers import ConversationSerializer, MessageSerializer
@@ -25,14 +25,14 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     # 身份门槛（#30）：仅「写 / 建会话」动作需身份已审核；读（messages / unread_count /
     # mark_read / list / retrieve）不挂，保持 Tier-2 只读。
-    _IDENTITY_GATED = {
+    _VERIFIED_GATED = {
         "send_message", "start_private", "get_task_conversation", "get_proposal_conversation",
     }
 
     def get_permissions(self):
         perms = [IsAuthenticated(), IsConversationParticipant()]
-        if self.action in self._IDENTITY_GATED:
-            perms.append(IsIdentityVerified())
+        if self.action in self._VERIFIED_GATED:
+            perms.append(IsVerified())
         return perms
 
     def get_queryset(self): # pyright: ignore[reportIncompatibleMethodOverride]
@@ -177,11 +177,10 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
         user = request.user
         # 反馈/举报仅有 view_feedback 权限者可见；活动申报对所有登录用户开放
+        # （viewset 已 IsAuthenticated，此处不必再判登录态）
         if proposal.proposal_type == "feedback":
             if not user.has_perm("proposals.view_feedback"):
                 return Response({"detail": "无权访问"}, status=status.HTTP_403_FORBIDDEN)
-        if not user.is_authenticated:
-            return Response({"detail": "请先登录"}, status=status.HTTP_401_UNAUTHORIZED)
 
         conversation, _ = Conversation.objects.get_or_create(
             conversation_type="proposal",

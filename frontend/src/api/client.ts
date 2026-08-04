@@ -15,6 +15,15 @@ export const api = {
   me: () =>
     request("/me/"),
 
+  verificationStatus: () =>
+    request("/verification/"),
+
+  verificationEmailBind: (email: string) =>
+    request("/verification/email/bind/", { method: "POST", body: JSON.stringify({ email }) }),
+
+  verificationManualSubmit: (data: FormData) =>
+    request("/verification/manual/submit/", { method: "POST", body: data }),
+
   listSessions: () =>
     request("/sessions/"),
 
