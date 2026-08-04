@@ -5,8 +5,8 @@ import { api } from "../api/client";
 import SessionSupersedeModal from "./SessionSupersedeModal";
 import { useLoginModal } from "./LoginModalProvider";
 
-// 轮询提速到 5s：被挤设备最迟 ~5s 感知挤号（原 60s）；内部工具并发低，5s 心跳可接受
-const POLL_INTERVAL_MS = 5000;
+// 轮询提速到 15s：被挤设备最迟 ~15s 感知挤号（原 60s）；内部工具并发低，15s 心跳可接受
+const POLL_INTERVAL_MS = 15000;
 
 export default function SessionGuard({ children }: { children: ReactNode }) {
   const [takeover, setTakeover] = useState<SupersedeTakeover | null>(null);
@@ -27,7 +27,7 @@ export default function SessionGuard({ children }: { children: ReactNode }) {
   }, []);
 
   // 仅在已登录时轮询 /auth/me/：挂载 + 每次登录/登出（authNonce 变化）后先探测一次，
-  // 已登录才起 5s 心跳；未登录/已登出则不轮询——没有会话就不会被挤号。
+  // 已登录才起 15s 心跳；未登录/已登出则不轮询——没有会话就不会被挤号。
   useEffect(() => {
     let cancelled = false;
     api.me()
