@@ -34,6 +34,8 @@ class Profile(models.Model):
         ("student", "在校生"),
         ("external", "外校生"),
         ("graduate", "毕业生"),
+        ("parent", "家长"),
+        ("teacher", "教师"),
     ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")

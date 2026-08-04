@@ -244,16 +244,20 @@ def verification_email_bind_view(request):
 def verification_manual_submit_view(request):
     """人工审批通道：提交身份证明（#38 / ADR-0006）。
 
-    multipart：real_name + proof_files[]（1~3 张 jpg/png/webp，单张 ≤5MB）。把 manual 通道置
-    pending + IdentityProof 累加（永久留底，审核通过后亦不删）。仅当 manual 当前 none / rejected
-    可提交（pending 审核中、已通过 不可重复）。real_name 写入 Profile（人工审核需知真实姓名）。
+    multipart：real_name + identity（在校生 / 外校生 / 毕业生 / 家长 / 教师）+ proof_files[]
+    （1~3 张 jpg/png/webp，单张 ≤5MB）。把 manual 通道置 pending + IdentityProof 累加（永久
+    留底，审核通过后亦不删）。仅当 manual 当前 none / rejected 可提交（pending 审核中、已通过
+    不可重复）。real_name / identity 写入 Profile（人工审核需知真实身份）。
     """
     real_name = (request.POST.get("real_name") or "").strip()
+    identity = (request.POST.get("identity") or "").strip()
     proof_files = request.FILES.getlist("proof_files")
 
     errors = []
     if not real_name:
         errors.append("请填写真实姓名")
+    if identity not in IDENTITY_CHOICE_KEYS:
+        errors.append("请选择有效身份")
     if len(proof_files) < PROOF_MIN_COUNT:
         errors.append(f"请至少上传 {PROOF_MIN_COUNT} 张身份证明照片")
     elif len(proof_files) > PROOF_MAX_COUNT:
@@ -287,9 +291,9 @@ def verification_manual_submit_view(request):
         for f in proof_files:
             IdentityProof.objects.create(user=user, file=f)
         profile = _get_or_create_profile(user)
-        if profile.real_name != real_name:
-            profile.real_name = real_name
-            profile.save(update_fields=["real_name"])
+        profile.real_name = real_name
+        profile.identity = identity
+        profile.save(update_fields=["real_name", "identity"])
 
     return JsonResponse({"message": "身份证明已提交，等待管理员审核。"})
 
@@ -409,7 +413,7 @@ def register_view(request):
 
     # 身份是可选资料；填了须是合法枚举。
     if identity and identity not in IDENTITY_CHOICE_KEYS:
-        errors.append("请选择有效身份（在校生 / 外校生 / 毕业生）")
+        errors.append("请选择有效身份")
 
     # 邮箱可选；填了须格式合法 + 唯一（User.email 或他人 pending identifier 均判重）。
     if email:
