@@ -10,6 +10,7 @@ const CAP_LABELS: Record<string, string> = {
   can_approve_proposals: "审批申报",
   can_change_proposals: "修改申报",
   can_view_feedback: "查看反馈",
+  can_review_collections: "复审征集",
   can_edit_about: "编辑关于",
 };
 
