@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { activityApi } from "../api/activities";
 import {
   ActivityDetail,
-  ACTIVITY_TYPE_LABELS,
+  ACTIVITY_TYPE_META,
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_BADGE_CLASS,
   REVIEW_STATUS_LABELS,
@@ -77,6 +77,19 @@ export default function ActivityDetailPage() {
   })();
   const currentIndex = Math.max(0, phases.findIndex((p) => p.key === a.status));
 
+  // 当前阶段的时间进度（0..1）：scheduled=创建→start；open/collecting=start→end；复审/归档不计。
+  const nowMs = Date.now();
+  const t = (iso: string | null) => (iso ? new Date(iso).getTime() : null);
+  let currentProgress = 0;
+  if (a.status === "scheduled" && a.start_at) {
+    const s = t(a.created_at), e = t(a.start_at);
+    currentProgress = s && e && e > s ? (nowMs - s) / (e - s) : 0;
+  } else if (a.status === "open" || a.status === "collecting") {
+    const s = a.start_at ? t(a.start_at) : t(a.created_at), e = t(a.end_at);
+    currentProgress = s && e && e > s ? (nowMs - s) / (e - s) : 0;
+  }
+  currentProgress = Math.max(0, Math.min(1, currentProgress));
+
   const toggleOption = (oid: number) => {
     setSelected((cur) => {
       // 已选 → 撤选（提交前可改）
@@ -123,12 +136,18 @@ export default function ActivityDetailPage() {
   return (
     <AppShell>
       <div className="page-head">
-        <div className="container">
+        <div className="container act-head-row">
           <nav className="breadcrumb">
             <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>活动</a>
             <span className="sep">/</span>
             <span>{a.title}</span>
           </nav>
+          {canManage && a.status === "scheduled" && (
+            <button className="btn btn-primary btn-sm" onClick={() => navigate(`/activity/${a.id}/edit`)}>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+              编辑
+            </button>
+          )}
         </div>
       </div>
 
@@ -138,21 +157,13 @@ export default function ActivityDetailPage() {
         <div className="card card-pad">
           <div className="pc-meta" style={{ marginBottom: 8 }}>
             <span className={"badge " + ACTIVITY_STATUS_BADGE_CLASS[a.status]}>{ACTIVITY_STATUS_LABELS[a.status]}</span>
-            <span className="type-tag">{ACTIVITY_TYPE_LABELS[a.type]}</span>
-            {a.creator && (
-              <span className="who"><Link to={`/u/${a.creator.id}`}><Avatar user={a.creator} /></Link>{a.creator.nickname || a.creator.username}</span>
-            )}
-            {a.end_at && <span>截止 {new Date(a.end_at).toLocaleString("zh-CN")}</span>}
+            <span className={"act-medal " + ACTIVITY_TYPE_META[a.type].medal}>
+              <span className="act-medal-ico">{ACTIVITY_TYPE_META[a.type].emoji}</span>
+              {ACTIVITY_TYPE_META[a.type].label}
+            </span>
           </div>
           <h1 style={{ margin: "0 0 var(--s-4)" }}>{a.title}</h1>
           {a.body && <div className="prose" dangerouslySetInnerHTML={{ __html: a.body }} />}
-          {canManage && a.status === "scheduled" && (
-            <div style={{ marginTop: "var(--s-4)" }}>
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/activity/${a.id}/edit`)}>
-                编辑（待开始期间可改时间/内容）
-              </button>
-            </div>
-          )}
           {canManage && (a.status === "open" || a.status === "collecting") && (
             <div style={{ marginTop: "var(--s-4)" }}>
               <button className="btn btn-ghost btn-sm" onClick={doClose} disabled={busy}>
@@ -170,6 +181,7 @@ export default function ActivityDetailPage() {
               <div
                 key={p.key}
                 className={"act-step" + (i === currentIndex ? " is-current" : "") + (i < currentIndex ? " is-done" : "")}
+                style={i === currentIndex ? ({ ["--step-progress" as any]: `${Math.round(currentProgress * 100)}%` }) : undefined}
               >
                 <div className="act-step-dot">{i < currentIndex ? "✓" : i + 1}</div>
                 <div className="act-step-label">{p.label}</div>
@@ -254,7 +266,7 @@ export default function ActivityDetailPage() {
           </div>
         )}
 
-        {/* 征集：投稿 + 复审 + 展示 */}
+        {/* 征集：规则置顶（左上角）+ 投稿/复审/展示（单栏） */}
         {isCollection && (
           <>
             <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
@@ -265,18 +277,19 @@ export default function ActivityDetailPage() {
                 <li>单作品文件数上限：{a.max_files_per_submission}</li>
                 <li>最大征集数量：{a.max_submissions ?? "不限"}{a.max_submissions && a.submissions ? `（已收 ${a.submissions.length}）` : ""}</li>
               </ul>
-
-              {a.status === "collecting" && !a.my_submission && (
-                <div style={{ marginTop: "var(--s-4)" }}>
-                  <label className="label">提交作品（一人一作品，提交即锁定）</label>
-                  <input type="file" multiple onChange={(e) => setFiles(Array.from(e.target.files || []))} />
-                  {files.length > 0 && <div className="hint">已选 {files.length} 个文件</div>}
-                  <div style={{ marginTop: 8 }}>
-                    <button className="btn btn-primary btn-sm" onClick={doSubmit} disabled={busy || files.length < 1}>提交作品</button>
-                  </div>
-                </div>
-              )}
             </div>
+
+            {a.status === "collecting" && !a.my_submission && (
+              <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
+                <h3 className="section-h">提交作品</h3>
+                <div className="hint" style={{ marginBottom: 8 }}>一人一作品，提交即锁定。</div>
+                <input type="file" multiple onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+                {files.length > 0 && <div className="hint">已选 {files.length} 个文件</div>}
+                <div style={{ marginTop: 8 }}>
+                  <button className="btn btn-primary btn-sm" onClick={doSubmit} disabled={busy || files.length < 1}>提交作品</button>
+                </div>
+              </div>
+            )}
 
             {a.my_submission && (
               <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
@@ -320,6 +333,16 @@ export default function ActivityDetailPage() {
               </div>
             )}
           </>
+        )}
+
+        {a.creator && (
+          <div className="act-author">
+            <Link to={`/u/${a.creator.id}`}><Avatar user={a.creator} size="md" /></Link>
+            <div>
+              <div className="ac-name">{a.creator.nickname || a.creator.username}</div>
+              <div className="ac-desc">@{a.creator.username} · 活动发起人</div>
+            </div>
+          </div>
         )}
       </div>
     </AppShell>

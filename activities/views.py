@@ -30,6 +30,7 @@ from .lifecycle import (
     can_edit,
     can_submit,
     maybe_close_collection_on_cap,
+    maybe_close_deliberation_on_full_vote,
     transition_due_starts,
     transition_overdue_deliberations,
 )
@@ -150,6 +151,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
             BallotSelection.objects.bulk_create(
                 [BallotSelection(ballot=ballot, option_id=oid) for oid in ids]
             )
+            maybe_close_deliberation_on_full_vote(activity)  # 全员投完即提前结算
 
         activity = self.get_queryset().get(pk=activity.pk)  # 刷新聚合计数
         return Response(ActivityDetailSerializer(activity, context={"request": request}).data)

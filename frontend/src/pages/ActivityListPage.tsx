@@ -5,7 +5,7 @@ import { activityApi } from "../api/activities";
 import {
   ActivityListItem,
   ActivityType,
-  ACTIVITY_TYPE_LABELS,
+  ACTIVITY_TYPE_META,
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_BADGE_CLASS,
 } from "../types/activities";
@@ -102,7 +102,10 @@ export default function ActivityListPage() {
               <div className="pc-title">{a.title}</div>
               <div className="pc-meta">
                 <span className={"badge " + ACTIVITY_STATUS_BADGE_CLASS[a.status]}>{ACTIVITY_STATUS_LABELS[a.status]}</span>
-                <span className="type-tag">{ACTIVITY_TYPE_LABELS[a.type]}</span>
+                <span className={"act-medal " + ACTIVITY_TYPE_META[a.type].medal}>
+                  <span className="act-medal-ico">{ACTIVITY_TYPE_META[a.type].emoji}</span>
+                  {ACTIVITY_TYPE_META[a.type].label}
+                </span>
                 {a.creator && (
                   <span className="who">
                     <Avatar user={a.creator} />

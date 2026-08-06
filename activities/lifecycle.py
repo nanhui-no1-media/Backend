@@ -136,5 +136,27 @@ def maybe_close_collection_on_cap(activity):
     return False
 
 
+def maybe_close_deliberation_on_full_vote(activity):
+    """全员投完即提前结算：众议 open 状态下，若已投票数 ≥ 已验证成员数，翻 closed。
+
+    分母 = 已验证成员数（``accounts.verified_member_count``，纯计算不含超管）。
+    在 vote 动作里调用（只有投票会改变票数）。逐行条件更新保证并发安全。
+    """
+    if activity.type != "deliberation" or activity.status != OPEN:
+        return False
+    from accounts.models import verified_member_count
+
+    total = verified_member_count()
+    if total <= 0:
+        return False
+    # 绕开预取缓存：用 Ballot 模型直接计票。
+    if Ballot.objects.filter(activity_id=activity.pk).count() >= total:
+        changed = Activity.objects.filter(
+            pk=activity.pk, status=OPEN,
+        ).update(status=CLOSED, updated_at=timezone.now())
+        return bool(changed)
+    return False
+
+
 # 延迟导入打破 activities 内部循环（lifecycle ↔ models 同 app，无环；保留供未来跨引用）。
-from .models import Activity, Submission  # noqa: E402
+from .models import Activity, Ballot, Submission  # noqa: E402

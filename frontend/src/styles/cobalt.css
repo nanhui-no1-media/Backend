@@ -152,6 +152,9 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 }
 .act-step:last-child::before { display: none; }
 .act-step.is-done::before { background: var(--success); }
+.act-step.is-current::before {
+  background: linear-gradient(to right, var(--brand-600) var(--step-progress, 0%), var(--line) var(--step-progress, 0%));
+}
 .act-step-dot {
   position: relative; z-index: 1;
   width: 28px; height: 28px; border-radius: var(--r-pill);
@@ -168,6 +171,28 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
   box-shadow: 0 0 0 4px oklch(0.34 0.095 256 / 0.15);
 }
 .act-step.is-current .act-step-label { color: var(--brand-800); }
+
+/* 活动发起人作者卡（底部，与新闻同级） */
+.act-author {
+  display: flex; align-items: center; gap: var(--s-3);
+  margin-top: var(--s-4); padding: var(--s-4);
+  background: var(--bg-soft); border-radius: var(--r-md);
+}
+.act-author .ac-name { font-weight: 700; color: var(--fg); }
+.act-author .ac-desc { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+/* 活动类型勋章（emoji + 配色徽章） */
+.act-medal { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: var(--r-pill); font-size: 13px; font-weight: 700; line-height: 1.4; }
+.act-medal-ico { font-size: 14px; line-height: 1; }
+.medal-vote { background: var(--brand-100); color: var(--brand-800); }
+.medal-collect { background: oklch(0.95 0.040 160); color: oklch(0.42 0.110 160); }
+
+/* 活动详情头部行（面包屑左、编辑按钮右）+ 征集两栏（主区 + 右侧规则） */
+.act-head-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); }
+.act-two-col { display: grid; grid-template-columns: 1fr 320px; gap: var(--s-4); margin-top: var(--s-4); align-items: start; }
+.act-main { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+.act-side { display: flex; flex-direction: column; gap: var(--s-4); }
+@media (max-width: 880px) { .act-two-col { grid-template-columns: 1fr; } }
 
 /* ---------- ⑤ 顶栏（.topnav） ---------- */
 .topnav {

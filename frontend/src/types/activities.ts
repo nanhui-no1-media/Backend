@@ -107,6 +107,12 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   collection: "征集",
 };
 
+// 活动类型勋章：emoji + 配色徽章（替换纯文字 type-tag）
+export const ACTIVITY_TYPE_META: Record<ActivityType, { label: string; emoji: string; medal: string }> = {
+  deliberation: { label: "众议", emoji: "🗳", medal: "medal-vote" },
+  collection: { label: "征集", emoji: "📥", medal: "medal-collect" },
+};
+
 export const ACTIVITY_STATUS_LABELS: Record<ActivityStatus, string> = {
   scheduled: "待开始",
   open: "投票中",

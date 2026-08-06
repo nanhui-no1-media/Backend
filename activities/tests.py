@@ -607,3 +607,39 @@ class SchedulingTest(TestCase):
             "start_at": self._future(days=5), "end_at": self._future(days=1),
         })
         self.assertEqual(r.status_code, 400)
+
+
+class AutoCloseOnFullVoteTest(TestCase):
+    """全员投完即提前结算：众议票数达已验证成员数时自动 closed。"""
+
+    def setUp(self):
+        # 本测试下已验证成员恰好 = author + m1 = 2 人（TestCase 隔离，无其他用户）
+        self.author = grant_verification(User.objects.create_user(username="author", password="x"))
+        self.m1 = grant_verification(User.objects.create_user(username="m1", password="x"))
+        self.client = APIClient()
+
+    def _make(self):
+        return _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "x", "body": "<p>x</p>",
+            "option_texts": ["A", "B"], "max_choices_per_voter": 1,
+        })
+
+    def _vote(self, user, aid, oid):
+        return _json(self.client, "post", f"/activities/activities/{aid}/vote/", user, {"option_ids": [oid]})
+
+    def test_not_closed_until_all_voted(self):
+        a = self._make()
+        aid, oa = a.data["id"], a.data["options"][0]["id"]
+        r = self._vote(self.m1, aid, oa)  # 1/2 投票
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["status"], "open")  # 仍未全员
+
+    def test_closed_when_all_voted(self):
+        a = self._make()
+        aid, oa = a.data["id"], a.data["options"][0]["id"]
+        self._vote(self.m1, aid, oa)
+        r = self._vote(self.author, aid, oa)  # 2/2 全员投完
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["status"], "closed")  # 自动结算
+        # closed 后再投被拒
+        self.assertEqual(self._vote(self.m1, aid, a.data["options"][1]["id"]).status_code, 400)
