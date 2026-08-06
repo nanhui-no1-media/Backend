@@ -117,28 +117,15 @@ class ProposalsGateTest(TestCase):
         self.tier2 = make_unverified("tier2")
         self.tier3 = make_verified("tier3")
         self.creator = make_verified("pcreator")
-        self.voting = Proposal.objects.create(
-            title="vote-me", proposal_type="activity", status="voting",
-            voting_end_at=timezone.now() + timedelta(days=1), creator=self.creator,
-        )
 
     def test_tier2_create_proposal_blocked(self):
-        resp = _post(_client(self.tier2), PROPOSALS, {"title": "x", "proposal_type": "activity"})
+        resp = _post(_client(self.tier2), PROPOSALS, {"title": "x", "proposal_type": "feedback"})
         self.assertEqual(resp.status_code, 403)
-
-    def test_tier2_vote_blocked(self):
-        resp = _post(_client(self.tier2), f"{PROPOSALS}{self.voting.id}/vote/", {"vote_choice": "approve"})
-        self.assertEqual(resp.status_code, 403)
-
-    def test_tier3_vote_allowed(self):
-        resp = _post(_client(self.tier3), f"{PROPOSALS}{self.voting.id}/vote/", {"vote_choice": "approve"})
-        self.assertEqual(resp.status_code, 200)
 
     def test_tier2_withdraw_blocked(self):
-        # tier2 自己的申报也撤不了（gate 先于 owner 校验）
+        # tier2 自己的反馈也撤不了（gate 先于 owner 校验）
         mine = Proposal.objects.create(
-            title="mine", proposal_type="activity", status="voting",
-            voting_end_at=timezone.now() + timedelta(days=1), creator=self.tier2,
+            title="mine", proposal_type="feedback", status="pending_approval", creator=self.tier2,
         )
         resp = _post(_client(self.tier2), f"{PROPOSALS}{mine.id}/withdraw/")
         self.assertEqual(resp.status_code, 403)

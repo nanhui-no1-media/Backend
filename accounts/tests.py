@@ -342,7 +342,7 @@ class RecordUserSessionTest(TestCase):
         # 当前会话（最后一次 key24）必在保留之列且为 current
         current = UserSession.objects.get(user=self.user, is_current=True)
         self.assertEqual(current.session_key, "key24")
-        self.assertIn(current.id, [r.id for r in rows])
+        self.assertIn(current.id, [r.id for r in rows]) # type: ignore
 
 
 class LoginSignalIntegrationTest(TestCase):
@@ -712,7 +712,7 @@ class UserProfileViewTest(TestCase):
         self.assertNotIn("groups", data)
 
     def test_owner_sees_everything(self):
-        data = self._login(self.viewed).get(f"/auth/users/{self.viewed.id}/profile/").json()
+        data = self._login(self.viewed).get(f"/auth/users/{self.viewed.id}/profile/").json() # pyright: ignore[reportAttributeAccessIssue]
         self.assertTrue(data["viewer"]["is_owner"])
         self.assertEqual(data["user"]["email"], "v@e.com")
         self.assertIn("birthday", data["profile"])
@@ -721,7 +721,7 @@ class UserProfileViewTest(TestCase):
         self.assertIn("groups", data)
 
     def test_admin_sees_permissions_but_not_private_fields(self):
-        data = self._login(self.admin).get(f"/auth/users/{self.viewed.id}/profile/").json()
+        data = self._login(self.admin).get(f"/auth/users/{self.viewed.id}/profile/").json() # pyright: ignore[reportAttributeAccessIssue]
         self.assertTrue(data["viewer"]["is_admin"])
         self.assertFalse(data["viewer"]["is_owner"])
         self.assertIn("permissions", data)
@@ -741,8 +741,8 @@ class UserContentViewTest(TestCase):
         from tasks.models import Task
         News.objects.create(title="published", author=self.owner, is_published=True)
         News.objects.create(title="draft", author=self.owner, is_published=False)
-        Proposal.objects.create(title="approved", proposal_type="activity", status="approved", creator=self.owner)
-        Proposal.objects.create(title="pending", proposal_type="activity", status="pending_approval", creator=self.owner)
+        Proposal.objects.create(title="approved", proposal_type="feedback", status="approved", creator=self.owner)
+        Proposal.objects.create(title="pending", proposal_type="feedback", status="pending_approval", creator=self.owner)
         Task.objects.create(title="t", creator=self.owner, assignee=self.owner)
 
     def _login(self, user):
@@ -751,10 +751,10 @@ class UserContentViewTest(TestCase):
         return c
 
     def _get(self, client, type_):
-        return client.get(f"/auth/users/{self.owner.id}/content/?type={type_}")
+        return client.get(f"/auth/users/{self.owner.id}/content/?type={type_}") # pyright: ignore[reportAttributeAccessIssue]
 
     def test_unauthenticated_redirects(self):
-        self.assertEqual(Client().get(f"/auth/users/{self.owner.id}/content/?type=news").status_code, 302)
+        self.assertEqual(Client().get(f"/auth/users/{self.owner.id}/content/?type=news").status_code, 302) # pyright: ignore[reportAttributeAccessIssue]
 
     def test_unknown_user_404(self):
         c = self._login(self.other)

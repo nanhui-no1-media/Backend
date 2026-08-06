@@ -31,7 +31,7 @@ export default function ProposalListPage() {
   const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
   const [proposals, setProposals] = useState<ProposalListItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<ProposalType>("activity");
+  const [typeFilter, setTypeFilter] = useState<ProposalType>("feedback");
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
@@ -59,13 +59,6 @@ export default function ProposalListPage() {
 
   const canViewFeedback = !!user?.can_view_feedback;
   const isLoggedIn = !!user;
-
-  // 非社长不可看反馈 tab，自动回到活动
-  useEffect(() => {
-    if (isLoggedIn && !canViewFeedback && typeFilter === "feedback") {
-      setTypeFilter("activity");
-    }
-  }, [isLoggedIn, canViewFeedback, typeFilter]);
 
   // 匿名用户默认展开反馈表单
   useEffect(() => {

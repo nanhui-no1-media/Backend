@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from proposals.models import Proposal
+from activities.models import Activity
 from tasks.models import Task
 
 from .models import News
@@ -151,12 +152,13 @@ class FeedTest(TestCase):
         return News.objects.create(title=title, **kw)
 
     def _activity(self, title, days_ago=0, **kw):
-        kw.setdefault("proposal_type", "activity")
-        kw.setdefault("status", "approved")
-        kw.setdefault("activity_type", "training")
-        p = Proposal.objects.create(title=title, **kw)
-        Proposal.objects.filter(pk=p.pk).update(approved_at=self._ts(days_ago))  # auto_now/add 之外的字段
-        return p
+        # 活动已迁移至 activities app（ADR 0007）；feed 取 created_at 作时间戳。
+        kw.setdefault("type", "deliberation")
+        kw.setdefault("status", "open")
+        kw.setdefault("creator", self.author)
+        a = Activity.objects.create(title=title, **kw)
+        Activity.objects.filter(pk=a.pk).update(created_at=self._ts(days_ago))  # auto_now_add 之外需 .update
+        return a
 
     def _task(self, title, days_ago=0, **kw):
         kw.setdefault("creator", self.member)
@@ -214,12 +216,12 @@ class FeedTest(TestCase):
         self.assertEqual(set(types), {"news", "activity"})
 
     def test_activity_projection_excludes_internal_fields(self):
-        self._activity("act", days_ago=0, budget="1234.56", contact="secret", reject_reason="nope")
+        self._activity("act", days_ago=0)
         act = next(i for i in build_feed(request=self.anon)["items"] if i["type"] == "activity")
-        for forbidden in ("budget", "vote_summary", "reject_reason", "contact", "creator", "description"):
+        for forbidden in ("budget", "vote_summary", "reject_reason", "contact", "creator", "description", "body", "options"):
             self.assertNotIn(forbidden, act)
-        self.assertEqual(act["activity_type"], "training")
-        self.assertIn("phase", act)
+        self.assertIn(act["activity_type"], ("deliberation", "collection"))
+        self.assertIn("status", act)
 
     def test_limit_truncates(self):
         for i in range(10):
@@ -232,17 +234,6 @@ class FeedTest(TestCase):
         self.assertIsNone(data["featured"])
         self.assertEqual(data["items"], [])
 
-    def test_activity_phase_derived_from_planned_date(self):
-        today = timezone.localdate()
-        up = self._activity("up"); Proposal.objects.filter(pk=up.pk).update(planned_date=today + timedelta(days=2))
-        og = self._activity("og"); Proposal.objects.filter(pk=og.pk).update(planned_date=today)
-        ed = self._activity("ed"); Proposal.objects.filter(pk=ed.pk).update(planned_date=today - timedelta(days=2))
-        by_title = {i["title"]: i["phase"]
-                    for i in build_feed(request=self.anon)["items"] if i["type"] == "activity"}
-        self.assertEqual(by_title["up"], "upcoming")
-        self.assertEqual(by_title["og"], "ongoing")
-        self.assertEqual(by_title["ed"], "ended")
-
 
 class FeedEndpointTest(TestCase):
     """端点 /news/news/feed/：匿名可读、不含任务；登录含任务。"""
@@ -251,10 +242,7 @@ class FeedEndpointTest(TestCase):
         self.author = _info(User.objects.create_user(username="info", password="x"))
         self.member = User.objects.create_user(username="member", password="x")
         News.objects.create(title="n1", author=self.author, is_published=True)
-        Proposal.objects.create(
-            proposal_type="activity", status="approved",
-            title="a1", activity_type="training",
-        )
+        Activity.objects.create(type="deliberation", status="open", title="a1", creator=self.author)
         Task.objects.create(title="t1", creator=self.member, status="in_progress")
         self.client = APIClient()
 

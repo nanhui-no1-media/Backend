@@ -21,13 +21,15 @@ interface AppShellRole {
 const NAV: { label: string; path: string }[] = [
   { label: "主页", path: "/" },
   { label: "新闻", path: "/news" },
-  { label: "活动申报", path: "/activity" },
+  { label: "活动", path: "/activity" },
+  { label: "反馈", path: "/feedback" },
   { label: "任务", path: "/tasks" },
 ];
 const USER_MENU: { label: string; path: string }[] = [
   { label: "个人中心", path: "/profile" },
   { label: "任务管理", path: "/tasks" },
-  { label: "活动申报", path: "/activity" },
+  { label: "活动", path: "/activity" },
+  { label: "意见反馈", path: "/feedback" },
   { label: "后台管理", path: "/admin/" },
 ];
 
@@ -189,7 +191,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <>
               <button className="sheet-item" type="button" onClick={() => go("/profile")}>个人中心</button>
               <button className="sheet-item" type="button" onClick={() => go("/tasks")}>任务管理</button>
-              <button className="sheet-item" type="button" onClick={() => go("/activity")}>活动申报</button>
+              <button className="sheet-item" type="button" onClick={() => go("/activity")}>活动</button>
+              <button className="sheet-item" type="button" onClick={() => go("/feedback")}>意见反馈</button>
               <button className="sheet-item" type="button" onClick={() => go("/messages")}>站内通信</button>
               <button className="sheet-item" type="button" onClick={logout}>退出登录</button>
             </>
@@ -228,7 +231,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <h5>栏目</h5>
             <a href="#" onClick={(e) => { e.preventDefault(); go("/"); }}>主页</a>
             <a href="#" onClick={(e) => { e.preventDefault(); go("/news"); }}>新闻</a>
-            <a href="#" onClick={(e) => { e.preventDefault(); go("/activity"); }}>活动申报</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); go("/activity"); }}>活动</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); go("/feedback"); }}>反馈</a>
             <a href="#" onClick={(e) => { e.preventDefault(); go("/tasks"); }}>任务</a>
           </div>
           <div>

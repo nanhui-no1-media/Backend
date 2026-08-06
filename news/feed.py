@@ -1,11 +1,11 @@
-"""首页「社团动态」聚合：新闻 / 活动(已通过申报) / 任务(登录可见) → 统一 feed。
+"""首页「社团动态」聚合：新闻 / 活动 / 任务(登录可见) → 统一 feed。
 
-可见性在服务端强制：任务仅登录用户可见；活动仅投影公开字段（不含预算/投票/驳回/联系方式）。
+可见性在服务端强制：任务仅登录用户可见；活动仅投影公开字段。
 排序按 timestamp 降序 + 类型打散（避免连续 3 同类），再截断到 limit。
 """
 from django.utils import timezone
 
-from proposals.models import Proposal
+from activities.models import Activity
 from tasks.models import Task
 
 from .models import News
@@ -22,18 +22,6 @@ def _abs_url(request, value):
     return request.build_absolute_uri(url) if request else url
 
 
-def _activity_phase(planned_date):
-    """由拟办日期推导阶段：upcoming/ongoing/ended；无日期返回 None。"""
-    if planned_date is None:
-        return None
-    today = timezone.localdate()
-    if planned_date > today:
-        return "upcoming"
-    if planned_date == today:
-        return "ongoing"
-    return "ended"
-
-
 def _news_dict(news, request):
     return {
         "type": "news",
@@ -47,18 +35,15 @@ def _news_dict(news, request):
     }
 
 
-def _activity_dict(proposal, request):
-    """活动的公开投影：仅暴露卡片所需字段，绝不含预算/投票/驳回/联系方式/创建人。"""
+def _activity_dict(activity, request):
+    """活动的公开投影：仅暴露卡片所需字段。活动已迁移至 activities app（ADR 0007）。"""
     return {
         "type": "activity",
-        "id": proposal.pk,
-        "title": proposal.title,
-        "timestamp": (proposal.approved_at or proposal.created_at).isoformat(),
-        "activity_type": proposal.activity_type,
-        "phase": _activity_phase(proposal.planned_date),
-        "planned_date": proposal.planned_date.isoformat() if proposal.planned_date else None,
-        "location": proposal.location,
-        "expected_participants": proposal.expected_participants,
+        "id": activity.pk,
+        "title": activity.title,
+        "timestamp": activity.created_at.isoformat(),
+        "activity_type": activity.type,  # deliberation / collection
+        "status": activity.status,
     }
 
 
@@ -125,8 +110,8 @@ def build_feed(*, request, limit=6):
     for n in news_qs:
         candidates.append(((n.published_at or n.created_at), _news_dict(n, request)))
 
-    for p in Proposal.objects.filter(proposal_type="activity", status="approved"):
-        candidates.append(((p.approved_at or p.created_at), _activity_dict(p, request)))
+    for a in Activity.objects.exclude(status="archived"):
+        candidates.append((a.created_at, _activity_dict(a, request)))
 
     if is_authed:
         tasks_qs = Task.objects.select_related("assignee", "assignee__profile").filter(

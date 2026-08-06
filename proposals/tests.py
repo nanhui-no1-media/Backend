@@ -18,7 +18,7 @@ class ProposalApprovePermissionTest(TestCase):
         self.president = _president(User.objects.create_user(username="pres", password="x"))
         self.client = APIClient()
         self.prop = Proposal.objects.create(
-            proposal_type="activity", status="pending_approval",
+            proposal_type="feedback", status="pending_approval",
             title="p", creator=self.normal,
         )
 
@@ -95,27 +95,3 @@ class FeedbackAttributionTest(TestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, 400)
-
-
-class FeedbackReturnDisabledTest(TestCase):
-    """反馈是单向投递箱（跟进走线下）：社长只能通过/拒绝，不可打回(returned)。"""
-
-    def setUp(self):
-        cache.clear()
-        self.president = _president(User.objects.create_user(username="pres", password="x"))
-        self.feedback = Proposal.objects.create(
-            proposal_type="feedback", status="pending_approval",
-            title="f", feedback_category="report",
-        )
-        self.client = APIClient()
-
-    def test_feedback_cannot_be_returned(self):
-        self.client.force_authenticate(self.president)
-        resp = self.client.post(
-            f"/proposals/proposals/{self.feedback.pk}/return_proposal/",
-            {"reason": "请补充材料"},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 400)
-        self.feedback.refresh_from_db()
-        self.assertEqual(self.feedback.status, "pending_approval")  # 状态未被翻成 returned

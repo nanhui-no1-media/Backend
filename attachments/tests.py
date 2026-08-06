@@ -119,35 +119,6 @@ class UploadTaskPermissionTest(_AttachmentTestCase):
         self.assertEqual(resp.status_code, 403)
 
 
-# ── 上传权限（申报父级）──
-class UploadProposalPermissionTest(_AttachmentTestCase):
-    def setUp(self):
-        super().setUp()
-        self.creator = User.objects.create_user(username="creator", password="x")
-        self.outsider = User.objects.create_user(username="outsider", password="x")
-        self.president = make_president(User.objects.create_user(username="pres", password="x"))
-        self.client = APIClient()
-        self.prop = Proposal.objects.create(
-            proposal_type="activity", status="pending_approval",
-            title="p", creator=self.creator,
-        )
-
-    def _post(self, user):
-        self.client.force_authenticate(user) # pyright: ignore[reportAttributeAccessIssue]
-        return self.client.post(
-            "/attachments/", {"file": upload(), "proposal_id": self.prop.pk}, format="multipart",
-        )
-
-    def test_creator_can_upload_to_own_proposal(self):
-        self.assertEqual(self._post(self.creator).status_code, 201)
-
-    def test_president_can_upload_to_any_proposal(self):  # 故事 #10
-        self.assertEqual(self._post(self.president).status_code, 201)
-
-    def test_outsider_cannot_upload_to_others_proposal(self):  # 故事 #8
-        self.assertEqual(self._post(self.outsider).status_code, 403)
-
-
 # ── 反馈附件上传权限（carve-out：仅署名创建者 + 仅审结前，社长被排除）──
 class FeedbackUploadPermissionTest(_AttachmentTestCase):
     def setUp(self):
@@ -260,7 +231,7 @@ class ParentValidationTest(_AttachmentTestCase):
         self.client.force_authenticate(self.creator)
         self.task = Task.objects.create(title="t", creator=self.creator, status="pending")
         self.prop = Proposal.objects.create(
-            proposal_type="activity", status="pending_approval", title="p", creator=self.creator,
+            proposal_type="feedback", status="pending_approval", title="p", creator=self.creator,
         )
 
     def test_both_parents_rejected(self):  # 故事 #20
@@ -400,7 +371,7 @@ class CascadeReclaimTest(_AttachmentTestCase):
         self.client.force_authenticate(self.creator)
         self.task = Task.objects.create(title="t", creator=self.creator, status="pending")
         self.prop = Proposal.objects.create(
-            proposal_type="activity", status="returned", title="p", creator=self.creator,
+            proposal_type="feedback", status="pending_approval", title="p", creator=self.creator,
         )
 
     def _upload_and_capture(self, parent_key, parent_pk):
@@ -448,7 +419,7 @@ class ParentDetailRendersAttachmentsTest(_AttachmentTestCase):
         self.client.force_authenticate(self.creator)
         self.task = Task.objects.create(title="t", creator=self.creator, status="pending")
         self.prop = Proposal.objects.create(
-            proposal_type="activity", status="pending_approval", title="p", creator=self.creator,
+            proposal_type="feedback", status="pending_approval", title="p", creator=self.creator,
         )
 
     def test_task_detail_inlines_attachments(self):  # 故事 #23
@@ -606,9 +577,9 @@ class TusUploadTest(_AttachmentTestCase):
         self.assertEqual(att.uploaded_by, self.creator)
         self.assertEqual(att.file_type, "image")
 
-    def test_tus_upload_to_activity_proposal_creates_attachment(self):  # 活动申报父级路径
+    def test_tus_upload_to_feedback_proposal_creates_attachment(self):  # 反馈申报父级路径
         prop = Proposal.objects.create(
-            proposal_type="activity", status="pending_approval", title="p", creator=self.creator,
+            proposal_type="feedback", status="pending_approval", title="p", creator=self.creator,
         )
         chunk = b"prop-bytes"
         resp = self._create(
