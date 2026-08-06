@@ -1,7 +1,7 @@
 import { CATEGORY_BADGE_CLASS, CATEGORY_LABELS } from "../../types/news";
 import {
   ACTIVITY_META,
-  ACTIVITY_PHASE_LABEL,
+  ACTIVITY_STATUS_LABEL,
   FEED_TASK_PRIORITY_BARS,
   FEED_TASK_STATUS_LABEL,
   type ActivityFeedItem,
@@ -68,7 +68,7 @@ export function NewsCard({ item, onClick }: { item: NewsFeedItem; onClick: () =>
 }
 
 export function ActivityCard({ item, onClick }: { item: ActivityFeedItem; onClick: () => void }) {
-  const meta = ACTIVITY_META[item.activity_type] ?? { label: "活动", emoji: "🎉" };
+  const meta = ACTIVITY_META[item.activity_type];
   return (
     <button type="button" className="feed-cell feed-cell--activity" onClick={onClick}>
       <div className="feed-act-head">
@@ -77,15 +77,8 @@ export function ActivityCard({ item, onClick }: { item: ActivityFeedItem; onClic
       </div>
       <h4>{item.title}</h4>
       <div className="feed-act-foot">
-        {item.planned_date && <span>📅 {item.planned_date}</span>}
-        {item.location && <span>📍 {item.location}</span>}
-        {item.expected_participants != null && <span>👥 {item.expected_participants}</span>}
+        <span>{ACTIVITY_STATUS_LABEL[item.status] ?? item.status}</span>
       </div>
-      {item.phase && (
-        <span className={`feed-phase feed-phase--${item.phase}`}>
-          {ACTIVITY_PHASE_LABEL[item.phase]}
-        </span>
-      )}
     </button>
   );
 }

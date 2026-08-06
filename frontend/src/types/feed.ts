@@ -2,8 +2,7 @@ import type { NewsCategory } from "./news";
 
 export type FeedType = "news" | "activity" | "task";
 
-export type ActivityType = "competition" | "training" | "project" | "sharing" | "event";
-export type ActivityPhase = "upcoming" | "ongoing" | "ended";
+export type ActivityType = "deliberation" | "collection";
 export type FeedTaskStatus = "pending" | "in_progress" | "reviewing" | "review";
 export type FeedTaskPriority = "low" | "medium" | "high" | "urgent";
 
@@ -32,10 +31,7 @@ export interface NewsFeedItem extends FeedItemBase {
 export interface ActivityFeedItem extends FeedItemBase {
   type: "activity";
   activity_type: ActivityType;
-  phase: ActivityPhase | null;
-  planned_date: string | null;
-  location: string;
-  expected_participants: number | null;
+  status: string;
 }
 
 export interface TaskFeedItem extends FeedItemBase {
@@ -54,17 +50,16 @@ export interface FeedResponse {
 
 // —— 展示映射 ——
 export const ACTIVITY_META: Record<ActivityType, { label: string; emoji: string }> = {
-  competition: { label: "比赛", emoji: "📷" },
-  training: { label: "培训", emoji: "🎬" },
-  project: { label: "项目", emoji: "🎥" },
-  sharing: { label: "分享", emoji: "💡" },
-  event: { label: "活动", emoji: "🎉" },
+  deliberation: { label: "众议", emoji: "🗳" },
+  collection: { label: "征集", emoji: "📥" },
 };
 
-export const ACTIVITY_PHASE_LABEL: Record<ActivityPhase, string> = {
-  upcoming: "即将开始",
-  ongoing: "进行中",
-  ended: "已结束",
+export const ACTIVITY_STATUS_LABEL: Record<string, string> = {
+  open: "投票中",
+  closed: "已结束",
+  collecting: "收件中",
+  reviewing: "复审中",
+  archived: "已归档",
 };
 
 export const FEED_TASK_STATUS_LABEL: Record<FeedTaskStatus, string> = {
