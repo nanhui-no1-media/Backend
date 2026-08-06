@@ -508,3 +508,102 @@ class CollectionReviewTest(TestCase):
         r = _json(self.client, "post", f"/activities/activities/{d.data['id']}/review_submission/",
                   self.author, {"submission_id": 1, "decision": "accepted"})
         self.assertEqual(r.status_code, 400)
+
+
+class SchedulingTest(TestCase):
+    """开始时间 + 待开始状态：排期、惰性自动开放、待开始可改/开放后锁、start<end 校验。"""
+
+    def setUp(self):
+        self.author = grant_verification(User.objects.create_user(username="author", password="x"))
+        self.m1 = grant_verification(User.objects.create_user(username="m1", password="x"))
+        self.client = APIClient()
+
+    def _future(self, days=2):
+        return (timezone.now() + timedelta(days=days)).isoformat()
+
+    def _past(self, days=1):
+        return (timezone.now() - timedelta(days=days)).isoformat()
+
+    def test_future_start_creates_scheduled(self):
+        resp = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "x", "body": "<p>x</p>",
+            "option_texts": ["A", "B"], "start_at": self._future(),
+        })
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["status"], "scheduled")
+
+    def test_no_start_opens_immediately(self):
+        resp = _json(self.client, "post", "/activities/activities/", self.author,
+                     {"type": "collection", "title": "x", "body": "<p>x</p>"})
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["status"], "collecting")  # 创建即开
+
+    def test_past_start_opens_immediately(self):
+        resp = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "x", "body": "<p>x</p>",
+            "option_texts": ["A", "B"], "start_at": self._past(),
+        })
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["status"], "open")
+
+    def test_auto_open_on_start_at(self):
+        resp = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "x", "body": "<p>x</p>",
+            "option_texts": ["A", "B"], "start_at": self._future(),
+        })
+        aid = resp.data["id"]
+        Activity.objects.filter(pk=aid).update(start_at=timezone.now() - timedelta(minutes=1))
+        _json(self.client, "get", f"/activities/activities/{aid}/", self.author)  # 触发惰性开放
+        self.assertEqual(
+            _json(self.client, "get", f"/activities/activities/{aid}/", self.author).data["status"], "open"
+        )
+
+    def test_scheduled_blocks_vote_and_submit(self):
+        # 众议 scheduled → 投票被拒
+        d = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "x", "body": "<p>x</p>",
+            "option_texts": ["A", "B"], "start_at": self._future(),
+        })
+        opt = d.data["options"][0]["id"]
+        self.assertEqual(
+            _json(self.client, "post", f"/activities/activities/{d.data['id']}/vote/", self.m1,
+                  {"option_ids": [opt]}).status_code,
+            400,
+        )
+        # 征集 scheduled → 投稿被拒
+        c = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "collection", "title": "x", "body": "<p>x</p>", "start_at": self._future(),
+        })
+        self.client.force_authenticate(self.m1)
+        r = self.client.post(
+            f"/activities/activities/{c.data['id']}/submit/",
+            {"files": [SimpleUploadedFile("a.png", b"x", content_type="image/png")]},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_edit_allowed_while_scheduled(self):
+        d = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "x", "body": "<p>x</p>",
+            "option_texts": ["A", "B"], "start_at": self._future(),
+        })
+        r = _json(self.client, "patch", f"/activities/activities/{d.data['id']}/", self.author,
+                  {"title": "改标题", "option_texts": ["A", "B", "C"]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["title"], "改标题")
+        self.assertEqual(len(r.data["options"]), 3)  # 选项替换
+
+    def test_edit_locked_after_open(self):
+        # 创建即开 → open；开放后改 → 403
+        d = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "x", "body": "<p>x</p>", "option_texts": ["A", "B"],
+        })
+        r = _json(self.client, "patch", f"/activities/activities/{d.data['id']}/", self.author, {"title": "改"})
+        self.assertEqual(r.status_code, 403)
+
+    def test_start_after_end_rejected(self):
+        r = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "x", "body": "<p>x</p>",
+            "option_texts": ["A", "B"],
+            "start_at": self._future(days=5), "end_at": self._future(days=1),
+        })
+        self.assertEqual(r.status_code, 400)

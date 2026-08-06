@@ -57,10 +57,34 @@ export default function ActivityDetailPage() {
   const isCollection = a.type === "collection";
   const total = a.total_ballots ?? 0;
 
+  // 时间线阶段（stepper）：待开始(若有 start_at) → 开放态 → …；当前阶段高亮
+  const fmtTime = (d: string | null) =>
+    d ? new Date(d).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+  const phases = (() => {
+    if (isDeliberation) {
+      const ns = [];
+      if (a.start_at) ns.push({ key: "scheduled", label: "待开始", time: fmtTime(a.start_at) });
+      ns.push({ key: "open", label: "投票中", time: a.start_at ? null : fmtTime(a.created_at) });
+      ns.push({ key: "closed", label: "截止结算", time: fmtTime(a.end_at) });
+      return ns;
+    }
+    const ns = [];
+    if (a.start_at) ns.push({ key: "scheduled", label: "待开始", time: fmtTime(a.start_at) });
+    ns.push({ key: "collecting", label: "收件中", time: a.start_at ? null : fmtTime(a.created_at) });
+    ns.push({ key: "reviewing", label: "复审中", time: fmtTime(a.end_at) });
+    ns.push({ key: "archived", label: "已归档", time: null });
+    return ns;
+  })();
+  const currentIndex = Math.max(0, phases.findIndex((p) => p.key === a.status));
+
   const toggleOption = (oid: number) => {
     setSelected((cur) => {
+      // 已选 → 撤选（提交前可改）
       if (cur.includes(oid)) return cur.filter((x) => x !== oid);
-      if (cur.length >= a.max_choices_per_voter) return cur; // 不超过 K
+      // 单选（K=1）：点新的即换选（替换）
+      if (a.max_choices_per_voter === 1) return [oid];
+      // 多选：不超过 K
+      if (cur.length >= a.max_choices_per_voter) return cur;
       return [...cur, oid];
     });
   };
@@ -108,7 +132,7 @@ export default function ActivityDetailPage() {
         </div>
       </div>
 
-      <div className="container" style={{ maxWidth: 900, paddingBottom: "var(--s-16)" }}>
+      <div className="container" style={{ maxWidth: 900, paddingTop: "var(--s-8)", paddingBottom: "var(--s-16)" }}>
         {error && <div className="alert alert-danger" style={{ margin: "var(--s-4) 0" }}><span>{error}</span></div>}
 
         <div className="card card-pad">
@@ -122,6 +146,13 @@ export default function ActivityDetailPage() {
           </div>
           <h1 style={{ margin: "0 0 var(--s-4)" }}>{a.title}</h1>
           {a.body && <div className="prose" dangerouslySetInnerHTML={{ __html: a.body }} />}
+          {canManage && a.status === "scheduled" && (
+            <div style={{ marginTop: "var(--s-4)" }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/activity/${a.id}/edit`)}>
+                编辑（待开始期间可改时间/内容）
+              </button>
+            </div>
+          )}
           {canManage && (a.status === "open" || a.status === "collecting") && (
             <div style={{ marginTop: "var(--s-4)" }}>
               <button className="btn btn-ghost btn-sm" onClick={doClose} disabled={busy}>
@@ -129,6 +160,23 @@ export default function ActivityDetailPage() {
               </button>
             </div>
           )}
+        </div>
+
+        {/* 时间线（横向 stepper） */}
+        <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
+          <h3 className="section-h">时间线</h3>
+          <div className="act-stepper">
+            {phases.map((p, i) => (
+              <div
+                key={p.key}
+                className={"act-step" + (i === currentIndex ? " is-current" : "") + (i < currentIndex ? " is-done" : "")}
+              >
+                <div className="act-step-dot">{i < currentIndex ? "✓" : i + 1}</div>
+                <div className="act-step-label">{p.label}</div>
+                {p.time && <div className="act-step-time">{p.time}</div>}
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* 众议：投票 + 结果 */}
@@ -140,17 +188,20 @@ export default function ActivityDetailPage() {
                 <div className="hint" style={{ marginBottom: 8 }}>
                   可选 {a.max_choices_per_voter} 项（{a.max_choices_per_voter === 1 ? "一人一票" : "一人多票"}）；一经投出不可更改。
                 </div>
-                {a.options.map((o) => (
-                  <label key={o.id} className="fb-attrib" style={{ display: "flex", gap: 8, padding: "8px 0" }}>
-                    <input
-                      type={a.max_choices_per_voter === 1 ? "radio" : "checkbox"}
-                      name="vote"
-                      checked={selected.includes(o.id)}
-                      onChange={() => toggleOption(o.id)}
-                    />
-                    <span>{o.text}</span>
-                  </label>
-                ))}
+                {a.options.map((o) => {
+                  const on = selected.includes(o.id);
+                  return (
+                    <label key={o.id} className={"vote-opt" + (on ? " is-on" : "")}>
+                      <input
+                        type={a.max_choices_per_voter === 1 ? "radio" : "checkbox"}
+                        name="vote"
+                        checked={on}
+                        onChange={() => toggleOption(o.id)}
+                      />
+                      <span className="vote-opt-text">{o.text}</span>
+                    </label>
+                  );
+                })}
                 <button className="btn btn-primary btn-sm" onClick={doVote} disabled={busy || selected.length < 1}>投票</button>
               </>
             ) : (

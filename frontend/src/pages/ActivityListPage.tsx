@@ -13,6 +13,14 @@ import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
 import "../styles/list.css";
 
+function formatCountdown(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return "即将开始";
+  const h = Math.floor(ms / 3600000);
+  if (h < 24) return `${h} 小时`;
+  return `${Math.floor(h / 24)} 天`;
+}
+
 export default function ActivityListPage() {
   const navigate = useNavigate();
   const [activities, setActivities] = useState<ActivityListItem[]>([]);
@@ -101,7 +109,11 @@ export default function ActivityListPage() {
                     {a.creator.nickname || a.creator.username}
                   </span>
                 )}
-                {a.end_at && <span>截止 {new Date(a.end_at).toLocaleDateString("zh-CN")}</span>}
+                {a.status === "scheduled" && a.start_at ? (
+                  <span>⏱ 距开始 {formatCountdown(a.start_at)}</span>
+                ) : a.end_at ? (
+                  <span>截止 {new Date(a.end_at).toLocaleDateString("zh-CN")}</span>
+                ) : null}
                 <span className="tnum">{new Date(a.created_at).toLocaleDateString("zh-CN")}</span>
               </div>
             </a>

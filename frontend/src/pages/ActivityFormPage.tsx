@@ -1,10 +1,9 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { activityApi } from "../api/activities";
 import RichTextEditor from "../components/RichTextEditor";
 import AppShell from "../components/AppShell";
-import { api } from "../api/client";
-import type { ActivityType } from "../types/activities";
+import type { ActivityFormData, ActivityType } from "../types/activities";
 import "../styles/form.css";
 
 // 默认截止时间：当前 + N 天，格式 datetime-local 取值（yyyy-MM-ddThh:mm）
@@ -20,12 +19,24 @@ function toIso(local: string): string | undefined {
   return isNaN(t.getTime()) ? undefined : t.toISOString();
 }
 
+// ISO → datetime-local 取值（编辑模式回填）
+function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function ActivityFormPage() {
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const editId = id ? Number(id) : null;
   const [type, setType] = useState<ActivityType>("deliberation");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [endAt, setEndAt] = useState(defaultEnd(3));
+  const [startAt, setStartAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -47,6 +58,28 @@ export default function ActivityFormPage() {
 
   const setOption = (i: number, v: string) =>
     setOptions((opts) => opts.map((o, idx) => (idx === i ? v : o)));
+
+  // 编辑模式：载入现有活动回填
+  useEffect(() => {
+    if (!editId) return;
+    activityApi.get(editId).then((a) => {
+      setType(a.type);
+      setTitle(a.title);
+      setBody(a.body);
+      setStartAt(toLocalInput(a.start_at));
+      setEndAt(toLocalInput(a.end_at) || defaultEnd(a.type === "deliberation" ? 3 : 7));
+      if (a.type === "deliberation") {
+        setOptions(a.options.map((o) => o.text));
+        setK(a.max_choices_per_voter);
+        setSecret(a.is_secret_ballot);
+      } else {
+        setAllowedExt(a.allowed_extensions || "");
+        setMaxSize(a.max_file_size ? String(Math.round(a.max_file_size / 1024 / 1024)) : "");
+        setMaxFiles(a.max_files_per_submission);
+        setMaxSub(a.max_submissions != null ? String(a.max_submissions) : "");
+      }
+    }).catch((e: any) => setError(e?.message || "加载失败"));
+  }, [editId]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,32 +107,35 @@ export default function ActivityFormPage() {
 
     setSubmitting(true);
     try {
-      let created;
-      if (type === "deliberation") {
-        created = await activityApi.create({
-          type: "deliberation",
-          title: title.trim(),
-          body,
-          max_choices_per_voter: k,
-          is_secret_ballot: secret,
-          end_at: toIso(endAt),
-          option_texts: options.map((o) => o.trim()).filter(Boolean),
-        });
-      } else {
-        created = await activityApi.create({
-          type: "collection",
-          title: title.trim(),
-          body,
-          allowed_extensions: allowedExt.trim(),
-          max_file_size: maxSize.trim() ? Math.round(parseFloat(maxSize) * 1024 * 1024) : null,
-          max_files_per_submission: maxFiles,
-          max_submissions: maxSub.trim() ? parseInt(maxSub, 10) : null,
-          end_at: toIso(endAt),
-        });
-      }
-      navigate(`/activity/${created.id}`);
+      const payload: Record<string, unknown> =
+        type === "deliberation"
+          ? {
+              type: "deliberation",
+              title: title.trim(),
+              body,
+              max_choices_per_voter: k,
+              is_secret_ballot: secret,
+              start_at: toIso(startAt),
+              end_at: toIso(endAt),
+              option_texts: options.map((o) => o.trim()).filter(Boolean),
+            }
+          : {
+              type: "collection",
+              title: title.trim(),
+              body,
+              allowed_extensions: allowedExt.trim(),
+              max_file_size: maxSize.trim() ? Math.round(parseFloat(maxSize) * 1024 * 1024) : null,
+              max_files_per_submission: maxFiles,
+              max_submissions: maxSub.trim() ? parseInt(maxSub, 10) : null,
+              start_at: toIso(startAt),
+              end_at: toIso(endAt),
+            };
+      const saved = editId
+        ? await activityApi.update(editId, payload)
+        : await activityApi.create(payload as unknown as ActivityFormData);
+      navigate(`/activity/${saved.id}`);
     } catch (err: any) {
-      setError(err.message || "创建失败");
+      setError(err.message || (editId ? "保存失败" : "创建失败"));
     } finally {
       setSubmitting(false);
     }
@@ -112,14 +148,14 @@ export default function ActivityFormPage() {
           <nav className="breadcrumb">
             <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>活动</a>
             <span className="sep">/</span>
-            <span>发起活动</span>
+            <span>{editId ? "编辑活动" : "发起活动"}</span>
           </nav>
-          <h1>发起活动</h1>
-          <p className="section-sub">发起一场众议（投票）或征集（收作品），发起即对全体已验证成员开放。</p>
+          <h1>{editId ? "编辑活动" : "发起活动"}</h1>
+          <p className="section-sub">{editId ? "修改待开始活动的时间与内容（开放后即锁定）。" : "发起一场众议（投票）或征集（收作品），发起即对全体已验证成员开放。"}</p>
         </div>
       </div>
 
-      <div className="container" style={{ maxWidth: 820, paddingBottom: "var(--s-16)" }}>
+      <div className="container" style={{ maxWidth: 820, paddingTop: "var(--s-8)", paddingBottom: "var(--s-16)" }}>
         {error && (
           <div className="alert alert-danger" style={{ margin: "var(--s-4) 0" }}>
             <span>{error}</span>
@@ -128,10 +164,10 @@ export default function ActivityFormPage() {
 
         <form onSubmit={submit} className="card card-pad">
           <div className="field">
-            <label className="label">类型</label>
+            <label className="label">类型{editId ? "（已固定）" : ""}</label>
             <div className="seg" role="tablist">
-              <button type="button" className="seg-btn" aria-selected={type === "deliberation"} onClick={() => switchType("deliberation")}>众议（投票）</button>
-              <button type="button" className="seg-btn" aria-selected={type === "collection"} onClick={() => switchType("collection")}>征集（收作品）</button>
+              <button type="button" className="seg-btn" aria-selected={type === "deliberation"} disabled={!!editId} onClick={() => !editId && switchType("deliberation")}>众议（投票）</button>
+              <button type="button" className="seg-btn" aria-selected={type === "collection"} disabled={!!editId} onClick={() => !editId && switchType("collection")}>征集（收作品）</button>
             </div>
           </div>
 
@@ -151,6 +187,11 @@ export default function ActivityFormPage() {
               iframeEmbed
               wordImport
             />
+          </div>
+
+          <div className="field">
+            <label className="label">开始时间 <span className="hint">（选填；不填则创建即开放，填未来时间则先「待开始」到点自动开放）</span></label>
+            <input className="input" type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
           </div>
 
           {type === "deliberation" ? (
@@ -217,7 +258,7 @@ export default function ActivityFormPage() {
           )}
 
           <div style={{ display: "flex", gap: 12, marginTop: "var(--s-4)" }}>
-            <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? "提交中…" : "发起活动"}</button>
+            <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? "保存中…" : editId ? "保存修改" : "发起活动"}</button>
             <button className="btn btn-ghost" type="button" onClick={() => navigate("/activity")}>取消</button>
           </div>
         </form>

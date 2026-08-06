@@ -60,7 +60,7 @@ class ActivityListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Activity
-        fields = ["id", "type", "status", "title", "creator", "end_at", "created_at", "updated_at"]
+        fields = ["id", "type", "status", "title", "creator", "start_at", "end_at", "created_at", "updated_at"]
 
 
 def _is_reviewer(activity, user):
@@ -94,7 +94,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         model = Activity
         fields = [
             "id", "type", "status", "title", "body", "creator",
-            "end_at",
+            "start_at", "end_at",
             "max_choices_per_voter", "is_secret_ballot",
             "allowed_extensions", "max_file_size", "max_files_per_submission", "max_submissions",
             "options", "ballots", "my_selections", "total_ballots",
@@ -109,32 +109,57 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         return sanitize_html(value or "")
 
     def validate(self, attrs):
-        # 仅创建时校验众议选项与 K 值（选项开放即锁定，无更新路径）
-        if attrs.get("type") == "deliberation" and self.instance is None:
-            texts = attrs.get("option_texts") or []
-            if len(texts) < 2:
-                raise serializers.ValidationError({"option_texts": "众议至少需要 2 个选项"})
-            if len(texts) > 50:
-                raise serializers.ValidationError({"option_texts": "众议选项不超过 50 个"})
-            k = attrs.get("max_choices_per_voter", 1)
-            if k < 1 or k > len(texts):
-                raise serializers.ValidationError(
-                    {"max_choices_per_voter": "每人最多选几项须在 1..选项数 之间"}
-                )
+        # 开始 < 截止（两者都给时；update 取实例现值兜底 partial）
+        start_at = attrs.get("start_at", getattr(self.instance, "start_at", None))
+        end_at = attrs.get("end_at", getattr(self.instance, "end_at", None))
+        if start_at and end_at and start_at >= end_at:
+            raise serializers.ValidationError({"start_at": "开始时间须早于截止时间"})
+        # 众议选项与 K 值校验
+        is_delib = attrs.get("type") == "deliberation" or (
+            self.instance is not None and self.instance.type == "deliberation"
+        )
+        if is_delib:
+            texts = attrs.get("option_texts")
+            if self.instance is None:
+                # 创建：必须给选项
+                if not texts or len(texts) < 2:
+                    raise serializers.ValidationError({"option_texts": "众议至少需要 2 个选项"})
+            if texts is not None:  # 创建必给；更新（待开始）给了才校验
+                if len(texts) > 50:
+                    raise serializers.ValidationError({"option_texts": "众议选项不超过 50 个"})
+                k = attrs.get("max_choices_per_voter", getattr(self.instance, "max_choices_per_voter", 1))
+                if k < 1 or k > len(texts):
+                    raise serializers.ValidationError(
+                        {"max_choices_per_voter": "每人最多选几项须在 1..选项数 之间"}
+                    )
         return attrs
 
     def create(self, validated_data):
         texts = validated_data.pop("option_texts", [])
         activity_type = validated_data["type"]
-        # 截止时间默认：众议 +3 天、征集 +7 天（发起人可显式传 end_at 覆盖）
+        # 截止默认相对开始时间：有 start_at 则从其起算，否则从现在；众议 +3 天 / 征集 +7 天。
+        start_at = validated_data.get("start_at")
         if not validated_data.get("end_at"):
+            base = start_at or timezone.now()
             days = 3 if activity_type == "deliberation" else 7
-            validated_data["end_at"] = timezone.now() + timedelta(days=days)
-        validated_data["status"] = initial_status(activity_type)
+            validated_data["end_at"] = base + timedelta(days=days)
+        validated_data["status"] = initial_status(activity_type, start_at)
         activity = Activity.objects.create(**validated_data)
         for i, text in enumerate(texts):
             VoteOption.objects.create(activity=activity, text=text, order=i)
         return activity
+
+    def update(self, instance, validated_data):
+        # 仅在 scheduled（待开始）期间允许更新（视图层已 gate）；含众议选项替换。
+        texts = validated_data.pop("option_texts", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if texts is not None and instance.type == "deliberation":
+            instance.options.all().delete()
+            for i, text in enumerate(texts):
+                VoteOption.objects.create(activity=instance, text=text, order=i)
+        return instance
 
     # ---- 众议读侧聚合 ----
 

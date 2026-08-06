@@ -4,6 +4,7 @@ import type { TaskUser, Attachment } from "./tasks";
 
 export type ActivityType = "deliberation" | "collection";
 export type ActivityStatus =
+  | "scheduled" // 排期：start_at 之前，待开始
   | "open" // 众议：投票中
   | "closed" // 众议：已截止结算
   | "collecting" // 征集：收件中
@@ -17,6 +18,7 @@ export interface ActivityListItem {
   status: ActivityStatus;
   title: string;
   creator: TaskUser | null;
+  start_at: string | null;
   end_at: string | null;
   created_at: string;
   updated_at: string;
@@ -53,6 +55,7 @@ export interface ActivityDetail {
   title: string;
   body: string;
   creator: TaskUser | null;
+  start_at: string | null;
   end_at: string | null;
   // 众议
   max_choices_per_voter: number;
@@ -79,6 +82,7 @@ export interface DeliberationFormData {
   body: string;
   max_choices_per_voter: number;
   is_secret_ballot: boolean;
+  start_at?: string;
   end_at?: string;
   option_texts: string[];
 }
@@ -91,6 +95,7 @@ export interface CollectionFormData {
   max_file_size: number | null;
   max_files_per_submission: number;
   max_submissions: number | null;
+  start_at?: string;
   end_at?: string;
 }
 
@@ -103,6 +108,7 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
 };
 
 export const ACTIVITY_STATUS_LABELS: Record<ActivityStatus, string> = {
+  scheduled: "待开始",
   open: "投票中",
   closed: "已结束",
   collecting: "收件中",
@@ -111,6 +117,7 @@ export const ACTIVITY_STATUS_LABELS: Record<ActivityStatus, string> = {
 };
 
 export const ACTIVITY_STATUS_BADGE_CLASS: Record<ActivityStatus, string> = {
+  scheduled: "badge-warning",
   open: "badge-brand",
   closed: "badge-neutral",
   collecting: "badge-brand",

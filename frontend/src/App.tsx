@@ -61,6 +61,7 @@ export default function App() {
           <Route path="/activity" element={<ActivityListPage />} />
           <Route path="/activity/new" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
           <Route path="/activity/:id" element={<ProtectedRoute><ActivityDetailPage /></ProtectedRoute>} />
+          <Route path="/activity/:id/edit" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
           <Route path="/feedback" element={<ProposalListPage />} />
           <Route path="/feedback/:id" element={<ProtectedRoute><ProposalDetailPage /></ProtectedRoute>} />
           <Route path="/news" element={<NewsListPage />} />

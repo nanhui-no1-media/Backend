@@ -123,6 +123,52 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 .breadcrumb a { color: var(--muted); }
 .breadcrumb .sep { opacity: .5; }
 
+/* 投票选项长条：整条可点；选中（is-on）整条发蓝 */
+.vote-opt {
+  display: flex; align-items: center; gap: var(--s-3);
+  width: 100%; padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--bg); cursor: pointer;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.vote-opt + .vote-opt { margin-top: var(--s-2); }
+.vote-opt:hover { border-color: var(--brand-300); background: var(--brand-50); }
+.vote-opt input { width: 18px; height: 18px; accent-color: var(--brand-700); cursor: pointer; }
+.vote-opt .vote-opt-text { flex: 1; }
+.vote-opt.is-on {
+  border-color: var(--brand-600);
+  background: var(--brand-100);
+  color: var(--brand-800);
+  font-weight: 600;
+  box-shadow: var(--sh-1);
+}
+
+/* 活动时间线（横向 stepper）：圆点 + 连接线，当前高亮、已完成实色 */
+.act-stepper { display: flex; gap: 0; padding: var(--s-3) 0 var(--s-1); }
+.act-step { flex: 1; position: relative; text-align: center; min-width: 0; }
+.act-step::before {
+  content: ""; position: absolute; top: 14px; left: 50%; width: 100%; height: 2px;
+  background: var(--line); z-index: 0;
+}
+.act-step:last-child::before { display: none; }
+.act-step.is-done::before { background: var(--success); }
+.act-step-dot {
+  position: relative; z-index: 1;
+  width: 28px; height: 28px; border-radius: var(--r-pill);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto var(--s-2); font-size: 13px; font-weight: 700;
+  background: var(--bg-soft); color: var(--faint); border: 2px solid var(--line);
+}
+.act-step-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.act-step-time { font-size: 11px; color: var(--faint); margin-top: 2px; }
+.act-step.is-done .act-step-dot { background: var(--success); border-color: var(--success); color: #fff; }
+.act-step.is-done .act-step-label { color: var(--ink-700); }
+.act-step.is-current .act-step-dot {
+  background: var(--brand-600); border-color: var(--brand-600); color: #fff;
+  box-shadow: 0 0 0 4px oklch(0.34 0.095 256 / 0.15);
+}
+.act-step.is-current .act-step-label { color: var(--brand-800); }
+
 /* ---------- ⑤ 顶栏（.topnav） ---------- */
 .topnav {
   position: sticky; top: 0; z-index: 100;

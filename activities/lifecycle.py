@@ -9,6 +9,7 @@
 from django.utils import timezone
 
 # 状态常量（与 models.STATUS_CHOICES 对齐）
+SCHEDULED = "scheduled"    # 排期：start_at 之前，待开始
 OPEN = "open"              # 众议：投票中
 CLOSED = "closed"          # 众议：已截止结算
 COLLECTING = "collecting"  # 征集：收件中
@@ -16,16 +17,42 @@ REVIEWING = "reviewing"    # 征集：复审中
 ARCHIVED = "archived"      # 征集：已归档
 
 
-def initial_status(activity_type):
-    """活动创建时的初始状态：众议=open（投票中）、征集=collecting（收件中）。
+def initial_status(activity_type, start_at=None):
+    """活动创建时的初始状态：``start_at`` 在未来 → scheduled（待开始）；否则众议=open / 征集=collecting。
 
-    供序列化器 create 共用的单一事实源。
+    供序列化器 create 共用的单一事实源。``start_at`` 为 None 表示不排期（创建即开放）。
     """
+    if start_at is not None and start_at > timezone.now():
+        return SCHEDULED
     if activity_type == "deliberation":
         return OPEN
     if activity_type == "collection":
         return COLLECTING
     raise ValueError(f"未知活动类型: {activity_type!r}")
+
+
+def transition_due_starts():
+    """惰性开放：把已到 ``start_at`` 的 scheduled 活动翻转为开放态
+    （众议→open / 征集→collecting）。在 list/get/vote/submit 入口调用。
+
+    逐行条件更新（status=scheduled）保证并发安全——多个读者同时触达时只有一个请求真正翻转。
+    """
+    now = timezone.now()
+    due = Activity.objects.filter(status=SCHEDULED, start_at__lte=now)
+    opened = []
+    for activity in due:
+        target = OPEN if activity.type == "deliberation" else COLLECTING
+        changed = Activity.objects.filter(pk=activity.pk, status=SCHEDULED).update(
+            status=target, updated_at=now,
+        )
+        if changed:
+            opened.append(activity.pk)
+    return opened
+
+
+def can_edit(activity):
+    """是否可编辑（改 start_at/end_at/正文/选项/配置）：仅 scheduled（待开始）期间。开放后锁定。"""
+    return activity.status == SCHEDULED
 
 
 # ---- 众议 --------------------------------------------------------------

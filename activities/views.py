@@ -26,8 +26,11 @@ from .lifecycle import (
     COLLECTING,
     OPEN,
     REVIEWING,
+    SCHEDULED,
+    can_edit,
     can_submit,
     maybe_close_collection_on_cap,
+    transition_due_starts,
     transition_overdue_deliberations,
 )
 from .models import Activity, Ballot, BallotSelection, Submission
@@ -65,7 +68,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        # 惰性结算到点的众议（与申报旧投票同模式：无需 cron）
+        # 惰性流转：到 start_at 的待开始活动自动开放；到 end_at 的众议自动结算。
+        transition_due_starts()
         transition_overdue_deliberations()
         return Activity.objects.select_related(
             "creator", "creator__profile",
@@ -103,6 +107,14 @@ class ActivityViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(creator=self.request.user)
+
+    def perform_update(self, serializer):
+        # 仅待开始（scheduled）期间可改；开放后锁定（要改只能删重建）。
+        # get_object 已先跑 transition_due_starts，故到点自动开放后此处即拦下。
+        if not can_edit(serializer.instance):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
+        super().perform_update(serializer)
 
     # ── 众议投票 ──
     @action(detail=True, methods=["post"])

@@ -15,9 +15,11 @@ class Activity(models.Model):
         ("collection", "征集"),
     ]
     # 状态语义随类型而异（状态机见 lifecycle.py）：
+    #   排期：scheduled（待开始，start_at 之前）→ 到点开放
     #   众议：open（投票中）→ closed（已截止结算）
     #   征集：collecting（收件中）→ reviewing（复审中）→ archived（已归档）
     STATUS_CHOICES = [
+        ("scheduled", "待开始"),
         ("open", "进行中"),
         ("closed", "已结束"),
         ("collecting", "收件中"),
@@ -36,6 +38,8 @@ class Activity(models.Model):
         related_name="created_activities", verbose_name="发起人",
     )
 
+    # 开始时间（可选）：设了未来时间则创建后处于 scheduled，到点自动开放；不填则创建即开放。
+    start_at = models.DateTimeField("开始时间", null=True, blank=True)
     # 窗口截止时间：众议=投票截止、征集=收件截止。到点由 lifecycle 惰性流转。
     end_at = models.DateTimeField("截止时间", null=True, blank=True)
 

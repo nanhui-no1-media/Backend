@@ -22,6 +22,8 @@ export const activityApi = {
   get: (id: number): Promise<ActivityDetail> => request(`/activities/${id}/`),
   create: (data: ActivityFormData): Promise<ActivityDetail> =>
     request("/activities/", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: number, data: Record<string, unknown>): Promise<ActivityDetail> =>
+    request(`/activities/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   remove: (id: number) => request(`/activities/${id}/`, { method: "DELETE" }),
 
   // 众议投票（option_ids：选 1..K 项）
