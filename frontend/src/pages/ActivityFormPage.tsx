@@ -68,15 +68,16 @@ export default function ActivityFormPage() {
       setBody(a.body);
       setStartAt(toLocalInput(a.start_at));
       setEndAt(toLocalInput(a.end_at) || defaultEnd(a.type === "deliberation" ? 3 : 7));
-      if (a.type === "deliberation") {
-        setOptions(a.options.map((o) => o.text));
-        setK(a.max_choices_per_voter);
-        setSecret(a.is_secret_ballot);
-      } else {
+      if (a.type === "collection") {
         setAllowedExt(a.allowed_extensions || "");
         setMaxSize(a.max_file_size ? String(Math.round(a.max_file_size / 1024 / 1024)) : "");
         setMaxFiles(a.max_files_per_submission);
         setMaxSub(a.max_submissions != null ? String(a.max_submissions) : "");
+      } else {
+        // 众议 / 展示：选项 + K + 秘密（展示可无投票 → 留默认两项供选填）
+        setOptions(a.options.length ? a.options.map((o) => o.text) : ["", ""]);
+        setK(a.max_choices_per_voter);
+        setSecret(a.is_secret_ballot);
       }
     }).catch((e: any) => setError(e?.message || "加载失败"));
   }, [editId]);
@@ -98,38 +99,56 @@ export default function ActivityFormPage() {
         setError(`每人最多选几项须在 1..${texts.length} 之间`);
         return;
       }
-    } else {
+    } else if (type === "collection") {
       if (maxFiles < 1) {
         setError("单作品文件数上限至少为 1");
         return;
       }
     }
+    // 展示：投票可选，选项留空即不启用
 
     setSubmitting(true);
     try {
-      const payload: Record<string, unknown> =
-        type === "deliberation"
-          ? {
-              type: "deliberation",
-              title: title.trim(),
-              body,
-              max_choices_per_voter: k,
-              is_secret_ballot: secret,
-              start_at: toIso(startAt),
-              end_at: toIso(endAt),
-              option_texts: options.map((o) => o.trim()).filter(Boolean),
-            }
-          : {
-              type: "collection",
-              title: title.trim(),
-              body,
-              allowed_extensions: allowedExt.trim(),
-              max_file_size: maxSize.trim() ? Math.round(parseFloat(maxSize) * 1024 * 1024) : null,
-              max_files_per_submission: maxFiles,
-              max_submissions: maxSub.trim() ? parseInt(maxSub, 10) : null,
-              start_at: toIso(startAt),
-              end_at: toIso(endAt),
-            };
+      let payload: Record<string, unknown>;
+      if (type === "deliberation") {
+        payload = {
+          type: "deliberation",
+          title: title.trim(),
+          body,
+          max_choices_per_voter: k,
+          is_secret_ballot: secret,
+          start_at: toIso(startAt),
+          end_at: toIso(endAt),
+          option_texts: options.map((o) => o.trim()).filter(Boolean),
+        };
+      } else if (type === "collection") {
+        payload = {
+          type: "collection",
+          title: title.trim(),
+          body,
+          allowed_extensions: allowedExt.trim(),
+          max_file_size: maxSize.trim() ? Math.round(parseFloat(maxSize) * 1024 * 1024) : null,
+          max_files_per_submission: maxFiles,
+          max_submissions: maxSub.trim() ? parseInt(maxSub, 10) : null,
+          start_at: toIso(startAt),
+          end_at: toIso(endAt),
+        };
+      } else {
+        // 展示：可选投票（给了≥2 选项才启用，复用众议机制）
+        payload = {
+          type: "exhibition",
+          title: title.trim(),
+          body,
+          start_at: toIso(startAt),
+          end_at: toIso(endAt),
+        };
+        const texts = options.map((o) => o.trim()).filter(Boolean);
+        if (texts.length >= 2) {
+          payload.option_texts = texts;
+          payload.max_choices_per_voter = k;
+          payload.is_secret_ballot = secret;
+        }
+      }
       const saved = editId
         ? await activityApi.update(editId, payload)
         : await activityApi.create(payload as unknown as ActivityFormData);
@@ -168,6 +187,7 @@ export default function ActivityFormPage() {
             <div className="seg" role="tablist">
               <button type="button" className="seg-btn" aria-selected={type === "deliberation"} disabled={!!editId} onClick={() => !editId && switchType("deliberation")}>众议（投票）</button>
               <button type="button" className="seg-btn" aria-selected={type === "collection"} disabled={!!editId} onClick={() => !editId && switchType("collection")}>征集（收作品）</button>
+              <button type="button" className="seg-btn" aria-selected={type === "exhibition"} disabled={!!editId} onClick={() => !editId && switchType("exhibition")}>展示（陈列评分）</button>
             </div>
           </div>
 
@@ -228,7 +248,7 @@ export default function ActivityFormPage() {
                 </label>
               </div>
             </>
-          ) : (
+          ) : type === "collection" ? (
             <>
               <div className="form-grid">
                 <div className="field">
@@ -253,6 +273,38 @@ export default function ActivityFormPage() {
               <div className="field">
                 <label className="label">收件截止</label>
                 <input className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* 展示：截止 + 可选投票（填≥2 选项启用，复用众议机制） */}
+              <div className="field">
+                <label className="label">展示截止</label>
+                <input className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+              </div>
+              <div className="field">
+                <label className="label">可选：启用投票 <span className="hint">（填≥2 个选项启用活动级投票；留空则仅点赞踩）</span></label>
+                {options.map((o, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <input className="input" value={o} onChange={(e) => setOption(i, e.target.value)} maxLength={200} placeholder={`选项 ${i + 1}（选填）`} />
+                    {options.length > 2 && (
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOptions(options.filter((_, idx) => idx !== i))}>移除</button>
+                    )}
+                  </div>
+                ))}
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOptions([...options, ""])}>+ 增加选项</button>
+              </div>
+              <div className="form-grid">
+                <div className="field">
+                  <label className="label">每人最多选几项（K）</label>
+                  <input className="input" type="number" min={1} value={k} onChange={(e) => setK(parseInt(e.target.value, 10) || 1)} />
+                </div>
+                <div className="field">
+                  <label className="fb-attrib" style={{ marginTop: 28 }}>
+                    <input type="checkbox" checked={secret} onChange={(e) => setSecret(e.target.checked)} />
+                    <span>秘密投票</span>
+                  </label>
+                </div>
               </div>
             </>
           )}

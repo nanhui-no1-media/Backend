@@ -4,12 +4,14 @@ import { api } from "../api/client";
 import { activityApi } from "../api/activities";
 import {
   ActivityDetail,
+  ActivityListItem,
   ACTIVITY_TYPE_META,
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_BADGE_CLASS,
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_BADGE_CLASS,
 } from "../types/activities";
+import type { Attachment } from "../types/tasks";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
 
@@ -33,10 +35,24 @@ export default function ActivityDetailPage() {
   const [files, setFiles] = useState<File[]>([]);
   // 征集复审评语（按 submission id）
   const [comments, setComments] = useState<Record<number, string>>({});
+  // 展示策展：加展品 / 导入征集
+  const [exFiles, setExFiles] = useState<File[]>([]);
+  const [exTitle, setExTitle] = useState("");
+  const [myCollections, setMyCollections] = useState<ActivityListItem[]>([]);
+  const [importId, setImportId] = useState<number | "">("");
 
   useEffect(() => {
     api.me().then((d) => setUser({ id: d.user.id, can_review_collections: d.user.permissions?.can_review_collections, can_change_proposals: d.user.permissions?.can_change_proposals })).catch(() => setUser(null));
   }, []);
+
+  // 展示策展人：拉取自己的征集，供「从征集导入」选择
+  useEffect(() => {
+    if (activity?.type === "exhibition" && user && (activity.creator?.id === user.id || !!user.can_change_proposals)) {
+      activityApi.list({ type: "collection", creator: String(user.id) })
+        .then((d) => setMyCollections(d.results || [])).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activity, user]);
 
   const load = () => {
     if (!id) return;
@@ -55,17 +71,18 @@ export default function ActivityDetailPage() {
   const canManage = !!user && (isOwner || !!user.can_change_proposals);
   const isDeliberation = a.type === "deliberation";
   const isCollection = a.type === "collection";
+  const isExhibition = a.type === "exhibition";
   const total = a.total_ballots ?? 0;
 
   // 时间线阶段（stepper）：待开始(若有 start_at) → 开放态 → …；当前阶段高亮
   const fmtTime = (d: string | null) =>
     d ? new Date(d).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
   const phases = (() => {
-    if (isDeliberation) {
+    if (isDeliberation || isExhibition) {
       const ns = [];
       if (a.start_at) ns.push({ key: "scheduled", label: "待开始", time: fmtTime(a.start_at) });
-      ns.push({ key: "open", label: "投票中", time: a.start_at ? null : fmtTime(a.created_at) });
-      ns.push({ key: "closed", label: "截止结算", time: fmtTime(a.end_at) });
+      ns.push({ key: "open", label: isExhibition ? "展示中" : "投票中", time: a.start_at ? null : fmtTime(a.created_at) });
+      ns.push({ key: "closed", label: "已结束", time: fmtTime(a.end_at) });
       return ns;
     }
     const ns = [];
@@ -133,6 +150,33 @@ export default function ActivityDetailPage() {
     finally { setBusy(false); }
   };
 
+  // 展示：策展加展品 / 导入征集 / 评分
+  const doAddExhibit = async () => {
+    if (exFiles.length < 1) return;
+    setBusy(true); setError("");
+    try { setActivity(await activityApi.addExhibit(a.id, exFiles, exTitle)); setExFiles([]); setExTitle(""); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const doImport = async () => {
+    if (!importId) return;
+    setBusy(true); setError("");
+    try { setActivity(await activityApi.importFromCollection(a.id, Number(importId))); setImportId(""); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const doRate = async (eid: number, choice: "like" | "dislike") => {
+    setBusy(true); setError("");
+    try { setActivity(await activityApi.rate(a.id, eid, choice)); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const renderExFile = (f: Attachment) => {
+    if (f.file_type === "image") return <img key={f.id} src={f.file_url} alt={f.file_name} />;
+    if (f.file_type === "video") return <video key={f.id} src={f.file_url} controls />;
+    return <a key={f.id} href={f.file_url} target="_blank" rel="noreferrer" className="muted">{f.file_name}</a>;
+  };
+
   return (
     <AppShell>
       <div className="page-head">
@@ -191,8 +235,8 @@ export default function ActivityDetailPage() {
           </div>
         </div>
 
-        {/* 众议：投票 + 结果 */}
-        {isDeliberation && (
+        {/* 众议 / 展示(启用投票时)：投票 + 结果 */}
+        {(isDeliberation || (isExhibition && (a.options?.length ?? 0) > 0)) && (
           <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
             <h3 className="section-h">投票</h3>
             {a.status === "open" && a.my_selections === null ? (
@@ -332,6 +376,60 @@ export default function ActivityDetailPage() {
                 ))}
               </div>
             )}
+          </>
+        )}
+
+        {/* 展示：策展 + 展品画廊（可选投票复用上方投票块） */}
+        {isExhibition && (
+          <>
+            {canManage && a.status !== "closed" && (
+              <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
+                <h3 className="section-h">策展</h3>
+                <div className="field">
+                  <label className="label">加展品（自上传）</label>
+                  <input className="input" type="text" placeholder="展品标题（选填）" value={exTitle} onChange={(e) => setExTitle(e.target.value)} />
+                  <input type="file" multiple onChange={(e) => setExFiles(Array.from(e.target.files || []))} />
+                  {exFiles.length > 0 && <div className="hint">已选 {exFiles.length} 个文件</div>}
+                  <div style={{ marginTop: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={doAddExhibit} disabled={busy || exFiles.length < 1}>上传展品</button>
+                  </div>
+                </div>
+                {myCollections.length > 0 && (
+                  <div className="field">
+                    <label className="label">从征集导入（全部作品 → 展品快照）</label>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <select className="select" value={importId} onChange={(e) => setImportId(e.target.value ? Number(e.target.value) : "")}>
+                        <option value="">选择征集…</option>
+                        {myCollections.map((c) => (<option key={c.id} value={c.id}>{c.title}</option>))}
+                      </select>
+                      <button className="btn btn-ghost btn-sm" onClick={doImport} disabled={busy || !importId}>导入</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
+              <h3 className="section-h">展品 ({a.exhibits?.length || 0})</h3>
+              {a.exhibits && a.exhibits.length > 0 ? (
+                <div className="exhibit-grid">
+                  {a.exhibits.map((ex) => (
+                    <div key={ex.id} className="exhibit-card">
+                      <div className="exhibit-media">
+                        {ex.files.map(renderExFile)}
+                      </div>
+                      <div className="exhibit-title">{ex.title || ex.submitter?.nickname || ex.submitter?.username || "未命名"}</div>
+                      <div className="exhibit-rate">
+                        <button className={"rate-btn" + (ex.my_rating === "like" ? " is-on like" : "")} onClick={() => doRate(ex.id, "like")} disabled={busy || a.status !== "open"}>👍 {ex.like_count}</button>
+                        <button className={"rate-btn" + (ex.my_rating === "dislike" ? " is-on dislike" : "")} onClick={() => doRate(ex.id, "dislike")} disabled={busy || a.status !== "open"}>👎 {ex.dislike_count}</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty-text">暂无展品{canManage ? "，用上方「加展品」或「从征集导入」添加。" : "。"}</p>
+              )}
+            </div>
           </>
         )}
 

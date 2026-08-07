@@ -186,6 +186,7 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 .act-medal-ico { font-size: 14px; line-height: 1; }
 .medal-vote { background: var(--brand-100); color: var(--brand-800); }
 .medal-collect { background: oklch(0.95 0.040 160); color: oklch(0.42 0.110 160); }
+.medal-exhibit { background: oklch(0.95 0.035 300); color: oklch(0.42 0.10 300); }
 
 /* 活动详情头部行（面包屑左、编辑按钮右）+ 征集两栏（主区 + 右侧规则） */
 .act-head-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); }
@@ -193,6 +194,20 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 .act-main { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
 .act-side { display: flex; flex-direction: column; gap: var(--s-4); }
 @media (max-width: 880px) { .act-two-col { grid-template-columns: 1fr; } }
+
+/* 展示画廊 + 评分按钮 */
+.exhibit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s-4); }
+.exhibit-card { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--bg); display: flex; flex-direction: column; }
+.exhibit-media { display: flex; flex-direction: column; gap: 2px; background: var(--bg-soft); }
+.exhibit-media img, .exhibit-media video { width: 100%; display: block; max-height: 320px; object-fit: contain; background: #000; }
+.exhibit-media a { padding: 8px 10px; font-size: 13px; }
+.exhibit-title { padding: 8px 10px 4px; font-weight: 700; }
+.exhibit-rate { display: flex; gap: 8px; padding: 6px 10px 10px; }
+.rate-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--r-pill); font-size: 13px; background: var(--bg); color: var(--muted); }
+.rate-btn:hover:not(:disabled) { border-color: var(--brand-300); }
+.rate-btn:disabled { opacity: .55; cursor: not-allowed; }
+.rate-btn.is-on.like { border-color: var(--success); background: var(--success-bg); color: var(--success); font-weight: 700; }
+.rate-btn.is-on.dislike { border-color: var(--danger); background: var(--danger-bg); color: var(--danger); font-weight: 700; }
 
 /* ---------- ⑤ 顶栏（.topnav） ---------- */
 .topnav {

@@ -60,6 +60,26 @@ export const activityApi = {
       }),
     }),
 
+  // 展示：策展人加展品（自上传，multipart）
+  addExhibit: (id: number, files: File[], title = ""): Promise<ActivityDetail> => {
+    const fd = new FormData();
+    if (title) fd.append("title", title);
+    for (const f of files) fd.append("files", f);
+    return request(`/activities/${id}/add_exhibit/`, { method: "POST", body: fd });
+  },
+  // 展示：从征集一键导入全部作品（复制成展品快照）
+  importFromCollection: (id: number, collectionId: number): Promise<ActivityDetail> =>
+    request(`/activities/${id}/import_from_collection/`, {
+      method: "POST",
+      body: JSON.stringify({ collection_id: collectionId }),
+    }),
+  // 展示：点赞 / 点踩（三态切换：再点当前态=取消）
+  rate: (id: number, exhibitId: number, choice: "like" | "dislike"): Promise<ActivityDetail> =>
+    request(`/activities/${id}/rate/`, {
+      method: "POST",
+      body: JSON.stringify({ exhibit_id: exhibitId, choice }),
+    }),
+
   // 正文内嵌图片上传（已验证成员）：返回 {url}
   uploadImage: (file: File): Promise<{ url: string }> => {
     const fd = new FormData();

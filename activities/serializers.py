@@ -205,7 +205,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
 
     def get_ballots(self, obj):
         # 秘密投票：个人明细仅 is_superuser 可见；其余（含发起人）只见聚合计数。
-        if obj.type != "deliberation":
+        # 众议与展示（启用投票时）共用。
+        if obj.type not in ("deliberation", "exhibition"):
             return None
         request = self.context.get("request")
         user = getattr(request, "user", None)
@@ -218,7 +219,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     def get_my_selections(self, obj):
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        if not user or not user.is_authenticated or obj.type != "deliberation":
+        if not user or not user.is_authenticated or obj.type not in ("deliberation", "exhibition"):
             return None
         ballot = obj.ballots.filter(voter=user).first()
         if ballot is None:
@@ -226,7 +227,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         return list(ballot.selections.values_list("option_id", flat=True))
 
     def get_total_ballots(self, obj):
-        if obj.type != "deliberation":
+        if obj.type not in ("deliberation", "exhibition"):
             return None
         return obj.ballots.count()
 

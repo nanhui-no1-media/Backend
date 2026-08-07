@@ -1,8 +1,8 @@
 import type { TaskUser, Attachment } from "./tasks";
 
-// 活动（ADR 0007）：众议（投票）/ 征集（收作品）。独立于申报（反馈）。
+// 活动（ADR 0007）：众议（投票）/ 征集（收作品）/ 展示（陈列评分）。独立于申报（反馈）。
 
-export type ActivityType = "deliberation" | "collection";
+export type ActivityType = "deliberation" | "collection" | "exhibition";
 export type ActivityStatus =
   | "scheduled" // 排期：start_at 之前，待开始
   | "open" // 众议：投票中
@@ -48,6 +48,17 @@ export interface Submission {
   created_at: string;
 }
 
+export interface Exhibit {
+  id: number;
+  title: string;
+  submitter: TaskUser | null;
+  files: Attachment[];
+  like_count: number;
+  dislike_count: number;
+  my_rating: "like" | "dislike" | null;
+  created_at: string;
+}
+
 export interface ActivityDetail {
   id: number;
   type: ActivityType;
@@ -71,6 +82,8 @@ export interface ActivityDetail {
   max_submissions: number | null;
   my_submission: Submission | null;
   submissions: Submission[] | null; // 复审者见全部；其余仅录用（公开展示）
+  // 展示
+  exhibits: Exhibit[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -99,18 +112,32 @@ export interface CollectionFormData {
   end_at?: string;
 }
 
-export type ActivityFormData = DeliberationFormData | CollectionFormData;
+export interface ExhibitionFormData {
+  type: "exhibition";
+  title: string;
+  body: string;
+  start_at?: string;
+  end_at?: string;
+  // 可选投票：给了 option_texts 才启用（复用众议机制）
+  option_texts?: string[];
+  max_choices_per_voter?: number;
+  is_secret_ballot?: boolean;
+}
+
+export type ActivityFormData = DeliberationFormData | CollectionFormData | ExhibitionFormData;
 
 // ---- 标签 ----
 export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   deliberation: "众议",
   collection: "征集",
+  exhibition: "展示",
 };
 
 // 活动类型勋章：emoji + 配色徽章（替换纯文字 type-tag）
 export const ACTIVITY_TYPE_META: Record<ActivityType, { label: string; emoji: string; medal: string }> = {
   deliberation: { label: "众议", emoji: "🗳", medal: "medal-vote" },
   collection: { label: "征集", emoji: "📥", medal: "medal-collect" },
+  exhibition: { label: "展示", emoji: "🖼", medal: "medal-exhibit" },
 };
 
 export const ACTIVITY_STATUS_LABELS: Record<ActivityStatus, string> = {
