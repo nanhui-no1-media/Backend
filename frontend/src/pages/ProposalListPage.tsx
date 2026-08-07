@@ -1,19 +1,16 @@
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { proposalApi } from "../api/proposals";
 import { attachmentApi } from "../api/attachments";
 import {
   ProposalListItem,
-  ProposalType,
   FeedbackCategory,
   FeedbackFormData,
   PROPOSAL_STATUS_LABELS,
   PROPOSAL_STATUS_BADGE_CLASS,
-  ACTIVITY_TYPE_LABELS,
   FEEDBACK_CATEGORY_LABELS,
 } from "../types/proposals";
-import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
 import { useLoginModal } from "../components/LoginModalProvider";
 import "../styles/list.css";
@@ -31,7 +28,6 @@ export default function ProposalListPage() {
   const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
   const [proposals, setProposals] = useState<ProposalListItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [typeFilter, setTypeFilter] = useState<ProposalType>("feedback");
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
@@ -65,19 +61,19 @@ export default function ProposalListPage() {
     if (user === null) setShowFeedbackForm(true);
   }, [user]);
 
-  // 加载列表（仅登录用户）
+  // 加载列表：社长见全部反馈，普通成员见自己提交的（后端按 view_feedback 裁剪）
   useEffect(() => {
     if (user === undefined || user === null) return;
     setLoading(true);
     setError("");
-    const params: Record<string, string> = { proposal_type: typeFilter };
+    const params: Record<string, string> = {};
     if (statusFilter) params.status = statusFilter;
     if (search) params.search = search;
     proposalApi.list(params)
       .then((data: any) => setProposals(data.results || data))
       .catch((err) => { setError(err.message); setProposals([]); })
       .finally(() => setLoading(false));
-  }, [user, typeFilter, statusFilter, search, reloadKey]);
+  }, [user, statusFilter, search, reloadKey]);
 
   const submitFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,7 +84,6 @@ export default function ProposalListPage() {
     setFbSubmitting(true);
     setError("");
     const data: FeedbackFormData = {
-      proposal_type: "feedback",
       title: fbTitle.trim(),
       description: fbDesc.trim(),
       feedback_category: fbCategory,
@@ -116,7 +111,7 @@ export default function ProposalListPage() {
       setFbCategory("suggestion");
       setFbAttributed(false);
       setFbFiles([]);
-      if (canViewFeedback && typeFilter === "feedback") setReloadKey((k) => k + 1);
+      setReloadKey((k) => k + 1);
       setTimeout(() => setFbSuccess(false), 5000);
     } catch (err: any) {
       setError(err.status === 429
@@ -129,69 +124,22 @@ export default function ProposalListPage() {
     }
   };
 
-  const formatRemaining = (endAt: string | null) => {
-    if (!endAt) return "";
-    const ms = new Date(endAt).getTime() - Date.now();
-    if (ms <= 0) return "已截止";
-    const h = Math.floor(ms / 3600000);
-    if (h < 24) return `剩余 ${h} 小时`;
-    return `剩余 ${Math.floor(h / 24)} 天`;
-  };
-
-  const renderCard = (p: ProposalListItem) => {
-    const isActivity = p.proposal_type === "activity";
-    const total = p.vote_summary ? (p.vote_summary.approve + p.vote_summary.oppose + p.vote_summary.abstain) : 0;
-    const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
-    return (
-      <a key={p.id} className="prop-card" href="#" onClick={(e) => { e.preventDefault(); navigate(`/activity/${p.id}`); }}>
-        <div className="pc-title">{p.title}</div>
-        <div className="pc-meta">
-          <span className={"badge " + PROPOSAL_STATUS_BADGE_CLASS[p.status]}>{PROPOSAL_STATUS_LABELS[p.status]}</span>
-          <span className={"type-tag" + (isActivity ? "" : " fb")}>
-            {isActivity
-              ? ACTIVITY_TYPE_LABELS[p.activity_type as keyof typeof ACTIVITY_TYPE_LABELS] || "活动申报"
-              : FEEDBACK_CATEGORY_LABELS[p.feedback_category as keyof typeof FEEDBACK_CATEGORY_LABELS] || "意见反馈"}
-          </span>
-          <span className="who">
-            {isActivity && p.creator ? (
-              <>
-                <Link to={`/u/${p.creator.id}`}><Avatar user={p.creator} /></Link>
-                {p.creator.nickname || p.creator.username}
-              </>
-            ) : isActivity ? (
-              "（未知）"
-            ) : (
-              "匿名"
-            )}
-          </span>
-          {isActivity && p.vote_summary && (
-            <span className="vote">
-              <span className="votebar">
-                <i className="app" style={{ width: pct(p.vote_summary.approve) + "%" }} />
-                <i className="opp" style={{ width: pct(p.vote_summary.oppose) + "%" }} />
-                <i className="abs" style={{ width: pct(p.vote_summary.abstain) + "%" }} />
-              </span>
-              <span className="vote-num">
-                <span className="app">赞成 {p.vote_summary.approve}</span>
-                <span className="opp">反对 {p.vote_summary.oppose}</span>
-                <span className="abs">弃权 {p.vote_summary.abstain}</span>
-              </span>
-            </span>
-          )}
-          {isActivity && p.status === "voting" && (
-            <span className="remain">⏱ {formatRemaining(p.voting_end_at)}</span>
-          )}
-          {p.attachment_count > 0 && <span>{p.attachment_count} 附件</span>}
-          <span className="tnum">{new Date(p.created_at).toLocaleDateString("zh-CN")}</span>
-        </div>
-        {(p.status === "returned" || p.status === "rejected") && p.reject_reason && (
-          <div className={"pc-reason" + (p.status === "returned" ? " warn" : "")}>
-            <b>{p.status === "returned" ? "打回理由" : "拒绝理由"}：</b>{p.reject_reason}
-          </div>
-        )}
-      </a>
-    );
-  };
+  const renderCard = (p: ProposalListItem) => (
+    <a key={p.id} className="prop-card" href="#" onClick={(e) => { e.preventDefault(); navigate(`/feedback/${p.id}`); }}>
+      <div className="pc-title">{p.title}</div>
+      <div className="pc-meta">
+        <span className={"badge " + PROPOSAL_STATUS_BADGE_CLASS[p.status]}>{PROPOSAL_STATUS_LABELS[p.status]}</span>
+        <span className="type-tag fb">
+          {FEEDBACK_CATEGORY_LABELS[p.feedback_category as FeedbackCategory] || "意见反馈"}
+        </span>
+        {p.attachment_count > 0 && <span>{p.attachment_count} 附件</span>}
+        <span className="tnum">{new Date(p.created_at).toLocaleDateString("zh-CN")}</span>
+      </div>
+      {p.status === "rejected" && p.reject_reason && (
+        <div className="pc-reason"><b>拒绝理由：</b>{p.reject_reason}</div>
+      )}
+    </a>
+  );
 
   return (
     <AppShell>
@@ -200,20 +148,10 @@ export default function ProposalListPage() {
           <nav className="breadcrumb">
             <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
             <span className="sep">/</span>
-            <span>活动申报</span>
+            <span>意见反馈</span>
           </nav>
-          <div className="page-head-row">
-            <div>
-              <h1>活动申报</h1>
-              <p className="section-sub">发起社团活动、参与投票；或匿名提交意见反馈与举报。</p>
-            </div>
-            {isLoggedIn && (
-              <button className="btn btn-primary" onClick={() => navigate("/activity/new")}>
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-                新建活动申报
-              </button>
-            )}
-          </div>
+          <h1>意见反馈</h1>
+          <p className="section-sub">匿名或署名提交建议 / 投诉 / 举报；社长在此审批。</p>
         </div>
       </div>
 
@@ -294,54 +232,41 @@ export default function ProposalListPage() {
           )}
         </section>
 
-        {/* 列表区：登录后可见活动申报；社长额外可见反馈 */}
+        {/* 列表区：社长见全部反馈；普通成员见自己提交的 */}
         {!isLoggedIn ? (
           <div className="alert alert-info" style={{ alignItems: "center" }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v4h1" /></svg>
-            <span style={{ flex: 1 }}><strong>登录后可查看和参与活动申报、投票</strong></span>
+            <span style={{ flex: 1 }}><strong>登录后可查看你提交的反馈</strong></span>
             <button className="btn btn-primary btn-sm" onClick={() => openLogin()}>去登录</button>
           </div>
         ) : (
           <>
-            <div className="prop-tabs">
-              <div className="seg" role="tablist" aria-label="申报类型">
-                <button className="seg-btn" type="button" aria-selected={typeFilter === "activity"} onClick={() => setTypeFilter("activity")}>活动申报</button>
-                {canViewFeedback && (
-                  <button className="seg-btn" type="button" aria-selected={typeFilter === "feedback"} onClick={() => setTypeFilter("feedback")}>意见反馈</button>
-                )}
+            {canViewFeedback && (
+              <div className="lock-note" style={{ margin: "var(--s-4) 0 var(--s-2)", display: "inline-flex" }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+                社长视角：可见全部反馈
               </div>
-              {canViewFeedback && (
-                <span className="lock-note">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
-                  意见反馈仅社长可见
-                </span>
-              )}
-            </div>
+            )}
 
             <div className="prop-filter">
               <div className="input-affix search-affix">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>
-                <input className="input" type="search" placeholder={typeFilter === "activity" ? "搜索活动申报…" : "搜索意见反馈…"} value={search} onChange={(e) => setSearch(e.target.value)} />
+                <input className="input" type="search" placeholder="搜索反馈…" value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
             </div>
 
-            <div className="filter-bar" role="tablist" aria-label="活动状态" style={{ paddingTop: 0 }}>
+            <div className="filter-bar" role="tablist" aria-label="反馈状态" style={{ paddingTop: 0 }}>
               <button className="chip" aria-pressed={statusFilter === ""} onClick={() => setStatusFilter("")}>全部</button>
-              {(Object.keys(PROPOSAL_STATUS_LABELS) as (keyof typeof PROPOSAL_STATUS_LABELS)[])
-                .filter((s) => typeFilter === "activity" || s !== "voting")
-                .map((k) => (
-                  <button key={k} className="chip" aria-pressed={statusFilter === k} onClick={() => setStatusFilter(k)}>{PROPOSAL_STATUS_LABELS[k]}</button>
-                ))}
+              {(Object.keys(PROPOSAL_STATUS_LABELS) as (keyof typeof PROPOSAL_STATUS_LABELS)[]).map((k) => (
+                <button key={k} className="chip" aria-pressed={statusFilter === k} onClick={() => setStatusFilter(k)}>{PROPOSAL_STATUS_LABELS[k]}</button>
+              ))}
             </div>
 
             {loading ? (
               <p className="muted" style={{ padding: "var(--s-8) 0" }}>加载中…</p>
             ) : proposals.length === 0 ? (
               <div className="prop-empty">
-                <p>{typeFilter === "activity" ? "暂无活动申报" : "暂无意见反馈"}</p>
-                {typeFilter === "activity" && (
-                  <button className="btn btn-primary" onClick={() => navigate("/activity/new")}>发起第一个活动申报</button>
-                )}
+                <p>暂无反馈</p>
               </div>
             ) : (
               proposals.map(renderCard)

@@ -18,7 +18,6 @@ const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage"));
 const TaskFormPage = lazy(() => import("./pages/TaskFormPage"));
 const MessagePage = lazy(() => import("./pages/MessagePage"));
 const ProposalListPage = lazy(() => import("./pages/ProposalListPage"));
-const ProposalFormPage = lazy(() => import("./pages/ProposalFormPage"));
 const ProposalDetailPage = lazy(() => import("./pages/ProposalDetailPage"));
 const ActivityListPage = lazy(() => import("./pages/ActivityListPage"));
 const ActivityFormPage = lazy(() => import("./pages/ActivityFormPage"));
