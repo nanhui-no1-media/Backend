@@ -13,6 +13,7 @@ class Activity(models.Model):
     TYPE_CHOICES = [
         ("deliberation", "众议"),
         ("collection", "征集"),
+        ("exhibition", "展示"),
     ]
     # 状态语义随类型而异（状态机见 lifecycle.py）：
     #   排期：scheduled（待开始，start_at 之前）→ 到点开放
@@ -183,3 +184,69 @@ class Submission(models.Model):
 
     def __str__(self):
         return f"{self.submitter_id} -> {self.activity_id} ({self.review_status})" # type: ignore
+
+
+class Exhibit(models.Model):
+    """展品：展示活动里的一个陈列单元（一束文件）。
+
+    来源：策展人**自上传**（source_submission=None），或从一个**征集**的作品**复制**而来
+    （source_submission 指向原 Submission，仅留痕；展品文件独立于原作品，是快照）。
+    文件复用统一附件系统（attachments.Attachment.exhibit 父级）。
+    """
+
+    activity = models.ForeignKey(
+        Activity, on_delete=models.CASCADE,
+        related_name="exhibits", verbose_name="所属展示",
+    )
+    title = models.CharField("标题", max_length=200, blank=True, default="")
+    submitter = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="uploaded_exhibits", verbose_name="提交者",
+    )
+    # 导入留痕：从该 Submission 复制而来；自上传为 None。
+    source_submission = models.ForeignKey(
+        Submission, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="imported_exhibits", verbose_name="来源作品",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "展品"
+        verbose_name_plural = "展品"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.activity_id}:{self.title or self.id}" # type: ignore
+
+
+class ExhibitRating(models.Model):
+    """展品评分：一名成员对一个展品的赞/踩。三态（none/like/dislike）靠「无行=none」表达。
+
+    唯一 [exhibit, user]：每人每展品一条。互斥（一行只记 like 或 dislike）；可改（翻转 choice）；
+    可撤（再点当前态 = 删行 = none）。
+    """
+
+    RATING_CHOICES = [
+        ("like", "赞"),
+        ("dislike", "踩"),
+    ]
+
+    exhibit = models.ForeignKey(
+        Exhibit, on_delete=models.CASCADE,
+        related_name="ratings", verbose_name="展品",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="exhibit_ratings", verbose_name="评分人",
+    )
+    choice = models.CharField("选择", max_length=8, choices=RATING_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "展品评分"
+        verbose_name_plural = "展品评分"
+        unique_together = ["exhibit", "user"]
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.user_id} -> {self.exhibit_id} ({self.choice})" # type: ignore

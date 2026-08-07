@@ -28,6 +28,8 @@ def initial_status(activity_type, start_at=None):
         return OPEN
     if activity_type == "collection":
         return COLLECTING
+    if activity_type == "exhibition":
+        return OPEN
     raise ValueError(f"未知活动类型: {activity_type!r}")
 
 
@@ -58,13 +60,22 @@ def can_edit(activity):
 # ---- 众议 --------------------------------------------------------------
 
 def can_vote(activity, user):
-    """众议投票守卫：类型=众议、状态=open、用户已认证。
+    """投票守卫：众议，或展示（启用投票时）——类型∈{众议,展示}、状态=open、用户已认证。
 
-    「已验证」由视图的 IsVerified 把关；此处只判状态机条件。
+    展示的投票是可选的；无选项时投票动作会因「选项不存在」自行拒绝。已验证由 IsVerified 把关。
     """
     return (
         user.is_authenticated
-        and activity.type == "deliberation"
+        and activity.type in ("deliberation", "exhibition")
+        and activity.status == OPEN
+    )
+
+
+def can_rate(activity, user):
+    """展示评分守卫：类型=展示、状态=open、用户已认证。"""
+    return (
+        user.is_authenticated
+        and activity.type == "exhibition"
         and activity.status == OPEN
     )
 
@@ -80,15 +91,15 @@ def can_close(activity, user):
     )
 
 
-def transition_overdue_deliberations():
-    """惰性结算：把已到 ``end_at`` 的众议从 open 流转到 closed。
+def transition_overdue():
+    """惰性结算：把已到 ``end_at`` 的开放态众议/展示从 open 流转到 closed。
 
-    在 list/get/vote 入口调用。逐行条件更新保证每条活动只被一个请求流转（并发安全；
-    Django 无内置调度，此惰性方式无需 cron）。
+    在 list/get/vote/rate 入口调用。逐行条件更新保证每条活动只被一个请求流转（并发安全；
+    Django 无内置调度，此惰性方式无需 cron）。征集另有满额流转（``maybe_close_collection_on_cap``）。
     """
     now = timezone.now()
     overdue = Activity.objects.filter(
-        type="deliberation", status=OPEN, end_at__lte=now,
+        type__in=("deliberation", "exhibition"), status=OPEN, end_at__lte=now,
     )
     closed_pks = []
     for activity in overdue:

@@ -8,7 +8,7 @@ from common.rich_text import sanitize_html
 from tasks.serializers import SimpleUserSerializer  # 复用（与申报/新闻一致）
 
 from .lifecycle import initial_status
-from .models import Activity, Ballot, VoteOption, Submission
+from .models import Activity, Ballot, Exhibit, VoteOption, Submission
 
 
 class VoteOptionSerializer(serializers.ModelSerializer):
@@ -55,6 +55,43 @@ class SubmissionSerializer(serializers.ModelSerializer):
         return AttachmentSerializer(obj.attachments.all(), many=True, context=self.context).data
 
 
+class ExhibitSerializer(serializers.ModelSerializer):
+    """展品：标题 + 提交者 + 一束文件 + 赞/踩计数 + 我的评分。"""
+
+    submitter = SimpleUserSerializer(read_only=True)
+    files = serializers.SerializerMethodField()
+    like_count = serializers.SerializerMethodField()
+    dislike_count = serializers.SerializerMethodField()
+    my_rating = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Exhibit
+        fields = ["id", "title", "submitter", "files", "like_count", "dislike_count", "my_rating", "created_at"]
+
+    def get_files(self, obj):
+        return AttachmentSerializer(obj.attachments.all(), many=True, context=self.context).data
+
+    def _ratings(self, obj):
+        # 用预取缓存（exhibits__ratings）在内存算，避免 N+1
+        return list(obj.ratings.all())
+
+    def get_like_count(self, obj):
+        return sum(1 for r in self._ratings(obj) if r.choice == "like")
+
+    def get_dislike_count(self, obj):
+        return sum(1 for r in self._ratings(obj) if r.choice == "dislike")
+
+    def get_my_rating(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return None
+        for r in self._ratings(obj):
+            if r.user_id == user.pk:
+                return r.choice
+        return None
+
+
 class ActivityListSerializer(serializers.ModelSerializer):
     creator = SimpleUserSerializer(read_only=True)
 
@@ -85,6 +122,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     # 征集读侧
     my_submission = serializers.SerializerMethodField()
     submissions = serializers.SerializerMethodField()
+    # 展示读侧
+    exhibits = serializers.SerializerMethodField()
     # 众议写侧：创建时给选项文本（开放即锁定，无后续编辑）
     option_texts = serializers.ListField(
         child=serializers.CharField(max_length=200), write_only=True, required=False,
@@ -99,6 +138,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "allowed_extensions", "max_file_size", "max_files_per_submission", "max_submissions",
             "options", "ballots", "my_selections", "total_ballots",
             "my_submission", "submissions",
+            "exhibits",
             "option_texts",
             "created_at", "updated_at",
         ]
@@ -214,3 +254,9 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         if not _is_reviewer(obj, user):
             qs = qs.filter(review_status="accepted")
         return SubmissionSerializer(qs, many=True, context=self.context).data
+
+    def get_exhibits(self, obj):
+        # 展示读侧：全部展品（含文件、赞踩计数、我的评分）。非展示类型返回 None。
+        if obj.type != "exhibition":
+            return None
+        return ExhibitSerializer(obj.exhibits.all(), many=True, context=self.context).data

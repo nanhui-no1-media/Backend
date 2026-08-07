@@ -55,6 +55,10 @@ class Attachment(models.Model):
         "activities.Submission", on_delete=models.CASCADE,
         null=True, blank=True, related_name="attachments", verbose_name="作品",
     )
+    exhibit = models.ForeignKey(
+        "activities.Exhibit", on_delete=models.CASCADE,
+        null=True, blank=True, related_name="attachments", verbose_name="展品",
+    )
     file = models.FileField("文件", upload_to=attachment_upload_path)
     file_type = models.CharField("文件类型", max_length=20, choices=FILE_TYPE_CHOICES)
     file_name = models.CharField("文件名", max_length=255)
@@ -68,14 +72,15 @@ class Attachment(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    # 恰好一个父级：任务 / 申报 / 新闻 / 作品（征集投稿）
-                    models.Q(task__isnull=False, proposal__isnull=True, news__isnull=True, submission__isnull=True)
-                    | models.Q(task__isnull=True, proposal__isnull=False, news__isnull=True, submission__isnull=True)
-                    | models.Q(task__isnull=True, proposal__isnull=True, news__isnull=False, submission__isnull=True)
-                    | models.Q(task__isnull=True, proposal__isnull=True, news__isnull=True, submission__isnull=False)
+                    # 恰好一个父级：任务 / 申报 / 新闻 / 作品(征集) / 展品(展示)
+                    models.Q(task__isnull=False, proposal__isnull=True, news__isnull=True, submission__isnull=True, exhibit__isnull=True)
+                    | models.Q(task__isnull=True, proposal__isnull=False, news__isnull=True, submission__isnull=True, exhibit__isnull=True)
+                    | models.Q(task__isnull=True, proposal__isnull=True, news__isnull=False, submission__isnull=True, exhibit__isnull=True)
+                    | models.Q(task__isnull=True, proposal__isnull=True, news__isnull=True, submission__isnull=False, exhibit__isnull=True)
+                    | models.Q(task__isnull=True, proposal__isnull=True, news__isnull=True, submission__isnull=True, exhibit__isnull=False)
                 ),
                 name="attachment_exactly_one_parent",
-                violation_error_message="附件必须且只能挂在一个父级（任务/申报/新闻/作品）上。",
+                violation_error_message="附件必须且只能挂在一个父级（任务/申报/新闻/作品/展品）上。",
             ),
         ]
 

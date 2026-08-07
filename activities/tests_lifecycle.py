@@ -1,7 +1,7 @@
 """活动生命周期模块的接口测试（次 seam：直接调用纯领域逻辑，不经 HTTP）。
 
 与 activities/tests.py 的 HTTP 黑盒相对——本文件只测 lifecycle 对外契约。
-T2：initial_status / can_vote / transition_overdue_deliberations。
+T2：initial_status / can_vote / transition_overdue。
 """
 
 from datetime import timedelta
@@ -18,7 +18,7 @@ from .lifecycle import (
     OPEN,
     can_vote,
     initial_status,
-    transition_overdue_deliberations,
+    transition_overdue,
 )
 from .models import Activity
 
@@ -65,7 +65,7 @@ class TransitionOverdueTest(TestCase):
             type="deliberation", status=OPEN, title="d", max_choices_per_voter=1,
             end_at=timezone.now() - timedelta(minutes=1),
         )
-        closed = transition_overdue_deliberations()
+        closed = transition_overdue()
         self.assertIn(a.pk, closed)
         self.assertEqual(Activity.objects.get(pk=a.pk).status, CLOSED)
 
@@ -74,7 +74,7 @@ class TransitionOverdueTest(TestCase):
             type="deliberation", status=OPEN, title="d", max_choices_per_voter=1,
             end_at=timezone.now() + timedelta(days=1),
         )
-        transition_overdue_deliberations()
+        transition_overdue()
         self.assertEqual(Activity.objects.get(pk=a.pk).status, OPEN)
 
     def test_collection_not_affected(self):
@@ -83,5 +83,5 @@ class TransitionOverdueTest(TestCase):
             type="collection", status=COLLECTING, title="c",
             end_at=timezone.now() - timedelta(minutes=1),
         )
-        transition_overdue_deliberations()
+        transition_overdue()
         self.assertEqual(Activity.objects.get(pk=c.pk).status, COLLECTING)

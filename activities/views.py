@@ -28,13 +28,14 @@ from .lifecycle import (
     REVIEWING,
     SCHEDULED,
     can_edit,
+    can_rate,
     can_submit,
     maybe_close_collection_on_cap,
     maybe_close_deliberation_on_full_vote,
     transition_due_starts,
-    transition_overdue_deliberations,
+    transition_overdue,
 )
-from .models import Activity, Ballot, BallotSelection, Submission
+from .models import Activity, Ballot, BallotSelection, Exhibit, ExhibitRating, Submission
 from .permissions import (
     CanCreateActivity,
     CanModifyActivity,
@@ -69,9 +70,9 @@ class ActivityViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        # 惰性流转：到 start_at 的待开始活动自动开放；到 end_at 的众议自动结算。
+        # 惰性流转：到 start_at 的待开始活动自动开放；到 end_at 的众议/展示自动结算。
         transition_due_starts()
-        transition_overdue_deliberations()
+        transition_overdue()
         return Activity.objects.select_related(
             "creator", "creator__profile",
         ).prefetch_related(
@@ -79,6 +80,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
             "ballots", "ballots__selections", "ballots__voter__profile",
             "submissions", "submissions__attachments", "submissions__submitter__profile",
             "submissions__reviewed_by",
+            "exhibits", "exhibits__attachments", "exhibits__submitter__profile",
+            "exhibits__ratings",
         )
 
     def get_serializer_class(self):
@@ -93,6 +96,11 @@ class ActivityViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated(), IsVerified()]
         if self.action == "submit":
             return [IsAuthenticated(), IsVerified()]
+        if self.action == "rate":
+            return [IsAuthenticated(), IsVerified()]
+        if self.action in ("add_exhibit", "import_from_collection"):
+            # 展示策展：发起人 OR 持 change_activity（对象级）
+            return [IsAuthenticated(), CanModifyActivity()]
         if self.action == "review_submission":
             # 复审：发起人 OR 持 review_collection 权限（对象级）
             return [IsAuthenticated(), CanReviewSubmission()]
@@ -121,8 +129,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def vote(self, request, pk=None):
         activity = self.get_object()  # 触发惰性结算（若已到点则已 closed）
-        if activity.type != "deliberation":
-            return Response({"detail": "仅众议可以投票"}, status=status.HTTP_400_BAD_REQUEST)
+        if activity.type not in ("deliberation", "exhibition"):
+            return Response({"detail": "仅众议/展示可以投票"}, status=status.HTTP_400_BAD_REQUEST)
         if activity.status != OPEN:
             return Response({"detail": "投票已结束"}, status=status.HTTP_400_BAD_REQUEST)
         if Ballot.objects.filter(activity=activity, voter=request.user).exists():
@@ -261,6 +269,89 @@ class ActivityViewSet(viewsets.ModelViewSet):
             )
         else:
             return Response({"detail": "不支持"}, status=status.HTTP_400_BAD_REQUEST)
+        activity = self.get_queryset().get(pk=activity.pk)
+        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+
+    # ── 展示：策展人加展品（自上传）──
+    @action(detail=True, methods=["post"], url_path="add_exhibit")
+    def add_exhibit(self, request, pk=None):
+        activity = self.get_object()
+        if activity.type != "exhibition":
+            return Response({"detail": "仅展示可加展品"}, status=status.HTTP_400_BAD_REQUEST)
+        if activity.status == CLOSED:
+            return Response({"detail": "展示已结束"}, status=status.HTTP_400_BAD_REQUEST)
+        files = request.FILES.getlist("files")
+        if not files:
+            return Response({"detail": "请至少上传一个文件"}, status=status.HTTP_400_BAD_REQUEST)
+        for f in files:
+            err = upload_error(f)  # 全局禁用后缀 + 50MB
+            if err:
+                return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
+        title = (request.data.get("title") or "").strip()
+        exhibit = Exhibit.objects.create(activity=activity, title=title, submitter=request.user)
+        for f in files:
+            Attachment.objects.create(
+                uploaded_by=request.user, exhibit=exhibit, file=f,
+                file_type=classify_file_type(f.content_type),
+                file_name=f.name, file_size=f.size,
+            )
+        activity = self.get_queryset().get(pk=activity.pk)
+        return Response(
+            ActivityDetailSerializer(activity, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    # ── 展示：从征集一键导入全部作品（复制文件成展品快照）──
+    @action(detail=True, methods=["post"], url_path="import_from_collection")
+    def import_from_collection(self, request, pk=None):
+        from django.core.files.base import ContentFile
+
+        activity = self.get_object()
+        if activity.type != "exhibition":
+            return Response({"detail": "仅展示可导入"}, status=status.HTTP_400_BAD_REQUEST)
+        if activity.status == CLOSED:
+            return Response({"detail": "展示已结束"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            source = Activity.objects.get(pk=request.data.get("collection_id"), type="collection")
+        except (Activity.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "征集不存在"}, status=status.HTTP_404_NOT_FOUND)
+        for sub in source.submissions.all():
+            exhibit = Exhibit.objects.create(
+                activity=activity, submitter=sub.submitter, source_submission=sub,
+            )
+            for a in sub.attachments.all():
+                new_att = Attachment(
+                    uploaded_by=request.user, exhibit=exhibit,
+                    file_type=a.file_type, file_name=a.file_name, file_size=a.file_size,
+                )
+                new_att.file.save(a.file.name, ContentFile(a.file.read()))
+                new_att.save()
+        activity = self.get_queryset().get(pk=activity.pk)
+        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+
+    # ── 展示：点赞 / 点踩（三态切换：none/like/dislike）──
+    @action(detail=True, methods=["post"], url_path="rate")
+    def rate(self, request, pk=None):
+        activity = self.get_object()
+        if activity.type != "exhibition":
+            return Response({"detail": "仅展示可评分"}, status=status.HTTP_400_BAD_REQUEST)
+        if activity.status != OPEN:
+            return Response({"detail": "展示未开放或已结束"}, status=status.HTTP_400_BAD_REQUEST)
+        choice = request.data.get("choice")
+        if choice not in ("like", "dislike"):
+            return Response({"detail": "choice 须为 like 或 dislike"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            exhibit = activity.exhibits.get(pk=request.data.get("exhibit_id"))
+        except (Exhibit.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "展品不存在"}, status=status.HTTP_404_NOT_FOUND)
+        existing = ExhibitRating.objects.filter(exhibit=exhibit, user=request.user).first()
+        if existing and existing.choice == choice:
+            existing.delete()  # 再点当前态 → none
+        elif existing:
+            existing.choice = choice
+            existing.save(update_fields=["choice"])
+        else:
+            ExhibitRating.objects.create(exhibit=exhibit, user=request.user, choice=choice)
         activity = self.get_queryset().get(pk=activity.pk)
         return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
 
