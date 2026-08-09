@@ -220,8 +220,22 @@ class FeedTest(TestCase):
         act = next(i for i in build_feed(request=self.anon)["items"] if i["type"] == "activity")
         for forbidden in ("budget", "vote_summary", "reject_reason", "contact", "creator", "description", "body", "options"):
             self.assertNotIn(forbidden, act)
-        self.assertIn(act["activity_type"], ("deliberation", "collection"))
+        self.assertIn(act["activity_type"], ("deliberation", "collection", "exhibition"))
         self.assertIn("status", act)
+
+    def test_exhibition_activity_in_feed(self):
+        """展示活动须进入 feed 且 activity_type=exhibition——前端 ActivityCard 据此查
+        ACTIVITY_META 渲染；后端若漏投或类型串错，卡片即崩（回归 #49）。"""
+        self._activity("影展", days_ago=0, type="exhibition", status="open")
+        items = build_feed(request=self.anon)["items"]
+        ex = next(
+            (i for i in items if i["type"] == "activity" and i["activity_type"] == "exhibition"),
+            None,
+        )
+        self.assertIsNotNone(ex, "展示活动应出现在 feed items 中")
+        # 公开投影与其它活动同形：不泄露内部字段（展品/正文/选项等）
+        for forbidden in ("budget", "body", "options", "exhibits", "creator"):
+            self.assertNotIn(forbidden, ex)
 
     def test_limit_truncates(self):
         for i in range(10):

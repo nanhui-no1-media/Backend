@@ -42,7 +42,7 @@ def _activity_dict(activity, request):
         "id": activity.pk,
         "title": activity.title,
         "timestamp": activity.created_at.isoformat(),
-        "activity_type": activity.type,  # deliberation / collection
+        "activity_type": activity.type,  # deliberation / collection / exhibition
         "status": activity.status,
     }
 

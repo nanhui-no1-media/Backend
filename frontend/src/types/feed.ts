@@ -2,7 +2,9 @@ import type { NewsCategory } from "./news";
 
 export type FeedType = "news" | "activity" | "task";
 
-export type ActivityType = "deliberation" | "collection";
+// 须与 activities.ts 的 ActivityType 同步——后端 feed 投影全部活动类型（含 exhibition），
+// 漏一个前端 ActivityCard 即因 ACTIVITY_META[<类型>] 为 undefined 而崩（#49）。
+export type ActivityType = "deliberation" | "collection" | "exhibition";
 export type FeedTaskStatus = "pending" | "in_progress" | "reviewing" | "review";
 export type FeedTaskPriority = "low" | "medium" | "high" | "urgent";
 
@@ -52,6 +54,7 @@ export interface FeedResponse {
 export const ACTIVITY_META: Record<ActivityType, { label: string; emoji: string }> = {
   deliberation: { label: "众议", emoji: "🗳" },
   collection: { label: "征集", emoji: "📥" },
+  exhibition: { label: "展示", emoji: "🖼" },
 };
 
 export const ACTIVITY_STATUS_LABEL: Record<string, string> = {
