@@ -195,7 +195,7 @@ export default function ActivityDetailPage() {
         </div>
       </div>
 
-      <div className="container" style={{ maxWidth: 900, paddingTop: "var(--s-8)", paddingBottom: "var(--s-16)" }}>
+      <div className="container" style={{ paddingTop: "var(--s-8)", paddingBottom: "var(--s-16)" }}>
         {error && <div className="alert alert-danger" style={{ margin: "var(--s-4) 0" }}><span>{error}</span></div>}
 
         <div className="card card-pad">
