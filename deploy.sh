@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # deploy.sh — 裸机一键部署（Ubuntu 24.04，Nginx + Gunicorn + SQLite + systemd）。
 #
-# 以 root 运行：装系统依赖、建 deploy 用户、把本仓库（=脚本所在目录）交给 deploy、
+# 以 root 运行：装系统依赖、以「仓库属主」为服务用户（不再另建 deploy）、
 # uv sync、前端构建、写 .env、migrate + collectstatic、写 systemd unit（club.service）
-# + nginx 站点 + sudoers（放行 deploy 免密 systemctl club）、enable 并启动。
+# + nginx 站点 + sudoers（放行该用户免密 systemctl club）、enable 并启动。
+#
+# 服务用户 = 仓库属主 = 跑 update.sh 的那个人，三者合一——杜绝 deploy/ubuntu 双用户错位
+# （仓库是谁 clone 的，服务就以谁跑；可显式 APP_USER=xxx 覆盖）。
 #
 # 路径全部相对本脚本（仓库根）派生，不硬编码 /srv/club —— 在哪 clone 就部署在哪。
 # 幂等：可重复跑（用户/依赖已在则跳过）。
@@ -16,7 +19,12 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_USER="${APP_USER:-deploy}"
+# 服务用户 = 仓库属主（谁 clone 的就是谁），不再另建 deploy；可显式 APP_USER=xxx 覆盖。
+APP_USER="${APP_USER:-$(stat -c %U "$DIR")}"
+if [ -z "$APP_USER" ] || [ "$APP_USER" = "root" ]; then
+  echo "❌ 无法确定服务用户：仓库属主为「${APP_USER:-空}」。请以普通用户 clone 仓库后 sudo ./deploy.sh，或显式 APP_USER=用户名 ./deploy.sh。" >&2
+  exit 1
+fi
 SERVICE_NAME="${SERVICE_NAME:-club}"                 # ← 服务名固定 club
 SERVER_NAME="${SERVER_NAME:-_}"                      # nginx server_name；_ = 任意（先用 IP 访问）
 SYSTEMCTL="$(command -v systemctl || echo /usr/bin/systemctl)"
@@ -51,7 +59,7 @@ fi
 
 # ---- 1. 系统依赖（幂等；--skip-deps 跳过）----
 if [ "$SKIP_DEPS" = 1 ]; then
-  echo "==> --skip-deps：跳过系统依赖安装与建用户（请确保 build-essential/nginx/sqlite3/node/npm 与 $APP_USER 已就绪）"
+  echo "==> --skip-deps：跳过系统依赖安装（请确保 build-essential/nginx/sqlite3/node/npm 已就绪，且 $APP_USER 是已存在的用户）"
 else
   # Ubuntu 仓库的 nodejs 与 npm 互斥（24.04 已知冲突，且 npm 缺一堆 node-* 依赖），
   # 故 Node.js 走 NodeSource 官方源（自带 npm、版本新），不装 Ubuntu 的 nodejs/npm。
@@ -64,18 +72,12 @@ else
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
     apt-get install -y nodejs
   fi
-
-  # ---- 2. deploy 用户（幂等）----
-  if ! id -u "$APP_USER" >/dev/null 2>&1; then
-    echo "==> 建用户 $APP_USER"
-    adduser --disabled-password --gecos "" "$APP_USER"
-  fi
 fi
 
 APP_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
-[ -n "$APP_HOME" ] || { echo "用户 $APP_USER 不存在（--skip-deps 时需自备该用户）。" >&2; exit 1; }
+[ -n "$APP_HOME" ] || { echo "用户 $APP_USER 不存在。本脚本以仓库属主为服务用户、不再建用户；请用该用户 clone 仓库后重试，或显式 APP_USER=已存在用户。" >&2; exit 1; }
 
-# ---- 3. 仓库归属交给 deploy ----
+# ---- 3. 仓库归属交给 $APP_USER（= 仓库属主；通常已是该属主，此处幂等 no-op）----
 echo "==> chown -R $APP_USER:$APP_USER $DIR"
 chown -R "$APP_USER:$APP_USER" "$DIR"
 install -d -o "$APP_USER" -g "$APP_USER" "$DIR/run" "$DIR/backups"
