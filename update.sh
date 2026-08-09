@@ -16,8 +16,19 @@ DB="$DIR/db.sqlite3"
 KEEP="${BACKUP_KEEP:-5}"
 mkdir -p "$BACKUPS"
 
-# uv 装在 deploy 的 ~/.local/bin；登录脚本通常已带，兜底一下。
-export PATH="$HOME/.local/bin:$PATH"
+# uv 装在部署用户的 ~/.local/bin（旧版可能在 ~/.cargo/bin）；登录脚本通常已带，兜底一下。
+# 注意：sudo 会用 secure_path 清掉 ~/.local/bin 且把 HOME 改成 /root → 找不到 uv。
+#       本脚本须「以部署用户身份直接运行」，systemctl 那几步自带 sudo + sudoers 免密。
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+if ! command -v uv >/dev/null 2>&1; then
+  cat >&2 <<EOF
+❌ 找不到 uv（试过 \$HOME/.local/bin、\$HOME/.cargo/bin、PATH）。
+   当前：USER=$(id -un)  HOME=$HOME
+   uv 装在部署用户的家目录 → 请「以部署用户身份直接运行」本脚本，不要 sudo。
+   （需要 root 的 systemctl 步骤已自带 sudo，sudoers 放行免密。）
+EOF
+  exit 1
+fi
 # .env（migrate / collectstatic 需要 Django settings）
 [ -f .env ] || cp .env.example .env
 set -a; . ./.env; set +a
@@ -42,6 +53,8 @@ rollback() {
   uv run python manage.py collectstatic --noinput || echo "⚠️  collectstatic 失败" >&2
   sudo systemctl start "$SERVICE" || echo "⚠️  旧版重启失败，服务未起来——请人工介入" >&2
   echo "⚠️  已回滚到 $OLD_HEAD 并尝试启动旧版。请排查失败原因后重试。" >&2
+  exit 1   # 必须 exit：上面 set +e 已全局关掉 errexit，不 exit 的话主流程会继续往下——
+           # 可能 systemctl start 旧版成功后 rm 掉 DB 快照，还误报「✅ 更新完成」。
 }
 
 # ---- 前置：工作树须干净（否则回滚的 git reset 会丢未提交改动）----
