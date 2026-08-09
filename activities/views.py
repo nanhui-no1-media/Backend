@@ -333,10 +333,9 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="rate")
     def rate(self, request, pk=None):
         activity = self.get_object()
-        if activity.type != "exhibition":
-            return Response({"detail": "仅展示可评分"}, status=status.HTTP_400_BAD_REQUEST)
-        if activity.status != OPEN:
-            return Response({"detail": "展示未开放或已结束"}, status=status.HTTP_400_BAD_REQUEST)
+        # 守卫（类型=展示、状态=open）统一走 lifecycle.can_rate，与 vote/submit 同模式
+        if not can_rate(activity, request.user):
+            return Response({"detail": "当前不可评分（展示未开放或已结束）"}, status=status.HTTP_400_BAD_REQUEST)
         choice = request.data.get("choice")
         if choice not in ("like", "dislike"):
             return Response({"detail": "choice 须为 like 或 dislike"}, status=status.HTTP_400_BAD_REQUEST)
