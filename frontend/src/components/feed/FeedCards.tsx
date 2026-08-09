@@ -1,6 +1,6 @@
 import { CATEGORY_BADGE_CLASS, CATEGORY_LABELS } from "../../types/news";
+import { ACTIVITY_TYPE_META } from "../../types/activities";
 import {
-  ACTIVITY_META,
   ACTIVITY_STATUS_LABEL,
   FEED_TASK_PRIORITY_BARS,
   FEED_TASK_STATUS_LABEL,
@@ -68,7 +68,7 @@ export function NewsCard({ item, onClick }: { item: NewsFeedItem; onClick: () =>
 }
 
 export function ActivityCard({ item, onClick }: { item: ActivityFeedItem; onClick: () => void }) {
-  const meta = ACTIVITY_META[item.activity_type];
+  const meta = ACTIVITY_TYPE_META[item.activity_type];
   return (
     <button type="button" className="feed-cell feed-cell--activity" onClick={onClick}>
       <div className="feed-act-head">
