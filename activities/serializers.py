@@ -136,6 +136,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "start_at", "end_at",
             "max_choices_per_voter", "is_secret_ballot",
             "allowed_extensions", "max_file_size", "max_files_per_submission", "max_submissions",
+            "review_enabled",
             "options", "ballots", "my_selections", "total_ballots",
             "my_submission", "submissions",
             "exhibits",
@@ -245,6 +246,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
 
     def get_submissions(self, obj):
         # 复审者见全部作品；其余只见录用作品（公开展示）。自己的作品另走 my_submission。
+        # 关闭复审（review_enabled=False）时：全部作品对所有人公开（无录用门槛）。
         if obj.type != "collection":
             return None
         request = self.context.get("request")
@@ -252,7 +254,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         if not user or not user.is_authenticated:
             return []
         qs = obj.submissions.all()
-        if not _is_reviewer(obj, user):
+        if obj.review_enabled and not _is_reviewer(obj, user):
             qs = qs.filter(review_status="accepted")
         return SubmissionSerializer(qs, many=True, context=self.context).data
 

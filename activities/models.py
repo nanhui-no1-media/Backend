@@ -60,6 +60,10 @@ class Activity(models.Model):
     max_files_per_submission = models.PositiveIntegerField("单作品文件数上限", default=5)
     max_submissions = models.PositiveIntegerField("最大征集数量", null=True, blank=True)
 
+    # 征集专属：是否需要复审。True（默认）= 收集→复审→归档，仅录用作品公开；
+    # False = 收集→归档（跳过复审），作品提交即公开。
+    review_enabled = models.BooleanField("需要复审", default=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

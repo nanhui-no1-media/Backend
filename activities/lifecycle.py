@@ -140,9 +140,11 @@ def maybe_close_collection_on_cap(activity):
     # 用 activity.submissions.count() 会读到缓存 0 而非真实 1）。
     count = Submission.objects.filter(activity_id=activity.pk).count()
     if count >= activity.max_submissions:
+        # 启用复审 → reviewing；关闭复审 → 直接归档（跳过复审）
+        target = REVIEWING if activity.review_enabled else ARCHIVED
         changed = Activity.objects.filter(
             pk=activity.pk, status=COLLECTING,
-        ).update(status=REVIEWING, updated_at=timezone.now())
+        ).update(status=target, updated_at=timezone.now())
         return bool(changed)
     return False
 

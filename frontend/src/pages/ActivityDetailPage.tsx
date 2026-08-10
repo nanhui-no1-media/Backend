@@ -88,8 +88,13 @@ export default function ActivityDetailPage() {
     const ns = [];
     if (a.start_at) ns.push({ key: "scheduled", label: "待开始", time: fmtTime(a.start_at) });
     ns.push({ key: "collecting", label: "收件中", time: a.start_at ? null : fmtTime(a.created_at) });
-    ns.push({ key: "reviewing", label: "复审中", time: fmtTime(a.end_at) });
-    ns.push({ key: "archived", label: "已归档", time: null });
+    if (a.review_enabled) {
+      ns.push({ key: "reviewing", label: "复审中", time: fmtTime(a.end_at) });
+      ns.push({ key: "archived", label: "已归档", time: null });
+    } else {
+      // #51：未启用复审——收件结束直接归档，跳过复审阶段
+      ns.push({ key: "archived", label: "已归档", time: fmtTime(a.end_at) });
+    }
     return ns;
   })();
   const currentIndex = Math.max(0, phases.findIndex((p) => p.key === a.status));
@@ -128,7 +133,10 @@ export default function ActivityDetailPage() {
   };
 
   const doClose = async () => {
-    if (!window.confirm(isDeliberation ? "提前结束投票并结算？" : "提前结束收件、进入复审？")) return;
+    const msg = isDeliberation
+      ? "提前结束投票并结算？"
+      : a.review_enabled ? "提前结束收件、进入复审？" : "提前结束收件并归档？";
+    if (!window.confirm(msg)) return;
     setBusy(true); setError("");
     try { setActivity(await activityApi.close(a.id)); }
     catch (e: any) { setError(e.message); }
@@ -339,7 +347,9 @@ export default function ActivityDetailPage() {
               <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
                 <h3 className="section-h">我的作品</h3>
                 <div className="pc-meta" style={{ marginBottom: 8 }}>
-                  <span className={"badge " + REVIEW_STATUS_BADGE_CLASS[a.my_submission.review_status]}>{REVIEW_STATUS_LABELS[a.my_submission.review_status]}</span>
+                  {a.review_enabled && (
+                    <span className={"badge " + REVIEW_STATUS_BADGE_CLASS[a.my_submission.review_status]}>{REVIEW_STATUS_LABELS[a.my_submission.review_status]}</span>
+                  )}
                 </div>
                 {a.my_submission.files.map((f) => (
                   <div key={f.id}><a href={f.file_url} target="_blank" rel="noreferrer">{f.file_name}</a></div>
@@ -352,20 +362,22 @@ export default function ActivityDetailPage() {
 
             {a.submissions && a.submissions.length > 0 && (
               <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
-                <h3 className="section-h">{isReviewer ? "作品复审" : "录用作品"}</h3>
-                {!isReviewer && <div className="hint" style={{ marginBottom: 8 }}>仅展示已录用作品。</div>}
+                <h3 className="section-h">{!a.review_enabled ? "作品" : isReviewer ? "作品复审" : "录用作品"}</h3>
+                {a.review_enabled && !isReviewer && <div className="hint" style={{ marginBottom: 8 }}>仅展示已录用作品。</div>}
                 {a.submissions.map((s) => (
                   <div key={s.id} className="detail-section" style={{ padding: "12px 0", borderBottom: "1px solid var(--c-border)" }}>
                     <div className="pc-meta" style={{ marginBottom: 6 }}>
                       <Link to={`/u/${s.submitter.id}`}><Avatar user={s.submitter} /></Link>
                       <span>{s.submitter.nickname || s.submitter.username}</span>
-                      <span className={"badge " + REVIEW_STATUS_BADGE_CLASS[s.review_status]}>{REVIEW_STATUS_LABELS[s.review_status]}</span>
+                      {a.review_enabled && (
+                        <span className={"badge " + REVIEW_STATUS_BADGE_CLASS[s.review_status]}>{REVIEW_STATUS_LABELS[s.review_status]}</span>
+                      )}
                     </div>
                     {s.files.map((f) => (
                       <div key={f.id}><a href={f.file_url} target="_blank" rel="noreferrer">{f.file_name}</a></div>
                     ))}
                     {s.review_comment && <div className="muted" style={{ marginTop: 4 }}>评语：{s.review_comment}</div>}
-                    {isReviewer && (a.status === "collecting" || a.status === "reviewing") && s.review_status === "pending" && (
+                    {a.review_enabled && isReviewer && (a.status === "collecting" || a.status === "reviewing") && s.review_status === "pending" && (
                       <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                         <input className="input" style={{ flex: 1, minWidth: 200 }} placeholder="评语（选填）" value={comments[s.id] || ""} onChange={(e) => setComments((c) => ({ ...c, [s.id]: e.target.value }))} />
                         <button className="btn btn-success btn-sm" onClick={() => doReview(s.id, "accepted")} disabled={busy}>录用</button>

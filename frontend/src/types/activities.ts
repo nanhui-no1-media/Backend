@@ -80,6 +80,7 @@ export interface ActivityDetail {
   max_file_size: number | null;
   max_files_per_submission: number;
   max_submissions: number | null;
+  review_enabled: boolean;
   my_submission: Submission | null;
   submissions: Submission[] | null; // 复审者见全部；其余仅录用（公开展示）
   // 展示
@@ -108,6 +109,7 @@ export interface CollectionFormData {
   max_file_size: number | null;
   max_files_per_submission: number;
   max_submissions: number | null;
+  review_enabled: boolean;
   start_at?: string;
   end_at?: string;
 }

@@ -50,6 +50,7 @@ export default function ActivityFormPage() {
   const [maxSize, setMaxSize] = useState<string>(""); // MB，空=用全局 50MB
   const [maxFiles, setMaxFiles] = useState(5);
   const [maxSub, setMaxSub] = useState<string>(""); // 空=不限
+  const [reviewEnabled, setReviewEnabled] = useState(true); // #51：复审可选，默认启用
 
   const switchType = (t: ActivityType) => {
     setType(t);
@@ -73,6 +74,7 @@ export default function ActivityFormPage() {
         setMaxSize(a.max_file_size ? String(Math.round(a.max_file_size / 1024 / 1024)) : "");
         setMaxFiles(a.max_files_per_submission);
         setMaxSub(a.max_submissions != null ? String(a.max_submissions) : "");
+        setReviewEnabled(a.review_enabled);
       } else {
         // 众议 / 展示：选项 + K + 秘密（展示可无投票 → 留默认两项供选填）
         setOptions(a.options.length ? a.options.map((o) => o.text) : ["", ""]);
@@ -130,6 +132,7 @@ export default function ActivityFormPage() {
           max_file_size: maxSize.trim() ? Math.round(parseFloat(maxSize) * 1024 * 1024) : null,
           max_files_per_submission: maxFiles,
           max_submissions: maxSub.trim() ? parseInt(maxSub, 10) : null,
+          review_enabled: reviewEnabled,
           start_at: toIso(startAt),
           end_at: toIso(endAt),
         };
@@ -273,6 +276,12 @@ export default function ActivityFormPage() {
               <div className="field">
                 <label className="label">收件截止</label>
                 <input className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+              </div>
+              <div className="field">
+                <label className="fb-attrib">
+                  <input type="checkbox" checked={reviewEnabled} onChange={(e) => setReviewEnabled(e.target.checked)} />
+                  <span>需要复审 —— 勾选：收件后逐个录用/退稿，仅录用作品公开展示；不勾：作品提交即全部公开。</span>
+                </label>
               </div>
             </>
           ) : (

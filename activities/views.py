@@ -22,6 +22,7 @@ from attachments.models import Attachment
 from attachments.validation import MAX_FILE_SIZE, classify_file_type, upload_error
 
 from .lifecycle import (
+    ARCHIVED,
     CLOSED,
     COLLECTING,
     OPEN,
@@ -227,6 +228,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
         activity = self.get_object()
         if activity.type != "collection":
             return Response({"detail": "仅征集作品可复审"}, status=status.HTTP_400_BAD_REQUEST)
+        if not activity.review_enabled:
+            return Response({"detail": "本征集未启用复审"}, status=status.HTTP_400_BAD_REQUEST)
         if activity.status not in (COLLECTING, REVIEWING):
             return Response({"detail": "当前不可复审"}, status=status.HTTP_400_BAD_REQUEST)
         decision = request.data.get("decision")
@@ -264,8 +267,10 @@ class ActivityViewSet(viewsets.ModelViewSet):
         elif activity.type == "collection":
             if activity.status != COLLECTING:
                 return Response({"detail": "当前不可关闭"}, status=status.HTTP_400_BAD_REQUEST)
+            # 启用复审 → reviewing；关闭复审 → 直接归档（跳过复审）
+            target = REVIEWING if activity.review_enabled else ARCHIVED
             Activity.objects.filter(pk=activity.pk, status=COLLECTING).update(
-                status=REVIEWING, updated_at=now,
+                status=target, updated_at=now,
             )
         else:
             return Response({"detail": "不支持"}, status=status.HTTP_400_BAD_REQUEST)

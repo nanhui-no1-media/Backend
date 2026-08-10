@@ -510,6 +510,67 @@ class CollectionReviewTest(TestCase):
         self.assertEqual(r.status_code, 400)
 
 
+class CollectionReviewOptionalTest(TestCase):
+    """#51：征集复审改为可选——关闭复审后跳过 reviewing，作品提交即公开、不接受复审。"""
+
+    def setUp(self):
+        self.author = grant_verification(User.objects.create_user(username="author", password="x"))
+        self.m1 = grant_verification(User.objects.create_user(username="m1", password="x"))
+        self.outsider = grant_verification(User.objects.create_user(username="out", password="x"))
+        self.client = APIClient()
+
+    def _collection(self, review_enabled, **cfg):
+        payload = {"type": "collection", "title": "征", "body": "<p>x</p>",
+                   "review_enabled": review_enabled}
+        payload.update(cfg)
+        return _json(self.client, "post", "/activities/activities/", self.author, payload)
+
+    def _file(self, name="a.png"):
+        return SimpleUploadedFile(name, b"x", content_type="image/png")
+
+    def _submit(self, user, cid):
+        self.client.force_authenticate(user)
+        return self.client.post(f"/activities/activities/{cid}/submit/", {"files": [self._file()]})
+
+    def test_default_review_enabled_true(self):
+        c = self._collection(review_enabled=True)
+        self.assertEqual(c.status_code, 201)
+        self.assertTrue(c.data["review_enabled"])
+
+    def test_submissions_public_without_review(self):
+        # 关闭复审：成员一投稿，局外人立即可见（不必录用）
+        cid = self._collection(review_enabled=False).data["id"]
+        self._submit(self.m1, cid)
+        resp = _json(self.client, "get", f"/activities/activities/{cid}/", self.outsider)
+        self.assertEqual(len(resp.data["submissions"]), 1)  # pending 也对外可见
+        self.assertEqual(resp.data["submissions"][0]["review_status"], "pending")
+
+    def test_close_skips_reviewing_when_disabled(self):
+        cid = self._collection(review_enabled=False).data["id"]
+        r = _json(self.client, "post", f"/activities/activities/{cid}/close/", self.author)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["status"], "archived")  # 直接 collecting→archived
+
+    def test_close_goes_reviewing_when_enabled(self):
+        cid = self._collection(review_enabled=True).data["id"]
+        r = _json(self.client, "post", f"/activities/activities/{cid}/close/", self.author)
+        self.assertEqual(r.data["status"], "reviewing")
+
+    def test_cap_skips_reviewing_when_disabled(self):
+        cid = self._collection(review_enabled=False, max_submissions=1).data["id"]
+        r = self._submit(self.m1, cid)
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["status"], "archived")  # 满额 collecting→archived
+
+    def test_review_rejected_when_disabled(self):
+        cid = self._collection(review_enabled=False).data["id"]
+        self._submit(self.m1, cid)
+        sub_id = _json(self.client, "get", f"/activities/activities/{cid}/", self.author).data["submissions"][0]["id"]
+        r = _json(self.client, "post", f"/activities/activities/{cid}/review_submission/", self.author,
+                  {"submission_id": sub_id, "decision": "accepted"})
+        self.assertEqual(r.status_code, 400)
+
+
 class SchedulingTest(TestCase):
     """开始时间 + 待开始状态：排期、惰性自动开放、待开始可改/开放后锁、start<end 校验。"""
 
