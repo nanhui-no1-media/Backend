@@ -127,8 +127,16 @@ def can_submit(activity, user):
     )
 
 
+def collection_close_target(activity):
+    """征集收件结束的目标态：启用复审 → reviewing；关闭复审 → archived（跳过复审）。
+
+    单一事实源——``close`` 动作与 ``maybe_close_collection_on_cap`` 共用此规则。
+    """
+    return REVIEWING if activity.review_enabled else ARCHIVED
+
+
 def maybe_close_collection_on_cap(activity):
-    """满额自动关闭：作品数达 ``max_submissions`` 时 collecting→reviewing。返回是否触发。
+    """满额自动关闭：作品数达 ``max_submissions`` 时 collecting→reviewing/archived。返回是否触发。
 
     逐行条件更新（status=collecting）保证并发安全——多个投稿者同时触达上限时只有一个
     请求真正翻转状态。``max_submissions`` 为 None（不限）时永不触发。
@@ -141,11 +149,9 @@ def maybe_close_collection_on_cap(activity):
     # 用 activity.submissions.count() 会读到缓存 0 而非真实 1）。
     count = Submission.objects.filter(activity_id=activity.pk).count()
     if count >= activity.max_submissions:
-        # 启用复审 → reviewing；关闭复审 → 直接归档（跳过复审）
-        target = REVIEWING if activity.review_enabled else ARCHIVED
         changed = Activity.objects.filter(
             pk=activity.pk, status=COLLECTING,
-        ).update(status=target, updated_at=timezone.now())
+        ).update(status=collection_close_target(activity), updated_at=timezone.now())
         return bool(changed)
     return False
 
