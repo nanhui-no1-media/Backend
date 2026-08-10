@@ -43,7 +43,8 @@ def transition_due_starts():
     due = Activity.objects.filter(status=SCHEDULED, start_at__lte=now)
     opened = []
     for activity in due:
-        target = OPEN if activity.type == "deliberation" else COLLECTING
+        # 征集 → collecting；众议/展示 → open
+        target = COLLECTING if activity.type == "collection" else OPEN
         changed = Activity.objects.filter(pk=activity.pk, status=SCHEDULED).update(
             status=target, updated_at=now,
         )

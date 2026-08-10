@@ -707,115 +707,177 @@ class AutoCloseOnFullVoteTest(TestCase):
 
 
 class ExhibitionTest(TestCase):
-    """展示：策展加展品/导入征集 + 三态赞踩（互斥/可撤）+ 可选投票 + 生命周期。"""
+    """展示：创建时录入并冻结展品（每展品一投票选项）+ 展品投票（1..K）+ 三态赞踩 + 生命周期。"""
 
     def setUp(self):
         self.curator = grant_verification(User.objects.create_user(username="curator", password="x"))
         self.member = grant_verification(User.objects.create_user(username="member", password="x"))
+        self.m2 = grant_verification(User.objects.create_user(username="m2", password="x"))
         self.visitor = User.objects.create_user(username="visitor", password="x")  # 未验证
         self.client = APIClient()
 
     def _img(self, name="a.png", data=b"x", ct="image/png"):
         return SimpleUploadedFile(name, data, content_type=ct)
 
-    def _create(self, user, **extra):
-        payload = {"type": "exhibition", "title": "影展", "body": "<p>x</p>"}
-        payload.update(extra)
-        return _json(self.client, "post", "/activities/activities/", user, payload)
-
-    def _add(self, user, aid, files, title=""):
+    def _create(self, user, exhibits, **scalar):
+        """展品在创建时录入。exhibits: [(title, [SimpleUploadedFile...]), ...]"""
+        data = {"type": "exhibition", "title": "影展", "body": "<p>x</p>"}
+        data.update(scalar)
+        data["exhibit_count"] = str(len(exhibits))
+        for i, (title, files) in enumerate(exhibits):
+            if title:
+                data[f"exhibit_title_{i}"] = title
+            data[f"exhibit_files_{i}"] = files
         self.client.force_authenticate(user)
-        data = {"files": files}
-        if title:
-            data["title"] = title
-        return self.client.post(f"/activities/activities/{aid}/add_exhibit/", data)
+        return self.client.post("/activities/activities/", data=data)
+
+    def _vote(self, user, aid, option_ids):
+        return _json(self.client, "post", f"/activities/activities/{aid}/vote/", user,
+                     {"option_ids": option_ids})
 
     def _rate(self, user, aid, eid, choice):
         return _json(self.client, "post", f"/activities/activities/{aid}/rate/", user,
                      {"exhibit_id": eid, "choice": choice})
 
     @staticmethod
-    def _ex(resp, eid):
-        return next(e for e in resp.data["exhibits"] if e["id"] == eid)
+    def _ex(resp, idx=0):
+        return resp.data["exhibits"][idx]
 
-    def test_create_exhibition_opens(self):
-        r = self._create(self.curator)
+    # ---- 创建（展品录入即冻结）----
+
+    def test_create_with_exhibits(self):
+        r = self._create(self.curator, [("作品A", [self._img(), self._img("b.png")]), ("作品B", [self._img()])])
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.data["status"], "open")
-        self.assertEqual(r.data["exhibits"], [])  # 无展品
+        self.assertEqual(len(r.data["exhibits"]), 2)
+        ex0 = r.data["exhibits"][0]
+        self.assertEqual(ex0["title"], "作品A")
+        self.assertEqual(len(ex0["files"]), 2)
+        self.assertIsNotNone(ex0["vote_option_id"])  # 每展品一个投票选项
+        self.assertEqual(ex0["vote_count"], 0)
+        self.assertIsNone(r.data["options"])  # 展示的选项即展品，options 不再单独输出
 
-    def test_curator_add_exhibit(self):
-        aid = self._create(self.curator).data["id"]
-        r = self._add(self.curator, aid, [self._img(), self._img("b.png")], title="作品A")
-        self.assertEqual(r.status_code, 201)
-        self.assertEqual(len(r.data["exhibits"]), 1)
-        self.assertEqual(r.data["exhibits"][0]["title"], "作品A")
-        self.assertEqual(len(r.data["exhibits"][0]["files"]), 2)
+    def test_requires_at_least_one_exhibit(self):
+        self.assertEqual(self._create(self.curator, []).status_code, 400)
 
-    def test_non_curator_cannot_add(self):
-        aid = self._create(self.curator).data["id"]
-        self.assertEqual(self._add(self.member, aid, [self._img()]).status_code, 403)
+    def test_exhibit_requires_file(self):
+        self.assertEqual(self._create(self.curator, [("作品A", [])]).status_code, 400)
 
-    def test_import_from_collection(self):
-        # 建征集 → member 投一作品 → 建展示 → 导入全部
-        coll = _json(self.client, "post", "/activities/activities/", self.curator,
-                     {"type": "collection", "title": "c", "body": "<p>x</p>"})
-        cid = coll.data["id"]
-        self.client.force_authenticate(self.member)
-        self.client.post(f"/activities/activities/{cid}/submit/", {"files": [self._img()]})
-        aid = self._create(self.curator).data["id"]
-        r = _json(self.client, "post", f"/activities/activities/{aid}/import_from_collection/",
-                  self.curator, {"collection_id": cid})
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data["exhibits"]), 1)  # 导入了 1 个作品
-        self.assertEqual(r.data["exhibits"][0]["submitter"]["id"], self.member.pk)  # 提交者保留
-        self.assertEqual(len(r.data["exhibits"][0]["files"]), 1)  # 文件已复制
+    def test_k_above_exhibit_count_rejected(self):
+        r = self._create(self.curator, [("A", [self._img()]), ("B", [self._img()])],
+                         max_choices_per_voter=3)
+        self.assertEqual(r.status_code, 400)
 
-    def test_rate_three_state(self):
-        aid = self._create(self.curator).data["id"]
-        eid = self._add(self.curator, aid, [self._img()]).data["exhibits"][0]["id"]
-        # like
-        r = self._rate(self.member, aid, eid, "like")
-        self.assertEqual(self._ex(r, eid)["my_rating"], "like")
-        self.assertEqual(self._ex(r, eid)["like_count"], 1)
-        # like 再点 → none
-        r = self._rate(self.member, aid, eid, "like")
-        self.assertIsNone(self._ex(r, eid)["my_rating"])
-        self.assertEqual(self._ex(r, eid)["like_count"], 0)
-        # dislike
-        r = self._rate(self.member, aid, eid, "dislike")
-        self.assertEqual(self._ex(r, eid)["my_rating"], "dislike")
-        self.assertEqual(self._ex(r, eid)["dislike_count"], 1)
+    def test_visitor_cannot_create(self):
+        r = self._create(self.visitor, [("A", [self._img()])])
+        self.assertEqual(r.status_code, 403)
 
-    def test_rate_mutually_exclusive(self):
-        aid = self._create(self.curator).data["id"]
-        eid = self._add(self.curator, aid, [self._img()]).data["exhibits"][0]["id"]
-        self._rate(self.member, aid, eid, "like")
-        r = self._rate(self.member, aid, eid, "dislike")  # 翻转
-        self.assertEqual(self._ex(r, eid)["my_rating"], "dislike")
-        self.assertEqual(self._ex(r, eid)["like_count"], 0)
-        self.assertEqual(self._ex(r, eid)["dislike_count"], 1)
+    # ---- 展品投票（每展品一选项）----
 
-    def test_visitor_cannot_rate(self):
-        aid = self._create(self.curator).data["id"]
-        eid = self._add(self.curator, aid, [self._img()]).data["exhibits"][0]["id"]
-        self.assertEqual(self._rate(self.visitor, aid, eid, "like").status_code, 403)
-
-    def test_closed_blocks_rate(self):
-        aid = self._create(self.curator).data["id"]
-        eid = self._add(self.curator, aid, [self._img()]).data["exhibits"][0]["id"]
-        Activity.objects.filter(pk=aid).update(end_at=timezone.now() - timedelta(minutes=1))
-        _json(self.client, "get", f"/activities/activities/{aid}/", self.curator)  # 触发惰性结算
-        self.assertEqual(self._rate(self.member, aid, eid, "like").status_code, 400)
-
-    def test_optional_voting_enabled(self):
-        ex = self._create(self.curator, option_texts=["A", "B"], max_choices_per_voter=1)
-        aid, oa = ex.data["id"], ex.data["options"][0]["id"]
-        r = _json(self.client, "post", f"/activities/activities/{aid}/vote/", self.member, {"option_ids": [oa]})
+    def test_vote_k1_single_exhibit(self):
+        ex = self._create(self.curator, [("A", [self._img()]), ("B", [self._img()])],
+                          max_choices_per_voter=1)
+        aid = ex.data["id"]
+        oa, ob = self._ex(ex, 0)["vote_option_id"], self._ex(ex, 1)["vote_option_id"]
+        # K=1：选两个展品被拒
+        self.assertEqual(self._vote(self.member, aid, [oa, ob]).status_code, 400)
+        # 选一个 → 成功
+        r = self._vote(self.member, aid, [oa])
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["my_selections"], [oa])
+        self.assertEqual(self._ex(r, 0)["vote_count"], 1)  # 展品 A 得 1 票
+
+    def test_vote_k2_multi_exhibits(self):
+        ex = self._create(self.curator, [("A", [self._img()]), ("B", [self._img()]), ("C", [self._img()])],
+                          max_choices_per_voter=2)
+        aid = ex.data["id"]
+        oa, ob, oc = (self._ex(ex, i)["vote_option_id"] for i in range(3))
+        r = self._vote(self.member, aid, [oa, ob])
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(set(r.data["my_selections"]), {oa, ob})
+        # 超过 K 被拒
+        self.assertEqual(self._vote(self.m2, aid, [oa, ob, oc]).status_code, 400)
+
+    def test_ballot_immutable(self):
+        ex = self._create(self.curator, [("A", [self._img()]), ("B", [self._img()])])
+        aid, oa = ex.data["id"], self._ex(ex)["vote_option_id"]
+        self.assertEqual(self._vote(self.member, aid, [oa]).status_code, 200)
+        self.assertEqual(self._vote(self.member, aid, [oa]).status_code, 400)  # 已投，不可改
+
+    def test_visitor_cannot_vote(self):
+        ex = self._create(self.curator, [("A", [self._img()]), ("B", [self._img()])])
+        self.assertEqual(self._vote(self.visitor, ex.data["id"], [self._ex(ex)["vote_option_id"]]).status_code, 403)
+
+    def test_public_tally_per_exhibit(self):
+        ex = self._create(self.curator, [("A", [self._img()]), ("B", [self._img()])], max_choices_per_voter=2)
+        aid = ex.data["id"]
+        oa, ob = self._ex(ex, 0)["vote_option_id"], self._ex(ex, 1)["vote_option_id"]
+        self._vote(self.member, aid, [oa])
+        self._vote(self.m2, aid, [oa, ob])
+        resp = _json(self.client, "get", f"/activities/activities/{aid}/", self.curator)
+        counts = {e["vote_option_id"]: e["vote_count"] for e in resp.data["exhibits"]}
+        self.assertEqual(counts[oa], 2)
+        self.assertEqual(counts[ob], 1)
+        self.assertEqual(resp.data["total_ballots"], 2)
+
+    def test_secret_exhibition_hides_ballots(self):
+        ex = self._create(self.curator, [("A", [self._img()]), ("B", [self._img()])],
+                          max_choices_per_voter=1, is_secret_ballot="true")
+        aid, oa = ex.data["id"], self._ex(ex)["vote_option_id"]
+        self.assertEqual(self._vote(self.member, aid, [oa]).status_code, 200)
+        resp = _json(self.client, "get", f"/activities/activities/{aid}/", self.member)
+        self.assertIsNone(resp.data["ballots"])  # 秘密：个人明细不可见
+        self.assertEqual(resp.data["total_ballots"], 1)  # 聚合可见
+        self.assertEqual(self._ex(resp)["vote_count"], 1)
+
+    # ---- 三态赞踩（与投票并存）----
+
+    def test_rate_three_state(self):
+        ex = self._create(self.curator, [("A", [self._img()])])
+        aid, eid = ex.data["id"], self._ex(ex)["id"]
+        r = self._rate(self.member, aid, eid, "like")
+        self.assertEqual(self._ex(r)["my_rating"], "like")
+        self.assertEqual(self._ex(r)["like_count"], 1)
+        # like 再点 → none
+        r = self._rate(self.member, aid, eid, "like")
+        self.assertIsNone(self._ex(r)["my_rating"])
+        self.assertEqual(self._ex(r)["like_count"], 0)
+        # dislike
+        r = self._rate(self.member, aid, eid, "dislike")
+        self.assertEqual(self._ex(r)["my_rating"], "dislike")
+        self.assertEqual(self._ex(r)["dislike_count"], 1)
+
+    def test_rate_mutually_exclusive(self):
+        ex = self._create(self.curator, [("A", [self._img()])])
+        aid, eid = ex.data["id"], self._ex(ex)["id"]
+        self._rate(self.member, aid, eid, "like")
+        r = self._rate(self.member, aid, eid, "dislike")
+        self.assertEqual(self._ex(r)["my_rating"], "dislike")
+        self.assertEqual(self._ex(r)["like_count"], 0)
+        self.assertEqual(self._ex(r)["dislike_count"], 1)
+
+    def test_visitor_cannot_rate(self):
+        ex = self._create(self.curator, [("A", [self._img()])])
+        self.assertEqual(self._rate(self.visitor, ex.data["id"], self._ex(ex)["id"], "like").status_code, 403)
 
     def test_invalid_rating_choice(self):
-        aid = self._create(self.curator).data["id"]
-        eid = self._add(self.curator, aid, [self._img()]).data["exhibits"][0]["id"]
+        ex = self._create(self.curator, [("A", [self._img()])])
+        aid, eid = ex.data["id"], self._ex(ex)["id"]
         self.assertEqual(self._rate(self.member, aid, eid, "meh").status_code, 400)
+
+    # ---- 生命周期 ----
+
+    def test_closed_blocks_vote_and_rate(self):
+        ex = self._create(self.curator, [("A", [self._img()])])
+        aid, eid = ex.data["id"], self._ex(ex)["id"]
+        oa = self._ex(ex)["vote_option_id"]
+        Activity.objects.filter(pk=aid).update(end_at=timezone.now() - timedelta(minutes=1))
+        _json(self.client, "get", f"/activities/activities/{aid}/", self.curator)  # 触发惰性结算
+        self.assertEqual(self._vote(self.member, aid, [oa]).status_code, 400)
+        self.assertEqual(self._rate(self.member, aid, eid, "like").status_code, 400)
+
+    def test_early_close_exhibition(self):
+        ex = self._create(self.curator, [("A", [self._img()])])
+        r = _json(self.client, "post", f"/activities/activities/{ex.data['id']}/close/", self.curator)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["status"], "closed")

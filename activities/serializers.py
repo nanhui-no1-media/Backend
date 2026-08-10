@@ -56,20 +56,35 @@ class SubmissionSerializer(serializers.ModelSerializer):
 
 
 class ExhibitSerializer(serializers.ModelSerializer):
-    """展品：标题 + 提交者 + 一束文件 + 赞/踩计数 + 我的评分。"""
+    """展品：标题 + 一束文件 + 投票计数 + 我的投票 + 赞/踩计数 + 我的评分。
 
-    submitter = SimpleUserSerializer(read_only=True)
+    每个展品绑定一个 VoteOption（``vote_option``），投票计数即该 option 的票数。
+    ``my_voted`` 在前端用 my_selections(option_ids) 推断，无需后端再算。
+    """
+
     files = serializers.SerializerMethodField()
+    vote_option_id = serializers.SerializerMethodField()
+    vote_count = serializers.SerializerMethodField()
     like_count = serializers.SerializerMethodField()
     dislike_count = serializers.SerializerMethodField()
     my_rating = serializers.SerializerMethodField()
 
     class Meta:
         model = Exhibit
-        fields = ["id", "title", "submitter", "files", "like_count", "dislike_count", "my_rating", "created_at"]
+        fields = ["id", "title", "files", "vote_option_id", "vote_count",
+                  "like_count", "dislike_count", "my_rating", "created_at"]
 
     def get_files(self, obj):
         return AttachmentSerializer(obj.attachments.all(), many=True, context=self.context).data
+
+    def get_vote_option_id(self, obj):
+        return obj.vote_option_id
+
+    def get_vote_count(self, obj):
+        # 经预取 exhibits__vote_option__selections 在内存计票，避免 N+1
+        if not obj.vote_option_id:
+            return 0
+        return len(obj.vote_option.selections.all())
 
     def _ratings(self, obj):
         # 用预取缓存（exhibits__ratings）在内存算，避免 N+1
@@ -114,8 +129,8 @@ def _is_reviewer(activity, user):
 
 class ActivityDetailSerializer(serializers.ModelSerializer):
     creator = SimpleUserSerializer(read_only=True)
-    # 众议读侧
-    options = VoteOptionSerializer(many=True, read_only=True)
+    # 众议读侧（展示的"选项"即展品，走 exhibits，options 返回 None）
+    options = serializers.SerializerMethodField()
     ballots = serializers.SerializerMethodField()
     my_selections = serializers.SerializerMethodField()
     total_ballots = serializers.SerializerMethodField()
@@ -203,6 +218,12 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         return instance
 
     # ---- 众议读侧聚合 ----
+
+    def get_options(self, obj):
+        # 众议选项（附票数）；展示的选项即展品（见 exhibits），此处返回 None。
+        if obj.type != "deliberation":
+            return None
+        return VoteOptionSerializer(obj.options.all(), many=True, context=self.context).data
 
     def get_ballots(self, obj):
         # 秘密投票：个人明细仅 is_superuser 可见；其余（含发起人）只见聚合计数。

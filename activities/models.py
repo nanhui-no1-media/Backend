@@ -191,11 +191,11 @@ class Submission(models.Model):
 
 
 class Exhibit(models.Model):
-    """展品：展示活动里的一个陈列单元（一束文件）。
+    """展品：展示活动里的一个陈列单元（一束文件），创建时录入并冻结。
 
-    来源：策展人**自上传**（source_submission=None），或从一个**征集**的作品**复制**而来
-    （source_submission 指向原 Submission，仅留痕；展品文件独立于原作品，是快照）。
-    文件复用统一附件系统（attachments.Attachment.exhibit 父级）。
+    每个展品同时是一个投票选项（``vote_option`` 一对一指向众议的 VoteOption），
+    故成员可对展品投票（1..K）。赞/踩见 ExhibitRating。文件复用统一附件系统
+    （attachments.Attachment.exhibit 父级）。
     """
 
     activity = models.ForeignKey(
@@ -203,14 +203,10 @@ class Exhibit(models.Model):
         related_name="exhibits", verbose_name="所属展示",
     )
     title = models.CharField("标题", max_length=200, blank=True, default="")
-    submitter = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name="uploaded_exhibits", verbose_name="提交者",
-    )
-    # 导入留痕：从该 Submission 复制而来；自上传为 None。
-    source_submission = models.ForeignKey(
-        Submission, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name="imported_exhibits", verbose_name="来源作品",
+    # 展品即选项：创建时与一个 VoteOption 一对一绑定，投票计数走该 option。
+    vote_option = models.OneToOneField(
+        VoteOption, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="exhibit", verbose_name="对应投票选项",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -4,7 +4,6 @@ import { api } from "../api/client";
 import { activityApi } from "../api/activities";
 import {
   ActivityDetail,
-  ActivityListItem,
   ACTIVITY_TYPE_META,
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_BADGE_CLASS,
@@ -35,24 +34,9 @@ export default function ActivityDetailPage() {
   const [files, setFiles] = useState<File[]>([]);
   // 征集复审评语（按 submission id）
   const [comments, setComments] = useState<Record<number, string>>({});
-  // 展示策展：加展品 / 导入征集
-  const [exFiles, setExFiles] = useState<File[]>([]);
-  const [exTitle, setExTitle] = useState("");
-  const [myCollections, setMyCollections] = useState<ActivityListItem[]>([]);
-  const [importId, setImportId] = useState<number | "">("");
-
   useEffect(() => {
     api.me().then((d) => setUser({ id: d.user.id, can_review_collections: d.user.permissions?.can_review_collections, can_change_activity: d.user.permissions?.can_change_activity })).catch(() => setUser(null));
   }, []);
-
-  // 展示策展人：拉取自己的征集，供「从征集导入」选择
-  useEffect(() => {
-    if (activity?.type === "exhibition" && user && (activity.creator?.id === user.id || !!user.can_change_activity)) {
-      activityApi.list({ type: "collection", creator: String(user.id) })
-        .then((d) => setMyCollections(d.results || [])).catch(() => {});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activity, user]);
 
   const load = () => {
     if (!id) return;
@@ -135,6 +119,7 @@ export default function ActivityDetailPage() {
   const doClose = async () => {
     const msg = isDeliberation
       ? "提前结束投票并结算？"
+      : isExhibition ? "提前结束展示并结算？"
       : a.review_enabled ? "提前结束收件、进入复审？" : "提前结束收件并归档？";
     if (!window.confirm(msg)) return;
     setBusy(true); setError("");
@@ -158,21 +143,7 @@ export default function ActivityDetailPage() {
     finally { setBusy(false); }
   };
 
-  // 展示：策展加展品 / 导入征集 / 评分
-  const doAddExhibit = async () => {
-    if (exFiles.length < 1) return;
-    setBusy(true); setError("");
-    try { setActivity(await activityApi.addExhibit(a.id, exFiles, exTitle)); setExFiles([]); setExTitle(""); }
-    catch (e: any) { setError(e.message); }
-    finally { setBusy(false); }
-  };
-  const doImport = async () => {
-    if (!importId) return;
-    setBusy(true); setError("");
-    try { setActivity(await activityApi.importFromCollection(a.id, Number(importId))); setImportId(""); }
-    catch (e: any) { setError(e.message); }
-    finally { setBusy(false); }
-  };
+  // 展示：点赞 / 点踩（三态）+ 展品投票（复用 doVote，option_ids 即展品 vote_option_id）
   const doRate = async (eid: number, choice: "like" | "dislike") => {
     setBusy(true); setError("");
     try { setActivity(await activityApi.rate(a.id, eid, choice)); }
@@ -219,7 +190,7 @@ export default function ActivityDetailPage() {
           {canManage && (a.status === "open" || a.status === "collecting") && (
             <div style={{ marginTop: "var(--s-4)" }}>
               <button className="btn btn-ghost btn-sm" onClick={doClose} disabled={busy}>
-                {isDeliberation ? "提前结束投票" : "提前结束收件"}
+                {isDeliberation ? "提前结束投票" : isCollection ? "提前结束收件" : "提前结束展示"}
               </button>
             </div>
           )}
@@ -243,8 +214,8 @@ export default function ActivityDetailPage() {
           </div>
         </div>
 
-        {/* 众议 / 展示(启用投票时)：投票 + 结果 */}
-        {(isDeliberation || (isExhibition && (a.options?.length ?? 0) > 0)) && (
+        {/* 众议：投票 + 结果（展示的投票集成在展品画廊内） */}
+        {isDeliberation && (
           <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
             <h3 className="section-h">投票</h3>
             {a.status === "open" && a.my_selections === null ? (
@@ -391,58 +362,100 @@ export default function ActivityDetailPage() {
           </>
         )}
 
-        {/* 展示：策展 + 展品画廊（可选投票复用上方投票块） */}
+        {/* 展示：展品画廊——每个展品即一个投票选项；投票（1..K）+ 赞/踩 并存 */}
         {isExhibition && (
-          <>
-            {canManage && a.status !== "closed" && (
+          (() => {
+            const voted = a.my_selections !== null;
+            const mySel = a.my_selections ?? [];
+            const canVote = a.status === "open" && !voted;
+            return (
               <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
-                <h3 className="section-h">策展</h3>
-                <div className="field">
-                  <label className="label">加展品（自上传）</label>
-                  <input className="input" type="text" placeholder="展品标题（选填）" value={exTitle} onChange={(e) => setExTitle(e.target.value)} />
-                  <input type="file" multiple onChange={(e) => setExFiles(Array.from(e.target.files || []))} />
-                  {exFiles.length > 0 && <div className="hint">已选 {exFiles.length} 个文件</div>}
-                  <div style={{ marginTop: 8 }}>
-                    <button className="btn btn-primary btn-sm" onClick={doAddExhibit} disabled={busy || exFiles.length < 1}>上传展品</button>
-                  </div>
-                </div>
-                {myCollections.length > 0 && (
-                  <div className="field">
-                    <label className="label">从征集导入（全部作品 → 展品快照）</label>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <select className="select" value={importId} onChange={(e) => setImportId(e.target.value ? Number(e.target.value) : "")}>
-                        <option value="">选择征集…</option>
-                        {myCollections.map((c) => (<option key={c.id} value={c.id}>{c.title}</option>))}
-                      </select>
-                      <button className="btn btn-ghost btn-sm" onClick={doImport} disabled={busy || !importId}>导入</button>
-                    </div>
+                <h3 className="section-h">展品 ({a.exhibits?.length || 0})</h3>
+                {canVote && (
+                  <div className="hint" style={{ marginBottom: 8 }}>
+                    投票：可选 {a.max_choices_per_voter} 个展品（{a.max_choices_per_voter === 1 ? "一人一展品" : "一人多展品"}），一经投出不可更改。赞/踩另算、可随时改。
                   </div>
                 )}
-              </div>
-            )}
-
-            <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
-              <h3 className="section-h">展品 ({a.exhibits?.length || 0})</h3>
-              {a.exhibits && a.exhibits.length > 0 ? (
-                <div className="exhibit-grid">
-                  {a.exhibits.map((ex) => (
-                    <div key={ex.id} className="exhibit-card">
-                      <div className="exhibit-media">
-                        {ex.files.map(renderExFile)}
-                      </div>
-                      <div className="exhibit-title">{ex.title || ex.submitter?.nickname || ex.submitter?.username || "未命名"}</div>
-                      <div className="exhibit-rate">
-                        <button className={"rate-btn" + (ex.my_rating === "like" ? " is-on like" : "")} onClick={() => doRate(ex.id, "like")} disabled={busy || a.status !== "open"}>👍 {ex.like_count}</button>
-                        <button className={"rate-btn" + (ex.my_rating === "dislike" ? " is-on dislike" : "")} onClick={() => doRate(ex.id, "dislike")} disabled={busy || a.status !== "open"}>👎 {ex.dislike_count}</button>
-                      </div>
+                {a.exhibits && a.exhibits.length > 0 ? (
+                  <>
+                    <div className="exhibit-grid">
+                      {a.exhibits.map((ex) => {
+                        const oid = ex.vote_option_id;
+                        const on = oid != null && selected.includes(oid);
+                        const mine = oid != null && mySel.includes(oid);
+                        const pct = total > 0 ? Math.round((ex.vote_count / total) * 100) : 0;
+                        return (
+                          <div key={ex.id} className={"exhibit-card" + (mine ? " is-mine" : "")}>
+                            <div className="exhibit-media">{ex.files.map(renderExFile)}</div>
+                            <div className="exhibit-title">{ex.title || "未命名"}</div>
+                            {canVote ? (
+                              <div className="exhibit-vote">
+                                <button
+                                  type="button"
+                                  className={"vote-opt" + (on ? " is-on" : "")}
+                                  disabled={busy || (oid == null || (!on && selected.length >= a.max_choices_per_voter))}
+                                  onClick={() => oid != null && toggleOption(oid)}
+                                >
+                                  {on ? "✓ 已选" : "投票"}
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="exhibit-tally">
+                                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                  <span>{ex.vote_count} 票</span>
+                                  <span className="muted">{pct}%</span>
+                                </div>
+                                <div style={{ height: 6, background: "#e5e7eb", borderRadius: 3, overflow: "hidden", marginTop: 3 }}>
+                                  <div style={{ width: `${pct}%`, height: "100%", background: "#2563eb" }} />
+                                </div>
+                                {mine && <div className="muted" style={{ marginTop: 2 }}>你投了这项</div>}
+                              </div>
+                            )}
+                            <div className="exhibit-rate">
+                              <button className={"rate-btn" + (ex.my_rating === "like" ? " is-on like" : "")} onClick={() => doRate(ex.id, "like")} disabled={busy || a.status !== "open"}>👍 {ex.like_count}</button>
+                              <button className={"rate-btn" + (ex.my_rating === "dislike" ? " is-on dislike" : "")} onClick={() => doRate(ex.id, "dislike")} disabled={busy || a.status !== "open"}>👎 {ex.dislike_count}</button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="empty-text">暂无展品{canManage ? "，用上方「加展品」或「从征集导入」添加。" : "。"}</p>
-              )}
-            </div>
-          </>
+                    {canVote && (
+                      <div style={{ marginTop: 8 }}>
+                        <button className="btn btn-primary btn-sm" onClick={doVote} disabled={busy || selected.length < 1}>投票</button>
+                      </div>
+                    )}
+                    {!canVote && <div className="muted" style={{ marginTop: 8 }}>共 {total} 人投票</div>}
+                    {a.ballots && a.ballots.length > 0 && (
+                      <details style={{ marginTop: 12 }}>
+                        <summary className="muted">查看投票明细（{a.ballots.length}）</summary>
+                        <ul style={{ marginTop: 8 }}>
+                          {a.ballots.map((b) => {
+                            const names = (a.exhibits || [])
+                              .filter((ex) => ex.vote_option_id != null && b.option_ids.includes(ex.vote_option_id))
+                              .map((ex) => ex.title || "未命名");
+                            return (
+                              <li key={b.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0" }}>
+                                <Avatar user={b.voter} />
+                                <span>{b.voter.nickname || b.voter.username}</span>
+                                <span className="muted">投：{names.join("、") || "—"}</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </details>
+                    )}
+                    {a.ballots === null && (
+                      <div className="alert alert-info" style={{ marginTop: 12 }}>
+                        <span>秘密投票 —— 个人投票明细不公开。</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="empty-text">暂无展品。</p>
+                )}
+              </div>
+            );
+          })()
         )}
 
         {a.creator && (

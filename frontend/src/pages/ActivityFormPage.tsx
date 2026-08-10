@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { activityApi } from "../api/activities";
 import RichTextEditor from "../components/RichTextEditor";
 import AppShell from "../components/AppShell";
-import type { ActivityFormData, ActivityType } from "../types/activities";
+import type { ActivityType } from "../types/activities";
 import "../styles/form.css";
 
 // 默认截止时间：当前 + N 天，格式 datetime-local 取值（yyyy-MM-ddThh:mm）
@@ -52,10 +52,19 @@ export default function ActivityFormPage() {
   const [maxSub, setMaxSub] = useState<string>(""); // 空=不限
   const [reviewEnabled, setReviewEnabled] = useState(true); // #51：复审可选，默认启用
 
+  // 展示字段：展品（创建时录入并冻结，每展品=一个投票选项）
+  const [exhibits, setExhibits] = useState<{ title: string; files: File[] }[]>([
+    { title: "", files: [] },
+  ]);
+
   const switchType = (t: ActivityType) => {
     setType(t);
     setEndAt(defaultEnd(t === "deliberation" ? 3 : 7));
+    if (t === "exhibition") setExhibits([{ title: "", files: [] }]);
   };
+
+  const setExhibit = (i: number, patch: Partial<{ title: string; files: File[] }>) =>
+    setExhibits((xs) => xs.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
 
   const setOption = (i: number, v: string) =>
     setOptions((opts) => opts.map((o, idx) => (idx === i ? v : o)));
@@ -75,9 +84,12 @@ export default function ActivityFormPage() {
         setMaxFiles(a.max_files_per_submission);
         setMaxSub(a.max_submissions != null ? String(a.max_submissions) : "");
         setReviewEnabled(a.review_enabled);
+      } else if (a.type === "deliberation") {
+        setOptions(a.options ? a.options.map((o) => o.text) : ["", ""]);
+        setK(a.max_choices_per_voter);
+        setSecret(a.is_secret_ballot);
       } else {
-        // 众议 / 展示：选项 + K + 秘密（展示可无投票 → 留默认两项供选填）
-        setOptions(a.options.length ? a.options.map((o) => o.text) : ["", ""]);
+        // 展示：展品已冻结（创建时录入），仅回填 K / 秘密
         setK(a.max_choices_per_voter);
         setSecret(a.is_secret_ballot);
       }
@@ -106,15 +118,32 @@ export default function ActivityFormPage() {
         setError("单作品文件数上限至少为 1");
         return;
       }
+    } else {
+      // 展示：展品在创建时录入（编辑模式展品已冻结，仅改标量）
+      if (!editId) {
+        if (exhibits.length < 1) {
+          setError("展示至少需要 1 个展品");
+          return;
+        }
+        for (let i = 0; i < exhibits.length; i++) {
+          if (exhibits[i].files.length < 1) {
+            setError(`展品「${exhibits[i].title.trim() || i + 1}」至少需要 1 个文件`);
+            return;
+          }
+        }
+        if (k < 1 || k > exhibits.length) {
+          setError(`每人最多选几项须在 1..${exhibits.length} 之间`);
+          return;
+        }
+      }
     }
-    // 展示：投票可选，选项留空即不启用
 
     setSubmitting(true);
     try {
-      let payload: Record<string, unknown>;
+      let saved: { id: number };
       if (type === "deliberation") {
-        payload = {
-          type: "deliberation",
+        const payload = {
+          type: "deliberation" as const,
           title: title.trim(),
           body,
           max_choices_per_voter: k,
@@ -123,9 +152,12 @@ export default function ActivityFormPage() {
           end_at: toIso(endAt),
           option_texts: options.map((o) => o.trim()).filter(Boolean),
         };
+        saved = editId
+          ? await activityApi.update(editId, payload)
+          : await activityApi.create(payload);
       } else if (type === "collection") {
-        payload = {
-          type: "collection",
+        const payload = {
+          type: "collection" as const,
           title: title.trim(),
           body,
           allowed_extensions: allowedExt.trim(),
@@ -136,25 +168,40 @@ export default function ActivityFormPage() {
           start_at: toIso(startAt),
           end_at: toIso(endAt),
         };
-      } else {
-        // 展示：可选投票（给了≥2 选项才启用，复用众议机制）
-        payload = {
+        saved = editId
+          ? await activityApi.update(editId, payload)
+          : await activityApi.create(payload);
+      } else if (editId) {
+        // 展示编辑：展品已冻结，仅改标量
+        saved = await activityApi.update(editId, {
           type: "exhibition",
           title: title.trim(),
           body,
+          max_choices_per_voter: k,
+          is_secret_ballot: secret,
           start_at: toIso(startAt),
           end_at: toIso(endAt),
-        };
-        const texts = options.map((o) => o.trim()).filter(Boolean);
-        if (texts.length >= 2) {
-          payload.option_texts = texts;
-          payload.max_choices_per_voter = k;
-          payload.is_secret_ballot = secret;
-        }
+        });
+      } else {
+        // 展示创建：multipart，展品在创建时录入（每展品一投票选项）
+        const fd = new FormData();
+        fd.append("type", "exhibition");
+        fd.append("title", title.trim());
+        fd.append("body", body);
+        const sa = toIso(startAt);
+        if (sa) fd.append("start_at", sa);
+        const ea = toIso(endAt);
+        if (ea) fd.append("end_at", ea);
+        fd.append("max_choices_per_voter", String(k));
+        fd.append("is_secret_ballot", secret ? "true" : "false");
+        fd.append("exhibit_count", String(exhibits.length));
+        exhibits.forEach((ex, i) => {
+          const t = ex.title.trim();
+          if (t) fd.append(`exhibit_title_${i}`, t);
+          ex.files.forEach((f) => fd.append(`exhibit_files_${i}`, f));
+        });
+        saved = await activityApi.createExhibition(fd);
       }
-      const saved = editId
-        ? await activityApi.update(editId, payload)
-        : await activityApi.create(payload as unknown as ActivityFormData);
       navigate(`/activity/${saved.id}`);
     } catch (err: any) {
       setError(err.message || (editId ? "保存失败" : "创建失败"));
@@ -286,27 +333,34 @@ export default function ActivityFormPage() {
             </>
           ) : (
             <>
-              {/* 展示：截止 + 可选投票（填≥2 选项启用，复用众议机制） */}
+              {/* 展示：截止 + 展品录入（创建时录入并冻结，每展品=一个投票选项） */}
               <div className="field">
                 <label className="label">展示截止</label>
                 <input className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
               </div>
-              <div className="field">
-                <label className="label">可选：启用投票 <span className="hint">（填≥2 个选项启用活动级投票；留空则仅点赞踩）</span></label>
-                {options.map((o, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                    <input className="input" value={o} onChange={(e) => setOption(i, e.target.value)} maxLength={200} placeholder={`选项 ${i + 1}（选填）`} />
-                    {options.length > 2 && (
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOptions(options.filter((_, idx) => idx !== i))}>移除</button>
-                    )}
-                  </div>
-                ))}
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOptions([...options, ""])}>+ 增加选项</button>
-              </div>
+              {editId ? (
+                <div className="alert alert-info"><span>展品在创建时已录入并冻结，创建后不可增删改。</span></div>
+              ) : (
+                <div className="field">
+                  <label className="label">展品 <span className="hint">（创建时录入，创建后冻结；每个展品即一个投票选项）</span></label>
+                  {exhibits.map((ex, i) => (
+                    <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <input className="input" style={{ flex: "1 1 200px" }} value={ex.title} onChange={(e) => setExhibit(i, { title: e.target.value })} maxLength={200} placeholder={`展品 ${i + 1} 标题（选填）`} />
+                      <input type="file" multiple onChange={(e) => setExhibit(i, { files: Array.from(e.target.files || []) })} />
+                      <span className="hint">{ex.files.length > 0 ? `${ex.files.length} 个文件` : "未选文件"}</span>
+                      {exhibits.length > 1 && (
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setExhibits(exhibits.filter((_, idx) => idx !== i))}>移除</button>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => setExhibits([...exhibits, { title: "", files: [] }])}>+ 增加展品</button>
+                </div>
+              )}
               <div className="form-grid">
                 <div className="field">
-                  <label className="label">每人最多选几项（K）</label>
+                  <label className="label">每人最多投几项（K）</label>
                   <input className="input" type="number" min={1} value={k} onChange={(e) => setK(parseInt(e.target.value, 10) || 1)} />
+                  <div className="hint">对展品投票：K=1 一人一展品；K&gt;1 一人最多投 K 个展品。赞/踩另算，可随时改。</div>
                 </div>
                 <div className="field">
                   <label className="fb-attrib" style={{ marginTop: 28 }}>

@@ -51,8 +51,9 @@ export interface Submission {
 export interface Exhibit {
   id: number;
   title: string;
-  submitter: TaskUser | null;
   files: Attachment[];
+  vote_option_id: number | null; // 每展品一个投票选项（创建时绑定）；null 则不可投票
+  vote_count: number;
   like_count: number;
   dislike_count: number;
   my_rating: "like" | "dislike" | null;
@@ -114,19 +115,8 @@ export interface CollectionFormData {
   end_at?: string;
 }
 
-export interface ExhibitionFormData {
-  type: "exhibition";
-  title: string;
-  body: string;
-  start_at?: string;
-  end_at?: string;
-  // 可选投票：给了 option_texts 才启用（复用众议机制）
-  option_texts?: string[];
-  max_choices_per_voter?: number;
-  is_secret_ballot?: boolean;
-}
-
-export type ActivityFormData = DeliberationFormData | CollectionFormData | ExhibitionFormData;
+// 展示走 multipart（展品在创建时录入），不经 JSON 创建路径——表单内用本地状态组装 FormData。
+export type ActivityFormData = DeliberationFormData | CollectionFormData;
 
 // ---- 标签 ----
 export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
