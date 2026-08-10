@@ -155,6 +155,26 @@ class MeViewTest(TestCase):
         self.assertTrue(perms["can_view_feedback"])
         self.assertFalse(perms["can_manage_news"])
 
+    def test_can_change_activity_decoupled_from_proposals(self):
+        # #52：活动管理门禁须与申报解耦——社长有 change_proposals 但无 change_activity，
+        # 故 can_change_activity 为 False（不该看到他人活动的编辑/关闭按钮）。
+        from django.contrib.auth.models import Group
+        grp, _ = Group.objects.get_or_create(name="社长")
+        self.user.groups.add(grp)
+        self.client.login(username="testuser", password="secret123")
+        perms = self.client.get("/auth/me/").json()["user"]["permissions"]
+        self.assertIn("can_change_activity", perms)
+        self.assertTrue(perms["can_change_proposals"])
+        self.assertFalse(perms["can_change_activity"])
+
+    def test_can_change_activity_true_when_perm_held(self):
+        from django.contrib.auth.models import Permission
+        perm = Permission.objects.get(content_type__app_label="activities", codename="change_activity")
+        self.user.user_permissions.add(perm)
+        self.client.login(username="testuser", password="secret123")
+        perms = self.client.get("/auth/me/").json()["user"]["permissions"]
+        self.assertTrue(perms["can_change_activity"])
+
 
 class PasswordResetViewTest(TestCase):
     def setUp(self):

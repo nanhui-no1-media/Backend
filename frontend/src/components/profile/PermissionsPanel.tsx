@@ -9,6 +9,7 @@ const CAP_LABELS: Record<string, string> = {
   can_manage_tags: "管理标签",
   can_approve_proposals: "审批申报",
   can_change_proposals: "修改申报",
+  can_change_activity: "管理活动",
   can_view_feedback: "查看反馈",
   can_review_collections: "复审征集",
   can_edit_about: "编辑关于",
@@ -62,6 +63,14 @@ const CAP_ICONS: Record<string, ReactNode> = {
     <Svg>
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+    </Svg>
+  ),
+  can_change_activity: (
+    <Svg>
+      <rect x={3} y={4} width={18} height={16} rx={2} />
+      <path d="M3 9h18" />
+      <path d="M8 14h2" />
+      <path d="M14 14h2" />
     </Svg>
   ),
   can_view_feedback: (

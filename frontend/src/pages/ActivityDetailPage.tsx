@@ -18,7 +18,7 @@ import AppShell from "../components/AppShell";
 interface CurrentUser {
   id: number;
   can_review_collections?: boolean;
-  can_change_proposals?: boolean;
+  can_change_activity?: boolean;
 }
 
 export default function ActivityDetailPage() {
@@ -42,12 +42,12 @@ export default function ActivityDetailPage() {
   const [importId, setImportId] = useState<number | "">("");
 
   useEffect(() => {
-    api.me().then((d) => setUser({ id: d.user.id, can_review_collections: d.user.permissions?.can_review_collections, can_change_proposals: d.user.permissions?.can_change_proposals })).catch(() => setUser(null));
+    api.me().then((d) => setUser({ id: d.user.id, can_review_collections: d.user.permissions?.can_review_collections, can_change_activity: d.user.permissions?.can_change_activity })).catch(() => setUser(null));
   }, []);
 
   // 展示策展人：拉取自己的征集，供「从征集导入」选择
   useEffect(() => {
-    if (activity?.type === "exhibition" && user && (activity.creator?.id === user.id || !!user.can_change_proposals)) {
+    if (activity?.type === "exhibition" && user && (activity.creator?.id === user.id || !!user.can_change_activity)) {
       activityApi.list({ type: "collection", creator: String(user.id) })
         .then((d) => setMyCollections(d.results || [])).catch(() => {});
     }
@@ -68,7 +68,7 @@ export default function ActivityDetailPage() {
   const a = activity;
   const isOwner = !!user && a.creator?.id === user.id;
   const isReviewer = !!user && (!!user.can_review_collections || isOwner);
-  const canManage = !!user && (isOwner || !!user.can_change_proposals);
+  const canManage = !!user && (isOwner || !!user.can_change_activity);
   const isDeliberation = a.type === "deliberation";
   const isCollection = a.type === "collection";
   const isExhibition = a.type === "exhibition";
