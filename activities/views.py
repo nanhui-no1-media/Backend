@@ -403,6 +403,59 @@ class ActivityViewSet(viewsets.ModelViewSet):
         activity = self.get_queryset().get(pk=activity.pk)
         return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
 
+    @action(detail=True, methods=["post"], url_path="delete_exhibit")
+    def delete_exhibit(self, request, pk=None):
+        activity = self.get_object()
+        if activity.type != "exhibition":
+            return Response({"detail": "仅展示可删展品"}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_edit(activity):
+            return Response({"detail": "展示开放后不可改展品"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            exhibit = activity.exhibits.get(pk=request.data.get("exhibit_id"))
+        except (Exhibit.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "展品不存在"}, status=status.HTTP_404_NOT_FOUND)
+        with transaction.atomic():
+            if exhibit.vote_option_id:
+                VoteOption.objects.filter(pk=exhibit.vote_option_id).delete()
+            exhibit.delete()  # 连带删附件(CASCADE)+ 回收文件(post_delete 信号)
+        activity = self.get_queryset().get(pk=activity.pk)
+        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"], url_path="update_exhibit")
+    def update_exhibit(self, request, pk=None):
+        activity = self.get_object()
+        if activity.type != "exhibition":
+            return Response({"detail": "仅展示可改展品"}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_edit(activity):
+            return Response({"detail": "展示开放后不可改展品"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            exhibit = activity.exhibits.get(pk=request.data.get("exhibit_id"))
+        except (Exhibit.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "展品不存在"}, status=status.HTTP_404_NOT_FOUND)
+        files = request.FILES.getlist("files")
+        for f in files:
+            err = upload_error(f)
+            if err:
+                return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
+        title = request.data.get("title")
+        with transaction.atomic():
+            if title is not None:
+                exhibit.title = title.strip()
+                if exhibit.vote_option_id:
+                    VoteOption.objects.filter(pk=exhibit.vote_option_id).update(text=exhibit.title)
+            if files:
+                exhibit.attachments.all().delete()  # 旧文件回收(CASCADE + post_delete 信号)
+                for f in files:
+                    Attachment.objects.create(
+                        uploaded_by=request.user, exhibit=exhibit, file=f,
+                        file_type=classify_file_type(f.content_type),
+                        file_name=f.name, file_size=f.size,
+                    )
+            if title is not None:
+                exhibit.save(update_fields=["title"])
+        activity = self.get_queryset().get(pk=activity.pk)
+        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+
     # ── 展示：点赞 / 点踩（三态切换：none/like/dislike）──
     @action(detail=True, methods=["post"], url_path="rate")
     def rate(self, request, pk=None):

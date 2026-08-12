@@ -868,6 +868,63 @@ class ExhibitionTest(TestCase):
         r = self._add_exhibit(self.curator, aid, title="A")
         self.assertEqual(r.status_code, 200)
 
+    # ---- 展品删除（delete_exhibit）----
+
+    def _delete_exhibit(self, user, aid, eid):
+        self.client.force_authenticate(user)
+        return self.client.post(f"/activities/activities/{aid}/delete_exhibit/",
+                                data={"exhibit_id": eid})
+
+    def test_delete_exhibit_removes_it_and_option(self):
+        aid = self._create_empty(self.curator, voting_enabled=True,
+                                 max_choices_per_voter=1, scheduled=True).id
+        self._add_exhibit(self.curator, aid, title="A")
+        eid = self.client.get(f"/activities/activities/{aid}/").data["exhibits"][0]["id"]
+        r = self._delete_exhibit(self.curator, aid, eid)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["exhibits"]), 0)
+        from .models import VoteOption
+        self.assertEqual(VoteOption.objects.filter(activity_id=aid).count(), 0)
+
+    def test_delete_exhibit_open_blocked(self):
+        # open 态(未排期)拒绝——状态门在「展品不存在」之前
+        aid = self._create_empty(self.curator, voting_enabled=True, scheduled=False).id
+        r = self._delete_exhibit(self.curator, aid, 999)
+        self.assertEqual(r.status_code, 400)
+
+    # ---- 展品修改（update_exhibit）----
+
+    def _update_exhibit(self, user, aid, eid, title=None, files=None):
+        fd = {"exhibit_id": str(eid)}
+        if title is not None:
+            fd["title"] = title
+        if files:
+            for f in files:
+                fd.setdefault("files", []).append(f)
+        self.client.force_authenticate(user)
+        return self.client.post(f"/activities/activities/{aid}/update_exhibit/",
+                                data=fd, format="multipart")
+
+    def test_update_exhibit_renames_and_syncs_option(self):
+        aid = self._create_empty(self.curator, voting_enabled=True,
+                                 max_choices_per_voter=1, scheduled=True).id
+        self._add_exhibit(self.curator, aid, title="旧名")
+        eid = self.client.get(f"/activities/activities/{aid}/").data["exhibits"][0]["id"]
+        r = self._update_exhibit(self.curator, aid, eid, title="新名")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["exhibits"][0]["title"], "新名")
+        from .models import VoteOption
+        self.assertEqual(VoteOption.objects.get(activity_id=aid).text, "新名")
+
+    def test_update_exhibit_replaces_files(self):
+        aid = self._create_empty(self.curator, scheduled=True).id
+        self._add_exhibit(self.curator, aid, files=[self._img("a.png"), self._img("b.png")])
+        eid = self.client.get(f"/activities/activities/{aid}/").data["exhibits"][0]["id"]
+        r = self._update_exhibit(self.curator, aid, eid, files=[self._img("c.png")])
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["exhibits"][0]["files"]), 1)
+        self.assertEqual(r.data["exhibits"][0]["files"][0]["file_name"], "c.png")
+
     # ---- 展品投票（每展品一选项）----
 
     def test_vote_k1_single_exhibit(self):
