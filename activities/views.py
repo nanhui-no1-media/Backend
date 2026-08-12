@@ -489,7 +489,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
                         file_type=a.file_type, file_name=a.file_name, file_size=a.file_size,
                     )
                     new_att.file.save(a.file.name, ContentFile(a.file.read()))
-                    new_att.save()
+                    # file.save(save=True) 已持久化 Attachment 行,无需再 save()
         activity = self.get_queryset().get(pk=activity.pk)
         return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
 
