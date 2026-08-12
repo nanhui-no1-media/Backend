@@ -27,6 +27,7 @@ from .lifecycle import (
     OPEN,
     REVIEWING,
     SCHEDULED,
+    can_curate,
     can_edit,
     can_rate,
     can_submit,
@@ -143,17 +144,6 @@ class ActivityViewSet(viewsets.ModelViewSet):
                 file_name=f.name, file_size=f.size,
             )
         return exhibit
-
-    def _assert_curatable(self, activity, verb):
-        """布展门禁:展示类型 + 待开始(can_edit)。不满足返回 400 Response,满足返回 None。
-
-        verb 用于错误文案(加/删/改/导入)。
-        """
-        if activity.type != "exhibition":
-            return Response({"detail": f"仅展示可{verb}展品"}, status=status.HTTP_400_BAD_REQUEST)
-        if not can_edit(activity):
-            return Response({"detail": "展示开放后不可改展品"}, status=status.HTTP_400_BAD_REQUEST)
-        return None
 
     def perform_update(self, serializer):
         # 仅待开始（scheduled）期间可改；开放后锁定（要改只能删重建）。
@@ -328,9 +318,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="add_exhibit")
     def add_exhibit(self, request, pk=None):
         activity = self.get_object()
-        gate = self._assert_curatable(activity, "加")
-        if gate is not None:
-            return gate
+        if not can_curate(activity, request.user):
+            return Response({"detail": "仅展示可在待开始期加展品"}, status=status.HTTP_400_BAD_REQUEST)
         files = request.FILES.getlist("files")
         if not files:
             return Response({"detail": "展品至少需要 1 个文件"}, status=status.HTTP_400_BAD_REQUEST)
@@ -347,9 +336,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="delete_exhibit")
     def delete_exhibit(self, request, pk=None):
         activity = self.get_object()
-        gate = self._assert_curatable(activity, "删")
-        if gate is not None:
-            return gate
+        if not can_curate(activity, request.user):
+            return Response({"detail": "仅展示可在待开始期删展品"}, status=status.HTTP_400_BAD_REQUEST)
         try:
             exhibit = activity.exhibits.get(pk=request.data.get("exhibit_id"))
         except (Exhibit.DoesNotExist, ValueError, TypeError):
@@ -364,9 +352,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="update_exhibit")
     def update_exhibit(self, request, pk=None):
         activity = self.get_object()
-        gate = self._assert_curatable(activity, "改")
-        if gate is not None:
-            return gate
+        if not can_curate(activity, request.user):
+            return Response({"detail": "仅展示可在待开始期改展品"}, status=status.HTTP_400_BAD_REQUEST)
         try:
             exhibit = activity.exhibits.get(pk=request.data.get("exhibit_id"))
         except (Exhibit.DoesNotExist, ValueError, TypeError):
@@ -400,9 +387,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
         from django.core.files.base import ContentFile
 
         activity = self.get_object()
-        gate = self._assert_curatable(activity, "导入")
-        if gate is not None:
-            return gate
+        if not can_curate(activity, request.user):
+            return Response({"detail": "仅展示可在待开始期导入展品"}, status=status.HTTP_400_BAD_REQUEST)
         try:
             source = Activity.objects.get(pk=request.data.get("collection_id"), type="collection")
         except (Activity.DoesNotExist, ValueError, TypeError):

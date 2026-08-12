@@ -16,6 +16,8 @@ from .lifecycle import (
     CLOSED,
     COLLECTING,
     OPEN,
+    SCHEDULED,
+    can_curate,
     can_vote,
     initial_status,
     transition_overdue,
@@ -100,3 +102,29 @@ class TransitionOverdueTest(TestCase):
         )
         transition_overdue()
         self.assertEqual(Activity.objects.get(pk=c.pk).status, COLLECTING)
+
+
+class CanCurateTest(TestCase):
+    def setUp(self):
+        self.user = grant_verification(User.objects.create_user(username="u", password="x"))
+        self.exhibit_scheduled = Activity.objects.create(
+            type="exhibition", status=SCHEDULED, title="e",
+        )
+        self.exhibit_open = Activity.objects.create(
+            type="exhibition", status=OPEN, title="e2",
+        )
+        self.deliberation = Activity.objects.create(
+            type="deliberation", status=SCHEDULED, title="d", max_choices_per_voter=1,
+        )
+
+    def test_scheduled_exhibition_allows_curate(self):
+        self.assertTrue(can_curate(self.exhibit_scheduled, self.user))
+
+    def test_open_exhibition_blocks_curate(self):
+        self.assertFalse(can_curate(self.exhibit_open, self.user))
+
+    def test_non_exhibition_blocks_curate(self):
+        self.assertFalse(can_curate(self.deliberation, self.user))
+
+    def test_anonymous_cannot_curate(self):
+        self.assertFalse(can_curate(self.exhibit_scheduled, AnonymousUser()))
