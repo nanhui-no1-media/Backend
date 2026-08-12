@@ -195,6 +195,15 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         {"max_choices_per_voter": "每人最多选几项须在 1..选项数 之间"}
                     )
+        is_exhib = attrs.get("type") == "exhibition" or (
+            self.instance is not None and self.instance.type == "exhibition"
+        )
+        if is_exhib and attrs.get("voting_enabled"):
+            k = attrs.get("max_choices_per_voter", getattr(self.instance, "max_choices_per_voter", 1))
+            if k < 1:
+                raise serializers.ValidationError(
+                    {"max_choices_per_voter": "每人最多选几项至少为 1"}
+                )
         return attrs
 
     def create(self, validated_data):

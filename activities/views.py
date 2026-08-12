@@ -122,15 +122,13 @@ class ActivityViewSet(viewsets.ModelViewSet):
         serializer.save(creator=self.request.user)
 
     def create(self, request, *args, **kwargs):
-        # 展示：展品在创建时录入（multipart：每展品一束文件），与 JSON 创建路径分流。
-        if request.data.get("type") == "exhibition":
-            return self._create_exhibition(request)
+        # 展示:展品在详情页布展(待开始期),创建只收标量——0 展品可建,走 JSON 通用路径。
         return super().create(request, *args, **kwargs)
 
     def _build_exhibit(self, activity, title, files, voting_enabled):
         """建一个展品 + 一束附件;启用投票时另建一个 VoteOption 并绑定。
 
-        供 _create_exhibition / add_exhibit / import_from_collection 复用。
+        供 add_exhibit / import_from_collection 复用。
         files 已经过 upload_error 校验(调用方负责)。
         """
         option = None
@@ -156,73 +154,6 @@ class ActivityViewSet(viewsets.ModelViewSet):
         if not can_edit(activity):
             return Response({"detail": "展示开放后不可改展品"}, status=status.HTTP_400_BAD_REQUEST)
         return None
-
-    def _create_exhibition(self, request):
-        data = request.data
-
-        def _parse_int(v, default=0):
-            try:
-                return int(v)
-            except (TypeError, ValueError):
-                return default
-
-        def _parse_bool(v):
-            return str(v).strip().lower() in ("true", "1", "on", "yes")
-
-        # 1) 先解析并校验展品——避免先建了活动又因展品不合规留下半成品。
-        count = _parse_int(data.get("exhibit_count"), default=0)
-        exhibits = []  # [(title, [files])]
-        for i in range(count):
-            title = (data.get(f"exhibit_title_{i}") or "").strip()
-            files = request.FILES.getlist(f"exhibit_files_{i}")
-            exhibits.append((title, files))
-        if not exhibits:
-            return Response({"detail": "展示至少需要 1 个展品"}, status=status.HTTP_400_BAD_REQUEST)
-        for i, (title, files) in enumerate(exhibits):
-            if not files:
-                return Response(
-                    {"detail": f"展品「{title or i + 1}」至少需要 1 个文件"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            for f in files:
-                err = upload_error(f)  # 全局禁用后缀 + 50MB
-                if err:
-                    return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
-
-        # 2) K 值校验（每人最多投几个展品）——仅启用投票时校验；纯陈列不投票，K 无意义。
-        voting_enabled = _parse_bool(data.get("voting_enabled"))
-        k = _parse_int(data.get("max_choices_per_voter"), default=1)
-        if voting_enabled and (k < 1 or k > len(exhibits)):
-            return Response(
-                {"detail": f"每人最多选几项须在 1..{len(exhibits)} 之间"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # 3) 标量字段过序列化器校验（正文消毒 / 开始<截止 / 默认截止）。
-        scalar = {
-            "type": "exhibition",
-            "title": (data.get("title") or "").strip(),
-            "body": data.get("body") or "",
-            "start_at": data.get("start_at") or None,
-            "end_at": data.get("end_at") or None,
-            "max_choices_per_voter": k,
-            "is_secret_ballot": _parse_bool(data.get("is_secret_ballot")),
-            "voting_enabled": voting_enabled,
-        }
-        serializer = ActivityDetailSerializer(data=scalar, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-
-        # 4) 原子建活动 + 每展品（启用投票时）一个投票选项 + 一束文件。
-        with transaction.atomic():
-            activity = serializer.save(creator=request.user)
-            for title, files in exhibits:
-                self._build_exhibit(activity, title, files, voting_enabled)
-        activity = self.get_queryset().get(pk=activity.pk)  # 刷新预取
-        headers = self.get_success_headers(serializer.data)
-        return Response(
-            ActivityDetailSerializer(activity, context={"request": request}).data,
-            status=status.HTTP_201_CREATED, headers=headers,
-        )
 
     def perform_update(self, serializer):
         # 仅待开始（scheduled）期间可改；开放后锁定（要改只能删重建）。

@@ -720,35 +720,49 @@ class ExhibitionTest(TestCase):
         return SimpleUploadedFile(name, data, content_type=ct)
 
     def _create(self, user, exhibits, **scalar):
-        """展品在创建时录入。exhibits: [(title, [SimpleUploadedFile...]), ...]
+        """建展示 + 待开始期布展 + 翻 open。exhibits: [(title, [SimpleUploadedFile...]), ...]
 
-        默认沿用现状（启用投票：每展品一选项）；传 voting_enabled="false" 可创建纯陈列展示。
-        """
-        data = {"type": "exhibition", "title": "影展", "body": "<p>x</p>", "voting_enabled": "true"}
-        data.update(scalar)
-        data["exhibit_count"] = str(len(exhibits))
-        for i, (title, files) in enumerate(exhibits):
-            if title:
-                data[f"exhibit_title_{i}"] = title
-            data[f"exhibit_files_{i}"] = files
-        self.client.force_authenticate(user)
-        return self.client.post("/activities/activities/", data=data)
-
-    def _create_empty(self, user, voting_enabled=False, scheduled=False, **kw):
-        """直接用 ORM 建一个 0 展品的展示(避开 multipart 创建路径,T5 前创建仍强制展品)。
-
-        scheduled=True → status='scheduled'(可布展);否则 'open'。
+        新流程:排期到未来(→scheduled)→ add_exhibit 逐个加展品 → 把 start_at 改到
+        过去并 GET 触发 transition_due_starts(→open)。对外契约不变:返回带 exhibits
+        的 open 态 response(投票/赞踩测试可直接用)。默认 voting_enabled=True。
         """
         from datetime import datetime, timedelta, timezone as dtz
         from .models import Activity
-        a = Activity.objects.create(
-            type="exhibition", status="scheduled" if scheduled else "open",
-            title=kw.get("title", "影展"), body=kw.get("body", "<p>x</p>"),
-            creator=user, voting_enabled=voting_enabled,
-            max_choices_per_voter=kw.get("max_choices_per_voter", 1),
-            start_at=(datetime.now(dtz.utc) + timedelta(days=1)) if scheduled else None,
-        )
-        return a
+        start_future = (datetime.now(dtz.utc) + timedelta(days=1)).isoformat()
+        body = {"type": "exhibition", "title": "影展", "body": "<p>x</p>",
+                "voting_enabled": True, "start_at": start_future}
+        # scalar 可能带 voting_enabled="false" 等(#55 的纯陈列测试)——原样合并
+        body.update({k: v for k, v in scalar.items() if k != "max_choices_per_voter"})
+        if "max_choices_per_voter" in scalar:
+            body["max_choices_per_voter"] = scalar["max_choices_per_voter"]
+        self.client.force_authenticate(user)
+        r = self.client.post("/activities/activities/", data=body, content_type="application/json")
+        assert r.status_code == 201, r.data
+        aid = r.data["id"]
+        assert r.data["status"] == "scheduled", r.data
+        for title, files in exhibits:
+            ar = self._add_exhibit(user, aid, title=title, files=files)
+            assert ar.status_code == 200, ar.data
+        Activity.objects.filter(pk=aid).update(
+            start_at=datetime.now(dtz.utc) - timedelta(hours=1))
+        r2 = self.client.get(f"/activities/activities/{aid}/")
+        assert r2.data["status"] == "open", r2.data
+        return r2
+
+    def _create_empty(self, user, voting_enabled=False, scheduled=False, **scalar):
+        """通过 HTTP JSON 建一个 0 展品的展示。返回 response。
+
+        scheduled=True → 给未来 start_at(status=scheduled,可布展);否则不排期(status=open)。
+        """
+        from datetime import datetime, timedelta, timezone as dtz
+        body = {"type": "exhibition", "title": scalar.get("title", "影展"),
+                "body": scalar.get("body", "<p>x</p>"),
+                "voting_enabled": voting_enabled,
+                "max_choices_per_voter": scalar.get("max_choices_per_voter", 1)}
+        if scheduled:
+            body["start_at"] = (datetime.now(dtz.utc) + timedelta(days=1)).isoformat()
+        self.client.force_authenticate(user)
+        return self.client.post("/activities/activities/", data=body, content_type="application/json")
 
     def _add_exhibit(self, user, aid, title="", files=None):
         files = files if files is not None else [self._img()]
@@ -789,65 +803,20 @@ class ExhibitionTest(TestCase):
     def _ex(resp, idx=0):
         return resp.data["exhibits"][idx]
 
-    # ---- 创建（展品录入即冻结）----
+    # ---- 创建（JSON 标量,0 展品可建;展品在详情页布展）----
 
-    def test_create_with_exhibits(self):
-        r = self._create(self.curator, [("作品A", [self._img(), self._img("b.png")]), ("作品B", [self._img()])])
-        self.assertEqual(r.status_code, 201)
-        self.assertEqual(r.data["status"], "open")
-        self.assertEqual(len(r.data["exhibits"]), 2)
-        ex0 = r.data["exhibits"][0]
-        self.assertEqual(ex0["title"], "作品A")
-        self.assertEqual(len(ex0["files"]), 2)
-        self.assertIsNotNone(ex0["vote_option_id"])  # 每展品一个投票选项
-        self.assertEqual(ex0["vote_count"], 0)
-        self.assertIsNone(r.data["options"])  # 展示的选项即展品，options 不再单独输出
-
-    def test_requires_at_least_one_exhibit(self):
-        self.assertEqual(self._create(self.curator, []).status_code, 400)
-
-    def test_exhibit_requires_file(self):
-        self.assertEqual(self._create(self.curator, [("作品A", [])]).status_code, 400)
-
-    def test_k_above_exhibit_count_rejected(self):
-        r = self._create(self.curator, [("A", [self._img()]), ("B", [self._img()])],
-                         max_choices_per_voter=3)
+    def test_create_voting_enabled_k_at_least_1(self):
+        self.client.force_authenticate(self.curator)
+        r = self.client.post("/activities/activities/", data={
+            "type": "exhibition", "title": "t", "body": "",
+            "voting_enabled": True, "max_choices_per_voter": 0,
+        }, content_type="application/json")
         self.assertEqual(r.status_code, 400)
-
-    def test_visitor_cannot_create(self):
-        r = self._create(self.visitor, [("A", [self._img()])])
-        self.assertEqual(r.status_code, 403)
-
-    # ---- 纯陈列（voting_enabled=false：不建选项，仅展品+文件）----
-
-    def test_create_voting_disabled_builds_no_options(self):
-        r = self._create(
-            self.curator,
-            [("A", [self._img()]), ("B", [self._img()])],
-            voting_enabled="false",
-        )
-        self.assertEqual(r.status_code, 201)
-        self.assertEqual(r.data["status"], "open")
-        self.assertEqual(r.data["voting_enabled"], False)
-        self.assertEqual(len(r.data["exhibits"]), 2)
-        # 不启用投票：展品照常创建，但不绑定投票选项
-        self.assertIsNone(r.data["exhibits"][0]["vote_option_id"])
-        self.assertIsNone(r.data["exhibits"][1]["vote_option_id"])
-        self.assertEqual(len(r.data["exhibits"][0]["files"]), 1)
-
-    def test_create_voting_disabled_ignores_k(self):
-        # 纯陈列展示：不投票，K 值无意义，不应因 K 超过展品数被拒
-        r = self._create(
-            self.curator,
-            [("A", [self._img()]), ("B", [self._img()])],
-            voting_enabled="false", max_choices_per_voter=9,
-        )
-        self.assertEqual(r.status_code, 201)
 
     # ---- 详情页布展:add_exhibit(待开始期手动加展品)----
 
     def test_add_exhibit_creates_exhibit_with_files(self):
-        aid = self._create_empty(self.curator, voting_enabled=False, scheduled=True).id
+        aid = self._create_empty(self.curator, voting_enabled=False, scheduled=True).data["id"]
         r = self._add_exhibit(self.curator, aid, title="作品A",
                                files=[self._img(), self._img("b.png")])
         self.assertEqual(r.status_code, 200)
@@ -859,29 +828,29 @@ class ExhibitionTest(TestCase):
 
     def test_add_exhibit_voting_enabled_builds_option(self):
         aid = self._create_empty(self.curator, voting_enabled=True,
-                                 max_choices_per_voter=1, scheduled=True).id
+                                 max_choices_per_voter=1, scheduled=True).data["id"]
         r = self._add_exhibit(self.curator, aid, title="X")
         self.assertEqual(r.status_code, 200)
         self.assertIsNotNone(r.data["exhibits"][0]["vote_option_id"])
 
     def test_add_exhibit_requires_file(self):
-        aid = self._create_empty(self.curator, scheduled=True).id
+        aid = self._create_empty(self.curator, scheduled=True).data["id"]
         r = self._add_exhibit(self.curator, aid, files=[])
         self.assertEqual(r.status_code, 400)
 
     def test_add_exhibit_blocked_when_open(self):
         # 未排期 → open → 不可布展
-        aid = self._create_empty(self.curator, scheduled=False).id
+        aid = self._create_empty(self.curator, scheduled=False).data["id"]
         r = self._add_exhibit(self.curator, aid, title="A")
         self.assertEqual(r.status_code, 400)
 
     def test_add_exhibit_non_curator_forbidden(self):
-        aid = self._create_empty(self.curator, scheduled=True).id
+        aid = self._create_empty(self.curator, scheduled=True).data["id"]
         r = self._add_exhibit(self.member, aid, title="A")
         self.assertEqual(r.status_code, 403)
 
     def test_add_exhibit_scheduled_allowed(self):
-        aid = self._create_empty(self.curator, scheduled=True).id
+        aid = self._create_empty(self.curator, scheduled=True).data["id"]
         r = self._add_exhibit(self.curator, aid, title="A")
         self.assertEqual(r.status_code, 200)
 
@@ -894,7 +863,7 @@ class ExhibitionTest(TestCase):
 
     def test_delete_exhibit_removes_it_and_option(self):
         aid = self._create_empty(self.curator, voting_enabled=True,
-                                 max_choices_per_voter=1, scheduled=True).id
+                                 max_choices_per_voter=1, scheduled=True).data["id"]
         self._add_exhibit(self.curator, aid, title="A")
         eid = self.client.get(f"/activities/activities/{aid}/").data["exhibits"][0]["id"]
         r = self._delete_exhibit(self.curator, aid, eid)
@@ -905,7 +874,7 @@ class ExhibitionTest(TestCase):
 
     def test_delete_exhibit_open_blocked(self):
         # open 态(未排期)拒绝——状态门在「展品不存在」之前
-        aid = self._create_empty(self.curator, voting_enabled=True, scheduled=False).id
+        aid = self._create_empty(self.curator, voting_enabled=True, scheduled=False).data["id"]
         r = self._delete_exhibit(self.curator, aid, 999)
         self.assertEqual(r.status_code, 400)
 
@@ -924,7 +893,7 @@ class ExhibitionTest(TestCase):
 
     def test_update_exhibit_renames_and_syncs_option(self):
         aid = self._create_empty(self.curator, voting_enabled=True,
-                                 max_choices_per_voter=1, scheduled=True).id
+                                 max_choices_per_voter=1, scheduled=True).data["id"]
         self._add_exhibit(self.curator, aid, title="旧名")
         eid = self.client.get(f"/activities/activities/{aid}/").data["exhibits"][0]["id"]
         r = self._update_exhibit(self.curator, aid, eid, title="新名")
@@ -934,7 +903,7 @@ class ExhibitionTest(TestCase):
         self.assertEqual(VoteOption.objects.get(activity_id=aid).text, "新名")
 
     def test_update_exhibit_replaces_files(self):
-        aid = self._create_empty(self.curator, scheduled=True).id
+        aid = self._create_empty(self.curator, scheduled=True).data["id"]
         self._add_exhibit(self.curator, aid, files=[self._img("a.png"), self._img("b.png")])
         eid = self.client.get(f"/activities/activities/{aid}/").data["exhibits"][0]["id"]
         r = self._update_exhibit(self.curator, aid, eid, files=[self._img("c.png")])
@@ -1097,7 +1066,7 @@ class ExhibitionTest(TestCase):
 
     def test_import_from_collection_copies_selected(self):
         cid, sub_ids = self._make_collection_with_submissions(self.curator, n=2)
-        aid = self._create_empty(self.curator, voting_enabled=False, scheduled=True).id
+        aid = self._create_empty(self.curator, voting_enabled=False, scheduled=True).data["id"]
         self.client.force_authenticate(self.curator)
         r = self.client.post(f"/activities/activities/{aid}/import_from_collection/",
                              data={"collection_id": cid, "submission_ids": sub_ids},
@@ -1108,7 +1077,7 @@ class ExhibitionTest(TestCase):
         self.assertEqual(len(files), 2)
 
     def test_import_invalid_collection(self):
-        aid = self._create_empty(self.curator, scheduled=True).id
+        aid = self._create_empty(self.curator, scheduled=True).data["id"]
         self.client.force_authenticate(self.curator)
         r = self.client.post(f"/activities/activities/{aid}/import_from_collection/",
                              data={"collection_id": 999999, "submission_ids": []},
@@ -1118,7 +1087,7 @@ class ExhibitionTest(TestCase):
     def test_import_is_independent_snapshot(self):
         # 复制成独立副本:原作品附件删了,展品文件仍在
         cid, sub_ids = self._make_collection_with_submissions(self.curator, n=1)
-        aid = self._create_empty(self.curator, scheduled=True).id
+        aid = self._create_empty(self.curator, scheduled=True).data["id"]
         self.client.force_authenticate(self.curator)
         self.client.post(f"/activities/activities/{aid}/import_from_collection/",
                          data={"collection_id": cid, "submission_ids": sub_ids},
