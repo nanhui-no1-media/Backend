@@ -45,6 +45,13 @@ class CanVoteTest(TestCase):
         self.closed = Activity.objects.create(
             type="deliberation", status=CLOSED, title="x", max_choices_per_voter=1,
         )
+        # 展示：默认不启用投票（纯陈列）；启用投票时才可投。
+        self.exhibit_pure = Activity.objects.create(
+            type="exhibition", status=OPEN, title="e_pure", voting_enabled=False,
+        )
+        self.exhibit_voting = Activity.objects.create(
+            type="exhibition", status=OPEN, title="e_voting", voting_enabled=True,
+        )
 
     def test_open_deliberation_allows_vote(self):
         self.assertTrue(can_vote(self.deliberation, self.user))
@@ -57,6 +64,14 @@ class CanVoteTest(TestCase):
 
     def test_anonymous_cannot_vote(self):
         self.assertFalse(can_vote(self.deliberation, AnonymousUser()))
+
+    def test_exhibition_voting_disabled_blocks_vote(self):
+        # 展示纯陈列（未启用投票）不可投票
+        self.assertFalse(can_vote(self.exhibit_pure, self.user))
+
+    def test_exhibition_voting_enabled_allows_vote(self):
+        # 展示启用投票时方可投
+        self.assertTrue(can_vote(self.exhibit_voting, self.user))
 
 
 class TransitionOverdueTest(TestCase):

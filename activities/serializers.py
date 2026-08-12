@@ -127,6 +127,13 @@ def _is_reviewer(activity, user):
     )
 
 
+def _voting_active(activity):
+    """该活动是否走投票读侧：众议始终；展示仅 voting_enabled 时。纯陈列展示无投票数据。"""
+    if activity.type == "deliberation":
+        return True
+    return activity.type == "exhibition" and activity.voting_enabled
+
+
 class ActivityDetailSerializer(serializers.ModelSerializer):
     creator = SimpleUserSerializer(read_only=True)
     # 众议读侧（展示的"选项"即展品，走 exhibits，options 返回 None）
@@ -151,7 +158,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "start_at", "end_at",
             "max_choices_per_voter", "is_secret_ballot",
             "allowed_extensions", "max_file_size", "max_files_per_submission", "max_submissions",
-            "review_enabled",
+            "review_enabled", "voting_enabled",
             "options", "ballots", "my_selections", "total_ballots",
             "my_submission", "submissions",
             "exhibits",
@@ -227,8 +234,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
 
     def get_ballots(self, obj):
         # 秘密投票：个人明细仅 is_superuser 可见；其余（含发起人）只见聚合计数。
-        # 众议与展示（启用投票时）共用。
-        if obj.type not in ("deliberation", "exhibition"):
+        # 众议与展示（启用投票时）共用；纯陈列展示（voting_enabled=False）无投票数据。
+        if not _voting_active(obj):
             return None
         request = self.context.get("request")
         user = getattr(request, "user", None)
@@ -239,9 +246,11 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         return BallotSerializer(obj.ballots.all(), many=True, context=self.context).data
 
     def get_my_selections(self, obj):
+        if not _voting_active(obj):
+            return None
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        if not user or not user.is_authenticated or obj.type not in ("deliberation", "exhibition"):
+        if not user or not user.is_authenticated:
             return None
         ballot = obj.ballots.filter(voter=user).first()
         if ballot is None:
@@ -249,7 +258,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         return list(ballot.selections.values_list("option_id", flat=True))
 
     def get_total_ballots(self, obj):
-        if obj.type not in ("deliberation", "exhibition"):
+        if not _voting_active(obj):
             return None
         return obj.ballots.count()
 

@@ -720,8 +720,11 @@ class ExhibitionTest(TestCase):
         return SimpleUploadedFile(name, data, content_type=ct)
 
     def _create(self, user, exhibits, **scalar):
-        """展品在创建时录入。exhibits: [(title, [SimpleUploadedFile...]), ...]"""
-        data = {"type": "exhibition", "title": "影展", "body": "<p>x</p>"}
+        """展品在创建时录入。exhibits: [(title, [SimpleUploadedFile...]), ...]
+
+        默认沿用现状（启用投票：每展品一选项）；传 voting_enabled="false" 可创建纯陈列展示。
+        """
+        data = {"type": "exhibition", "title": "影展", "body": "<p>x</p>", "voting_enabled": "true"}
         data.update(scalar)
         data["exhibit_count"] = str(len(exhibits))
         for i, (title, files) in enumerate(exhibits):
@@ -771,6 +774,32 @@ class ExhibitionTest(TestCase):
     def test_visitor_cannot_create(self):
         r = self._create(self.visitor, [("A", [self._img()])])
         self.assertEqual(r.status_code, 403)
+
+    # ---- 纯陈列（voting_enabled=false：不建选项，仅展品+文件）----
+
+    def test_create_voting_disabled_builds_no_options(self):
+        r = self._create(
+            self.curator,
+            [("A", [self._img()]), ("B", [self._img()])],
+            voting_enabled="false",
+        )
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["status"], "open")
+        self.assertEqual(r.data["voting_enabled"], False)
+        self.assertEqual(len(r.data["exhibits"]), 2)
+        # 不启用投票：展品照常创建，但不绑定投票选项
+        self.assertIsNone(r.data["exhibits"][0]["vote_option_id"])
+        self.assertIsNone(r.data["exhibits"][1]["vote_option_id"])
+        self.assertEqual(len(r.data["exhibits"][0]["files"]), 1)
+
+    def test_create_voting_disabled_ignores_k(self):
+        # 纯陈列展示：不投票，K 值无意义，不应因 K 超过展品数被拒
+        r = self._create(
+            self.curator,
+            [("A", [self._img()]), ("B", [self._img()])],
+            voting_enabled="false", max_choices_per_voter=9,
+        )
+        self.assertEqual(r.status_code, 201)
 
     # ---- 展品投票（每展品一选项）----
 
@@ -864,6 +893,47 @@ class ExhibitionTest(TestCase):
         ex = self._create(self.curator, [("A", [self._img()])])
         aid, eid = ex.data["id"], self._ex(ex)["id"]
         self.assertEqual(self._rate(self.member, aid, eid, "meh").status_code, 400)
+
+    # ---- 纯陈列：投票被拒、赞踩照常 ----
+
+    def _create_pure(self):
+        return self._create(
+            self.curator, [("A", [self._img()]), ("B", [self._img()])],
+            voting_enabled="false",
+        )
+
+    def test_vote_rejected_when_voting_disabled(self):
+        ex = self._create_pure()
+        aid = ex.data["id"]
+        # 纯陈列展示无选项；即便提交任意选项，投票动作本身就被拒（防御性双保险）
+        r = self._vote(self.member, aid, [999999])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("投票", r.data["detail"])
+
+    def test_rate_works_when_voting_disabled(self):
+        ex = self._create_pure()
+        aid, eid = ex.data["id"], self._ex(ex)["id"]
+        r = self._rate(self.member, aid, eid, "like")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self._ex(r)["my_rating"], "like")
+        self.assertEqual(self._ex(r)["like_count"], 1)
+        self.assertIsNone(self._ex(r)["vote_option_id"])  # 仍未绑定选项
+
+    def test_detail_omits_vote_data_when_voting_disabled(self):
+        ex = self._create_pure()
+        aid = ex.data["id"]
+        # 给展品点赞，确认赞踩数据存在、但投票相关数据全部缺席
+        self._rate(self.member, aid, self._ex(ex)["id"], "like")
+        resp = _json(self.client, "get", f"/activities/activities/{aid}/", self.member)
+        self.assertEqual(resp.data["voting_enabled"], False)
+        self.assertIsNone(resp.data["ballots"])
+        self.assertIsNone(resp.data["my_selections"])
+        self.assertIsNone(resp.data["total_ballots"])
+        self.assertIsNone(resp.data["options"])
+        # 展品画廊照常：含赞踩计数与我的评分
+        self.assertEqual(len(resp.data["exhibits"]), 2)
+        self.assertEqual(self._ex(resp)["like_count"], 1)
+        self.assertEqual(self._ex(resp)["my_rating"], "like")
 
     # ---- 生命周期 ----
 

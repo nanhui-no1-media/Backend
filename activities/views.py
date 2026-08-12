@@ -30,6 +30,7 @@ from .lifecycle import (
     can_edit,
     can_rate,
     can_submit,
+    can_vote,
     collection_close_target,
     maybe_close_collection_on_cap,
     maybe_close_deliberation_on_full_vote,
@@ -156,9 +157,10 @@ class ActivityViewSet(viewsets.ModelViewSet):
                 if err:
                     return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
 
-        # 2) K 值校验（每人最多投几个展品）。
+        # 2) K 值校验（每人最多投几个展品）——仅启用投票时校验；纯陈列不投票，K 无意义。
+        voting_enabled = _parse_bool(data.get("voting_enabled"))
         k = _parse_int(data.get("max_choices_per_voter"), default=1)
-        if k < 1 or k > len(exhibits):
+        if voting_enabled and (k < 1 or k > len(exhibits)):
             return Response(
                 {"detail": f"每人最多选几项须在 1..{len(exhibits)} 之间"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -173,15 +175,18 @@ class ActivityViewSet(viewsets.ModelViewSet):
             "end_at": data.get("end_at") or None,
             "max_choices_per_voter": k,
             "is_secret_ballot": _parse_bool(data.get("is_secret_ballot")),
+            "voting_enabled": voting_enabled,
         }
         serializer = ActivityDetailSerializer(data=scalar, context={"request": request})
         serializer.is_valid(raise_exception=True)
 
-        # 4) 原子建活动 + 每展品一个投票选项 + 一束文件。
+        # 4) 原子建活动 + 每展品（启用投票时）一个投票选项 + 一束文件。
         with transaction.atomic():
             activity = serializer.save(creator=request.user)
             for i, (title, files) in enumerate(exhibits):
-                option = VoteOption.objects.create(activity=activity, text=title, order=i)
+                option = None
+                if voting_enabled:
+                    option = VoteOption.objects.create(activity=activity, text=title, order=i)
                 exhibit = Exhibit.objects.create(activity=activity, title=title, vote_option=option)
                 for f in files:
                     Attachment.objects.create(
@@ -208,10 +213,16 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def vote(self, request, pk=None):
         activity = self.get_object()  # 触发惰性结算（若已到点则已 closed）
-        if activity.type not in ("deliberation", "exhibition"):
+        # 守卫（类型∈{众议,展示}、展示须 voting_enabled、状态=open、已认证）统一走
+        # lifecycle.can_vote，与 rate/submit 同模式——单一事实源。
+        if not can_vote(activity, request.user):
+            # can_vote 已排除未认证（IsVerified 另把关）与非众议/展示类型；此处仅可能是
+            # 展示未启用投票（纯陈列）或状态非 open。
+            if activity.type == "exhibition" and not activity.voting_enabled:
+                return Response({"detail": "该展示未启用投票"}, status=status.HTTP_400_BAD_REQUEST)
+            if activity.status != OPEN:
+                return Response({"detail": "投票已结束"}, status=status.HTTP_400_BAD_REQUEST)
             return Response({"detail": "仅众议/展示可以投票"}, status=status.HTTP_400_BAD_REQUEST)
-        if activity.status != OPEN:
-            return Response({"detail": "投票已结束"}, status=status.HTTP_400_BAD_REQUEST)
         if Ballot.objects.filter(activity=activity, voter=request.user).exists():
             return Response({"detail": "你已经投过票了，不能修改"}, status=status.HTTP_400_BAD_REQUEST)
 

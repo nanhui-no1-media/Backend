@@ -61,15 +61,18 @@ def can_edit(activity):
 # ---- 众议 --------------------------------------------------------------
 
 def can_vote(activity, user):
-    """投票守卫：众议，或展示（启用投票时）——类型∈{众议,展示}、状态=open、用户已认证。
+    """投票守卫：众议始终可投；展示仅 ``voting_enabled`` 时——状态=open、用户已认证。
 
-    展示的投票是可选的；无选项时投票动作会因「选项不存在」自行拒绝。已验证由 IsVerified 把关。
+    展示的投票是否启用取决于 ``voting_enabled``：默认 False（纯陈列，仅赞/踩），
+    True 时才放行投票。已验证由 IsVerified 把关。
     """
-    return (
-        user.is_authenticated
-        and activity.type in ("deliberation", "exhibition")
-        and activity.status == OPEN
-    )
+    if not user.is_authenticated:
+        return False
+    if activity.type == "deliberation":
+        return activity.status == OPEN
+    if activity.type == "exhibition":
+        return activity.voting_enabled and activity.status == OPEN
+    return False
 
 
 def can_rate(activity, user):

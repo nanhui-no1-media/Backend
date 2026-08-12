@@ -64,6 +64,11 @@ class Activity(models.Model):
     # False = 收集→归档（跳过复审），作品提交即公开。
     review_enabled = models.BooleanField("需要复审", default=True)
 
+    # 展示专属：是否启用活动级投票（复用众议机制：每展品一选项 + 1..K）。
+    # True = 创建时为每展品建 VoteOption，成员可对展品投票；False（默认）= 纯陈列，
+    # 不建选项，仅赞/踩（ExhibitRating）。创建后不可改。
+    voting_enabled = models.BooleanField("启用投票", default=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
