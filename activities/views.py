@@ -109,6 +109,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
         if self.action == "close":
             # 提前关闭：发起人，或持 change_activity 权限者（对象级）
             return [IsAuthenticated(), CanModifyActivity()]
+        if self.action in ("add_exhibit", "update_exhibit", "delete_exhibit", "import_from_collection"):
+            return [IsAuthenticated(), CanModifyActivity()]
         if self.action == "upload_image":
             # 正文插图：能发起活动的已验证成员即可（与创建同门禁）
             return [IsAuthenticated(), IsVerified()]
@@ -377,6 +379,27 @@ class ActivityViewSet(viewsets.ModelViewSet):
             )
         else:
             return Response({"detail": "不支持"}, status=status.HTTP_400_BAD_REQUEST)
+        activity = self.get_queryset().get(pk=activity.pk)
+        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+
+    # ── 展示:详情页布展(待开始期加/改/删/导入展品)──
+    @action(detail=True, methods=["post"], url_path="add_exhibit")
+    def add_exhibit(self, request, pk=None):
+        activity = self.get_object()
+        if activity.type != "exhibition":
+            return Response({"detail": "仅展示可加展品"}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_edit(activity):
+            return Response({"detail": "展示开放后不可改展品"}, status=status.HTTP_400_BAD_REQUEST)
+        files = request.FILES.getlist("files")
+        if not files:
+            return Response({"detail": "展品至少需要 1 个文件"}, status=status.HTTP_400_BAD_REQUEST)
+        for f in files:
+            err = upload_error(f)
+            if err:
+                return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
+        title = (request.data.get("title") or "").strip()
+        with transaction.atomic():
+            self._build_exhibit(activity, title, files, activity.voting_enabled)
         activity = self.get_queryset().get(pk=activity.pk)
         return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
 

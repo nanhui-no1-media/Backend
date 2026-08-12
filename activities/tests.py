@@ -734,6 +734,32 @@ class ExhibitionTest(TestCase):
         self.client.force_authenticate(user)
         return self.client.post("/activities/activities/", data=data)
 
+    def _create_empty(self, user, voting_enabled=False, scheduled=False, **kw):
+        """直接用 ORM 建一个 0 展品的展示(避开 multipart 创建路径,T5 前创建仍强制展品)。
+
+        scheduled=True → status='scheduled'(可布展);否则 'open'。
+        """
+        from datetime import datetime, timedelta, timezone as dtz
+        from .models import Activity
+        a = Activity.objects.create(
+            type="exhibition", status="scheduled" if scheduled else "open",
+            title=kw.get("title", "影展"), body=kw.get("body", "<p>x</p>"),
+            creator=user, voting_enabled=voting_enabled,
+            max_choices_per_voter=kw.get("max_choices_per_voter", 1),
+            start_at=(datetime.now(dtz.utc) + timedelta(days=1)) if scheduled else None,
+        )
+        return a
+
+    def _add_exhibit(self, user, aid, title="", files=None):
+        files = files if files is not None else [self._img()]
+        fd = {}
+        if title:
+            fd["title"] = title
+        for f in files:
+            fd.setdefault("files", []).append(f)
+        self.client.force_authenticate(user)
+        return self.client.post(f"/activities/activities/{aid}/add_exhibit/", data=fd)
+
     def _vote(self, user, aid, option_ids):
         return _json(self.client, "post", f"/activities/activities/{aid}/vote/", user,
                      {"option_ids": option_ids})
@@ -800,6 +826,47 @@ class ExhibitionTest(TestCase):
             voting_enabled="false", max_choices_per_voter=9,
         )
         self.assertEqual(r.status_code, 201)
+
+    # ---- 详情页布展:add_exhibit(待开始期手动加展品)----
+
+    def test_add_exhibit_creates_exhibit_with_files(self):
+        aid = self._create_empty(self.curator, voting_enabled=False, scheduled=True).id
+        r = self._add_exhibit(self.curator, aid, title="作品A",
+                               files=[self._img(), self._img("b.png")])
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["exhibits"]), 1)
+        e = r.data["exhibits"][0]
+        self.assertEqual(e["title"], "作品A")
+        self.assertEqual(len(e["files"]), 2)
+        self.assertIsNone(e["vote_option_id"])  # 未启用投票:无选项
+
+    def test_add_exhibit_voting_enabled_builds_option(self):
+        aid = self._create_empty(self.curator, voting_enabled=True,
+                                 max_choices_per_voter=1, scheduled=True).id
+        r = self._add_exhibit(self.curator, aid, title="X")
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNotNone(r.data["exhibits"][0]["vote_option_id"])
+
+    def test_add_exhibit_requires_file(self):
+        aid = self._create_empty(self.curator, scheduled=True).id
+        r = self._add_exhibit(self.curator, aid, files=[])
+        self.assertEqual(r.status_code, 400)
+
+    def test_add_exhibit_blocked_when_open(self):
+        # 未排期 → open → 不可布展
+        aid = self._create_empty(self.curator, scheduled=False).id
+        r = self._add_exhibit(self.curator, aid, title="A")
+        self.assertEqual(r.status_code, 400)
+
+    def test_add_exhibit_non_curator_forbidden(self):
+        aid = self._create_empty(self.curator, scheduled=True).id
+        r = self._add_exhibit(self.member, aid, title="A")
+        self.assertEqual(r.status_code, 403)
+
+    def test_add_exhibit_scheduled_allowed(self):
+        aid = self._create_empty(self.curator, scheduled=True).id
+        r = self._add_exhibit(self.curator, aid, title="A")
+        self.assertEqual(r.status_code, 200)
 
     # ---- 展品投票（每展品一选项）----
 
