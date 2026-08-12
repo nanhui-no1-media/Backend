@@ -125,6 +125,25 @@ class ActivityViewSet(viewsets.ModelViewSet):
             return self._create_exhibition(request)
         return super().create(request, *args, **kwargs)
 
+    def _build_exhibit(self, activity, title, files, voting_enabled):
+        """建一个展品 + 一束附件;启用投票时另建一个 VoteOption 并绑定。
+
+        供 _create_exhibition / add_exhibit / import_from_collection 复用。
+        files 已经过 upload_error 校验(调用方负责)。
+        """
+        option = None
+        if voting_enabled:
+            order = activity.options.count()
+            option = VoteOption.objects.create(activity=activity, text=title or "", order=order)
+        exhibit = Exhibit.objects.create(activity=activity, title=title, vote_option=option)
+        for f in files:
+            Attachment.objects.create(
+                uploaded_by=self.request.user, exhibit=exhibit, file=f,
+                file_type=classify_file_type(f.content_type),
+                file_name=f.name, file_size=f.size,
+            )
+        return exhibit
+
     def _create_exhibition(self, request):
         data = request.data
 
@@ -183,17 +202,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
         # 4) 原子建活动 + 每展品（启用投票时）一个投票选项 + 一束文件。
         with transaction.atomic():
             activity = serializer.save(creator=request.user)
-            for i, (title, files) in enumerate(exhibits):
-                option = None
-                if voting_enabled:
-                    option = VoteOption.objects.create(activity=activity, text=title, order=i)
-                exhibit = Exhibit.objects.create(activity=activity, title=title, vote_option=option)
-                for f in files:
-                    Attachment.objects.create(
-                        uploaded_by=request.user, exhibit=exhibit, file=f,
-                        file_type=classify_file_type(f.content_type),
-                        file_name=f.name, file_size=f.size,
-                    )
+            for title, files in exhibits:
+                self._build_exhibit(activity, title, files, voting_enabled)
         activity = self.get_queryset().get(pk=activity.pk)  # 刷新预取
         headers = self.get_success_headers(serializer.data)
         return Response(
