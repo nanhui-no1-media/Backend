@@ -768,6 +768,23 @@ class ExhibitionTest(TestCase):
         return _json(self.client, "post", f"/activities/activities/{aid}/rate/", user,
                      {"exhibit_id": eid, "choice": choice})
 
+    def _make_collection_with_submissions(self, owner, n=2):
+        """建一个征集并提交 n 个作品(含文件),返回 (activity_id, [submission_id])。"""
+        self.client.force_authenticate(owner)
+        c = self.client.post("/activities/activities/", data={
+            "type": "collection", "title": "征", "body": "<p>x</p>",
+            "review_enabled": "false",  # 跳过复审,作品直接公开可见
+        }, content_type="application/json")
+        cid = c.data["id"]
+        sub_ids = []
+        submitters = [self.member, self.m2]
+        for i in range(n):
+            fd = {"files": [self._img(f"s{i}.png")]}
+            self.client.force_authenticate(submitters[i % len(submitters)])
+            r = self.client.post(f"/activities/activities/{cid}/submit/", data=fd)
+            sub_ids.append(r.data["my_submission"]["id"])
+        return cid, sub_ids
+
     @staticmethod
     def _ex(resp, idx=0):
         return resp.data["exhibits"][idx]
@@ -1075,3 +1092,38 @@ class ExhibitionTest(TestCase):
         r = _json(self.client, "post", f"/activities/activities/{ex.data['id']}/close/", self.curator)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["status"], "closed")
+
+    # ---- 征集导入（从征集勾选任意作品，复制独立副本）----
+
+    def test_import_from_collection_copies_selected(self):
+        cid, sub_ids = self._make_collection_with_submissions(self.curator, n=2)
+        aid = self._create_empty(self.curator, voting_enabled=False, scheduled=True).id
+        self.client.force_authenticate(self.curator)
+        r = self.client.post(f"/activities/activities/{aid}/import_from_collection/",
+                             data={"collection_id": cid, "submission_ids": sub_ids},
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["exhibits"]), 2)
+        files = [f for e in r.data["exhibits"] for f in e["files"]]
+        self.assertEqual(len(files), 2)
+
+    def test_import_invalid_collection(self):
+        aid = self._create_empty(self.curator, scheduled=True).id
+        self.client.force_authenticate(self.curator)
+        r = self.client.post(f"/activities/activities/{aid}/import_from_collection/",
+                             data={"collection_id": 999999, "submission_ids": []},
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 404)
+
+    def test_import_is_independent_snapshot(self):
+        # 复制成独立副本:原作品附件删了,展品文件仍在
+        cid, sub_ids = self._make_collection_with_submissions(self.curator, n=1)
+        aid = self._create_empty(self.curator, scheduled=True).id
+        self.client.force_authenticate(self.curator)
+        self.client.post(f"/activities/activities/{aid}/import_from_collection/",
+                         data={"collection_id": cid, "submission_ids": sub_ids},
+                         content_type="application/json")
+        from .models import Submission
+        Submission.objects.get(pk=sub_ids[0]).attachments.all().delete()
+        detail = self.client.get(f"/activities/activities/{aid}/").data
+        self.assertEqual(len(detail["exhibits"][0]["files"]), 1)

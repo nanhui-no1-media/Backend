@@ -146,6 +146,17 @@ class ActivityViewSet(viewsets.ModelViewSet):
             )
         return exhibit
 
+    def _assert_curatable(self, activity, verb):
+        """布展门禁:展示类型 + 待开始(can_edit)。不满足返回 400 Response,满足返回 None。
+
+        verb 用于错误文案(加/删/改/导入)。
+        """
+        if activity.type != "exhibition":
+            return Response({"detail": f"仅展示可{verb}展品"}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_edit(activity):
+            return Response({"detail": "展示开放后不可改展品"}, status=status.HTTP_400_BAD_REQUEST)
+        return None
+
     def _create_exhibition(self, request):
         data = request.data
 
@@ -386,10 +397,9 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="add_exhibit")
     def add_exhibit(self, request, pk=None):
         activity = self.get_object()
-        if activity.type != "exhibition":
-            return Response({"detail": "仅展示可加展品"}, status=status.HTTP_400_BAD_REQUEST)
-        if not can_edit(activity):
-            return Response({"detail": "展示开放后不可改展品"}, status=status.HTTP_400_BAD_REQUEST)
+        gate = self._assert_curatable(activity, "加")
+        if gate is not None:
+            return gate
         files = request.FILES.getlist("files")
         if not files:
             return Response({"detail": "展品至少需要 1 个文件"}, status=status.HTTP_400_BAD_REQUEST)
@@ -406,10 +416,9 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="delete_exhibit")
     def delete_exhibit(self, request, pk=None):
         activity = self.get_object()
-        if activity.type != "exhibition":
-            return Response({"detail": "仅展示可删展品"}, status=status.HTTP_400_BAD_REQUEST)
-        if not can_edit(activity):
-            return Response({"detail": "展示开放后不可改展品"}, status=status.HTTP_400_BAD_REQUEST)
+        gate = self._assert_curatable(activity, "删")
+        if gate is not None:
+            return gate
         try:
             exhibit = activity.exhibits.get(pk=request.data.get("exhibit_id"))
         except (Exhibit.DoesNotExist, ValueError, TypeError):
@@ -424,10 +433,9 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="update_exhibit")
     def update_exhibit(self, request, pk=None):
         activity = self.get_object()
-        if activity.type != "exhibition":
-            return Response({"detail": "仅展示可改展品"}, status=status.HTTP_400_BAD_REQUEST)
-        if not can_edit(activity):
-            return Response({"detail": "展示开放后不可改展品"}, status=status.HTTP_400_BAD_REQUEST)
+        gate = self._assert_curatable(activity, "改")
+        if gate is not None:
+            return gate
         try:
             exhibit = activity.exhibits.get(pk=request.data.get("exhibit_id"))
         except (Exhibit.DoesNotExist, ValueError, TypeError):
@@ -453,6 +461,35 @@ class ActivityViewSet(viewsets.ModelViewSet):
                     )
             if title is not None:
                 exhibit.save(update_fields=["title"])
+        activity = self.get_queryset().get(pk=activity.pk)
+        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"], url_path="import_from_collection")
+    def import_from_collection(self, request, pk=None):
+        from django.core.files.base import ContentFile
+
+        activity = self.get_object()
+        gate = self._assert_curatable(activity, "导入")
+        if gate is not None:
+            return gate
+        try:
+            source = Activity.objects.get(pk=request.data.get("collection_id"), type="collection")
+        except (Activity.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "征集不存在"}, status=status.HTTP_404_NOT_FOUND)
+        submission_ids = request.data.get("submission_ids") or []
+        subs = source.submissions.filter(pk__in=submission_ids)
+        if not subs:
+            return Response({"detail": "未选择任何作品"}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            for sub in subs:
+                exhibit = self._build_exhibit(activity, "", [], activity.voting_enabled)
+                for a in sub.attachments.all():
+                    new_att = Attachment(
+                        uploaded_by=request.user, exhibit=exhibit,
+                        file_type=a.file_type, file_name=a.file_name, file_size=a.file_size,
+                    )
+                    new_att.file.save(a.file.name, ContentFile(a.file.read()))
+                    new_att.save()
         activity = self.get_queryset().get(pk=activity.pk)
         return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
 
