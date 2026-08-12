@@ -116,8 +116,19 @@ export interface CollectionFormData {
   end_at?: string;
 }
 
-// 展示走 multipart（展品在创建时录入），不经 JSON 创建路径——表单内用本地状态组装 FormData。
-export type ActivityFormData = DeliberationFormData | CollectionFormData;
+export interface ExhibitionFormData {
+  type: "exhibition";
+  title: string;
+  body: string;
+  voting_enabled: boolean;
+  max_choices_per_voter: number; // 启用投票时有意义
+  is_secret_ballot: boolean;
+  start_at?: string;
+  end_at?: string;
+}
+
+// 众议/征集/展示均走 JSON 创建标量(展品改在详情页 add_exhibit 录入)。
+export type ActivityFormData = DeliberationFormData | CollectionFormData | ExhibitionFormData;
 
 // ---- 标签 ----
 export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {

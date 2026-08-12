@@ -22,9 +22,6 @@ export const activityApi = {
   get: (id: number): Promise<ActivityDetail> => request(`/activities/${id}/`),
   create: (data: ActivityFormData): Promise<ActivityDetail> =>
     request("/activities/", { method: "POST", body: JSON.stringify(data) }),
-  // 展示创建（multipart）：展品在创建时录入，每展品 exhibit_title_<i> + exhibit_files_<i>
-  createExhibition: (fd: FormData): Promise<ActivityDetail> =>
-    request("/activities/", { method: "POST", body: fd }),
   update: (id: number, data: Record<string, unknown>): Promise<ActivityDetail> =>
     request(`/activities/${id}/`, { method: "PATCH", body: JSON.stringify(data) }),
   remove: (id: number) => request(`/activities/${id}/`, { method: "DELETE" }),
@@ -68,6 +65,37 @@ export const activityApi = {
     request(`/activities/${id}/rate/`, {
       method: "POST",
       body: JSON.stringify({ exhibit_id: exhibitId, choice }),
+    }),
+
+  // 展示布展(待开始期):手动加展品(multipart: title + files)
+  addExhibit: (id: number, title: string, files: File[]): Promise<ActivityDetail> => {
+    const fd = new FormData();
+    if (title) fd.append("title", title);
+    for (const f of files) fd.append("files", f);
+    return request(`/activities/${id}/add_exhibit/`, { method: "POST", body: fd });
+  },
+
+  // 改展品(title 给了就改 + 同步选项;files 给了就整体覆盖)
+  updateExhibit: (id: number, exhibitId: number, title: string | null, files: File[] | null): Promise<ActivityDetail> => {
+    const fd = new FormData();
+    fd.append("exhibit_id", String(exhibitId));
+    if (title != null) fd.append("title", title);
+    if (files) for (const f of files) fd.append("files", f);
+    return request(`/activities/${id}/update_exhibit/`, { method: "POST", body: fd });
+  },
+
+  // 删展品(连带删附件 + 绑定选项)
+  deleteExhibit: (id: number, exhibitId: number): Promise<ActivityDetail> =>
+    request(`/activities/${id}/delete_exhibit/`, {
+      method: "POST",
+      body: JSON.stringify({ exhibit_id: exhibitId }),
+    }),
+
+  // 从征集导入(勾选任意作品,复制独立副本)
+  importFromCollection: (id: number, collectionId: number, submissionIds: number[]): Promise<ActivityDetail> =>
+    request(`/activities/${id}/import_from_collection/`, {
+      method: "POST",
+      body: JSON.stringify({ collection_id: collectionId, submission_ids: submissionIds }),
     }),
 
   // 正文内嵌图片上传（已验证成员）：返回 {url}
