@@ -52,15 +52,19 @@ export default function ActivityFormPage() {
   const [maxSub, setMaxSub] = useState<string>(""); // 空=不限
   const [reviewEnabled, setReviewEnabled] = useState(true); // #51：复审可选，默认启用
 
-  // 展示字段：展品（创建时录入并冻结，每展品=一个投票选项）
+  // 展示字段：展品（创建时录入并冻结）+ 是否启用投票（默认纯陈列，仅展品+赞/踩）
   const [exhibits, setExhibits] = useState<{ title: string; files: File[] }[]>([
     { title: "", files: [] },
   ]);
+  const [votingEnabled, setVotingEnabled] = useState(false); // #56：展示投票可选，默认不启用
 
   const switchType = (t: ActivityType) => {
     setType(t);
     setEndAt(defaultEnd(t === "deliberation" ? 3 : 7));
-    if (t === "exhibition") setExhibits([{ title: "", files: [] }]);
+    if (t === "exhibition") {
+      setExhibits([{ title: "", files: [] }]);
+      setVotingEnabled(false);
+    }
   };
 
   const setExhibit = (i: number, patch: Partial<{ title: string; files: File[] }>) =>
@@ -89,7 +93,8 @@ export default function ActivityFormPage() {
         setK(a.max_choices_per_voter);
         setSecret(a.is_secret_ballot);
       } else {
-        // 展示：展品已冻结（创建时录入），仅回填 K / 秘密
+        // 展示：展品已冻结（创建时录入），回填投票开关 / K / 秘密
+        setVotingEnabled(a.voting_enabled);
         setK(a.max_choices_per_voter);
         setSecret(a.is_secret_ballot);
       }
@@ -131,7 +136,8 @@ export default function ActivityFormPage() {
             return;
           }
         }
-        if (k < 1 || k > exhibits.length) {
+        // #56：仅启用投票时校验 K；纯陈列不投票，K 无意义。
+        if (votingEnabled && (k < 1 || k > exhibits.length)) {
           setError(`每人最多选几项须在 1..${exhibits.length} 之间`);
           return;
         }
@@ -172,18 +178,22 @@ export default function ActivityFormPage() {
           ? await activityApi.update(editId, payload)
           : await activityApi.create(payload);
       } else if (editId) {
-        // 展示编辑：展品已冻结，仅改标量
-        saved = await activityApi.update(editId, {
+        // 展示编辑：展品与投票开关均已冻结（创建时定），仅改标题/正文/时间；
+        // 启用投票时另可微调 K/秘密（待开始期间）。投票开关本身只读，不可改。
+        const patch: Record<string, unknown> = {
           type: "exhibition",
           title: title.trim(),
           body,
-          max_choices_per_voter: k,
-          is_secret_ballot: secret,
           start_at: toIso(startAt),
           end_at: toIso(endAt),
-        });
+        };
+        if (votingEnabled) {
+          patch.max_choices_per_voter = k;
+          patch.is_secret_ballot = secret;
+        }
+        saved = await activityApi.update(editId, patch);
       } else {
-        // 展示创建：multipart，展品在创建时录入（每展品一投票选项）
+        // 展示创建：multipart，展品在创建时录入（启用投票时每展品一投票选项）
         const fd = new FormData();
         fd.append("type", "exhibition");
         fd.append("title", title.trim());
@@ -192,8 +202,11 @@ export default function ActivityFormPage() {
         if (sa) fd.append("start_at", sa);
         const ea = toIso(endAt);
         if (ea) fd.append("end_at", ea);
-        fd.append("max_choices_per_voter", String(k));
-        fd.append("is_secret_ballot", secret ? "true" : "false");
+        fd.append("voting_enabled", votingEnabled ? "true" : "false");
+        if (votingEnabled) {
+          fd.append("max_choices_per_voter", String(k));
+          fd.append("is_secret_ballot", secret ? "true" : "false");
+        }
         fd.append("exhibit_count", String(exhibits.length));
         exhibits.forEach((ex, i) => {
           const t = ex.title.trim();
@@ -333,16 +346,30 @@ export default function ActivityFormPage() {
             </>
           ) : (
             <>
-              {/* 展示：截止 + 展品录入（创建时录入并冻结，每展品=一个投票选项） */}
+              {/* 展示：截止 + 启用投票开关 + 展品录入（创建时录入并冻结） */}
               <div className="field">
                 <label className="label">展示截止</label>
                 <input className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+              </div>
+              <div className="field">
+                <label className="fb-attrib">
+                  <input
+                    type="checkbox"
+                    checked={votingEnabled}
+                    disabled={!!editId}
+                    onChange={(e) => setVotingEnabled(e.target.checked)}
+                  />
+                  <span>
+                    启用投票 —— 勾选：成员可对展品投票（1..K，复用众议机制）；不勾：纯陈列，仅展品 + 赞/踩。
+                    {editId && <span className="hint">（创建后不可改）</span>}
+                  </span>
+                </label>
               </div>
               {editId ? (
                 <div className="alert alert-info"><span>展品在创建时已录入并冻结，创建后不可增删改。</span></div>
               ) : (
                 <div className="field">
-                  <label className="label">展品 <span className="hint">（创建时录入，创建后冻结；每个展品即一个投票选项）</span></label>
+                  <label className="label">展品 <span className="hint">（创建时录入，创建后冻结{votingEnabled ? "；每个展品即一个投票选项" : ""}）</span></label>
                   {exhibits.map((ex, i) => (
                     <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
                       <input className="input" style={{ flex: "1 1 200px" }} value={ex.title} onChange={(e) => setExhibit(i, { title: e.target.value })} maxLength={200} placeholder={`展品 ${i + 1} 标题（选填）`} />
@@ -356,19 +383,21 @@ export default function ActivityFormPage() {
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => setExhibits([...exhibits, { title: "", files: [] }])}>+ 增加展品</button>
                 </div>
               )}
-              <div className="form-grid">
-                <div className="field">
-                  <label className="label">每人最多投几项（K）</label>
-                  <input className="input" type="number" min={1} value={k} onChange={(e) => setK(parseInt(e.target.value, 10) || 1)} />
-                  <div className="hint">对展品投票：K=1 一人一展品；K&gt;1 一人最多投 K 个展品。赞/踩另算，可随时改。</div>
+              {votingEnabled && (
+                <div className="form-grid">
+                  <div className="field">
+                    <label className="label">每人最多投几项（K）</label>
+                    <input className="input" type="number" min={1} value={k} onChange={(e) => setK(parseInt(e.target.value, 10) || 1)} />
+                    <div className="hint">对展品投票：K=1 一人一展品；K&gt;1 一人最多投 K 个展品。赞/踩另算，可随时改。</div>
+                  </div>
+                  <div className="field">
+                    <label className="fb-attrib" style={{ marginTop: 28 }}>
+                      <input type="checkbox" checked={secret} onChange={(e) => setSecret(e.target.checked)} />
+                      <span>秘密投票</span>
+                    </label>
+                  </div>
                 </div>
-                <div className="field">
-                  <label className="fb-attrib" style={{ marginTop: 28 }}>
-                    <input type="checkbox" checked={secret} onChange={(e) => setSecret(e.target.checked)} />
-                    <span>秘密投票</span>
-                  </label>
-                </div>
-              </div>
+              )}
             </>
           )}
 

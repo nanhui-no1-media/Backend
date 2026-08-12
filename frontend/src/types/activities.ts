@@ -86,6 +86,7 @@ export interface ActivityDetail {
   submissions: Submission[] | null; // 复审者见全部；其余仅录用（公开展示）
   // 展示
   exhibits: Exhibit[] | null;
+  voting_enabled: boolean; // 展示是否启用活动级投票；false=纯陈列（仅展品+赞/踩）
   created_at: string;
   updated_at: string;
 }

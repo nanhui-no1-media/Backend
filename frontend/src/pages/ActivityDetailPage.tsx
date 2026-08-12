@@ -362,12 +362,13 @@ export default function ActivityDetailPage() {
           </>
         )}
 
-        {/* 展示：展品画廊——每个展品即一个投票选项；投票（1..K）+ 赞/踩 并存 */}
+        {/* 展示：展品画廊——启用投票时每个展品即一个投票选项（1..K）+ 赞/踩；纯陈列仅展品 + 赞/踩 */}
         {isExhibition && (
           (() => {
+            const votingActive = a.voting_enabled; // #56：未启用投票=纯陈列，无投票/计票区
             const voted = a.my_selections !== null;
             const mySel = a.my_selections ?? [];
-            const canVote = a.status === "open" && !voted;
+            const canVote = votingActive && a.status === "open" && !voted;
             return (
               <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
                 <h3 className="section-h">展品 ({a.exhibits?.length || 0})</h3>
@@ -399,7 +400,7 @@ export default function ActivityDetailPage() {
                                   {on ? "✓ 已选" : "投票"}
                                 </button>
                               </div>
-                            ) : (
+                            ) : votingActive ? (
                               <div className="exhibit-tally">
                                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                                   <span>{ex.vote_count} 票</span>
@@ -410,7 +411,7 @@ export default function ActivityDetailPage() {
                                 </div>
                                 {mine && <div className="muted" style={{ marginTop: 2 }}>你投了这项</div>}
                               </div>
-                            )}
+                            ) : null}
                             <div className="exhibit-rate">
                               <button className={"rate-btn" + (ex.my_rating === "like" ? " is-on like" : "")} onClick={() => doRate(ex.id, "like")} disabled={busy || a.status !== "open"}>👍 {ex.like_count}</button>
                               <button className={"rate-btn" + (ex.my_rating === "dislike" ? " is-on dislike" : "")} onClick={() => doRate(ex.id, "dislike")} disabled={busy || a.status !== "open"}>👎 {ex.dislike_count}</button>
@@ -424,8 +425,8 @@ export default function ActivityDetailPage() {
                         <button className="btn btn-primary btn-sm" onClick={doVote} disabled={busy || selected.length < 1}>投票</button>
                       </div>
                     )}
-                    {!canVote && <div className="muted" style={{ marginTop: 8 }}>共 {total} 人投票</div>}
-                    {a.ballots && a.ballots.length > 0 && (
+                    {votingActive && !canVote && <div className="muted" style={{ marginTop: 8 }}>共 {total} 人投票</div>}
+                    {votingActive && a.ballots && a.ballots.length > 0 && (
                       <details style={{ marginTop: 12 }}>
                         <summary className="muted">查看投票明细（{a.ballots.length}）</summary>
                         <ul style={{ marginTop: 8 }}>
@@ -444,7 +445,7 @@ export default function ActivityDetailPage() {
                         </ul>
                       </details>
                     )}
-                    {a.ballots === null && (
+                    {votingActive && a.ballots === null && (
                       <div className="alert alert-info" style={{ marginTop: 12 }}>
                         <span>秘密投票 —— 个人投票明细不公开。</span>
                       </div>
