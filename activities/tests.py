@@ -732,9 +732,7 @@ class ExhibitionTest(TestCase):
         body = {"type": "exhibition", "title": "影展", "body": "<p>x</p>",
                 "voting_enabled": True, "start_at": start_future}
         # scalar 可能带 voting_enabled="false" 等(#55 的纯陈列测试)——原样合并
-        body.update({k: v for k, v in scalar.items() if k != "max_choices_per_voter"})
-        if "max_choices_per_voter" in scalar:
-            body["max_choices_per_voter"] = scalar["max_choices_per_voter"]
+        body.update(scalar)
         self.client.force_authenticate(user)
         r = self.client.post("/activities/activities/", data=body, content_type="application/json")
         assert r.status_code == 201, r.data
