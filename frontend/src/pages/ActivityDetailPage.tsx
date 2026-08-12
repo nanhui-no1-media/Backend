@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { activityApi } from "../api/activities";
 import {
   ActivityDetail,
+  ActivityListItem,
   ACTIVITY_TYPE_META,
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_BADGE_CLASS,
@@ -27,6 +28,15 @@ export default function ActivityDetailPage() {
   const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // 展示布展(策展人 + 待开始):手动添加 / 改 / 删 / 从征集导入
+  const [newTitle, setNewTitle] = useState("");
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [importOpen, setImportOpen] = useState(false);
+  const [collections, setCollections] = useState<ActivityListItem[]>([]);
+  const [pickedCollection, setPickedCollection] = useState<number | null>(null);
+  const [pickedSubs, setPickedSubs] = useState<number[]>([]);
+  const [collectionDetail, setCollectionDetail] = useState<ActivityDetail | null>(null);
 
   // 众议投票临时选择
   const [selected, setSelected] = useState<number[]>([]);
@@ -150,6 +160,53 @@ export default function ActivityDetailPage() {
     catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
   };
+
+  const canCurate = isExhibition && canManage && a.status === "scheduled";
+
+  const doAddExhibit = async () => {
+    if (newFiles.length < 1) return;
+    setBusy(true); setError("");
+    try { setActivity(await activityApi.addExhibit(a.id, newTitle.trim(), newFiles)); setNewTitle(""); setNewFiles([]); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const doUpdateExhibit = async (eid: number, curTitle: string) => {
+    const t = window.prompt("修改展品标题（留空则不变）：", curTitle);
+    if (t === null) return;
+    setBusy(true); setError("");
+    try { setActivity(await activityApi.updateExhibit(a.id, eid, t, null)); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const doDeleteExhibit = async (eid: number) => {
+    if (!window.confirm("删除该展品？")) return;
+    setBusy(true); setError("");
+    try { setActivity(await activityApi.deleteExhibit(a.id, eid)); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const openImport = async () => {
+    setImportOpen(true);
+    const list = await activityApi.list({ type: "collection" });
+    setCollections(list.results);
+    if (list.results.length > 0) {
+      setPickedCollection(list.results[0].id);
+      setCollectionDetail(await activityApi.get(list.results[0].id));
+    }
+  };
+  const pickCollection = async (cid: number) => {
+    setPickedCollection(cid);
+    setPickedSubs([]);
+    setCollectionDetail(await activityApi.get(cid));
+  };
+  const doImport = async () => {
+    if (pickedSubs.length < 1 || pickedCollection == null) return;
+    setBusy(true); setError("");
+    try { setActivity(await activityApi.importFromCollection(a.id, pickedCollection, pickedSubs)); setImportOpen(false); setPickedSubs([]); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
   const renderExFile = (f: Attachment) => {
     if (f.file_type === "image") return <img key={f.id} src={f.file_url} alt={f.file_name} />;
     if (f.file_type === "video") return <video key={f.id} src={f.file_url} controls />;
@@ -372,6 +429,46 @@ export default function ActivityDetailPage() {
             return (
               <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
                 <h3 className="section-h">展品 ({a.exhibits?.length || 0})</h3>
+                {canCurate && (
+                  <div className="alert alert-info" style={{ marginBottom: 12 }}>
+                    <span>布展中（待开始）——可加 / 改 / 删展品，或从征集导入。开放后冻结。</span>
+                    <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <input className="input" style={{ flex: "1 1 160px" }} value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="新展品标题（选填）" />
+                      <input type="file" multiple onChange={(e) => setNewFiles(Array.from(e.target.files || []))} />
+                      <button className="btn btn-primary btn-sm" onClick={doAddExhibit} disabled={busy || newFiles.length < 1}>+ 加展品</button>
+                      <button className="btn btn-ghost btn-sm" onClick={openImport}>从征集导入</button>
+                    </div>
+                  </div>
+                )}
+                {importOpen && collectionDetail && (
+                  <div className="card card-pad" style={{ margin: "12px 0", background: "var(--c-surface-2, #f9fafb)" }}>
+                    <h4 className="section-h">从征集导入</h4>
+                    <div className="field">
+                      <label className="label">选择征集</label>
+                      <select className="input" value={pickedCollection ?? ""} onChange={(e) => pickCollection(Number(e.target.value))}>
+                        {collections.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                      </select>
+                    </div>
+                    {collectionDetail.submissions && collectionDetail.submissions.length > 0 ? (
+                      <>
+                        <div className="hint" style={{ marginBottom: 8 }}>勾选要导入的作品（任意状态均可，复制成独立副本）。</div>
+                        {collectionDetail.submissions.map((s) => {
+                          const on = pickedSubs.includes(s.id);
+                          return (
+                            <label key={s.id} className={"vote-opt" + (on ? " is-on" : "")} style={{ marginBottom: 6 }}>
+                              <input type="checkbox" checked={on} onChange={() => setPickedSubs((cur) => on ? cur.filter((x) => x !== s.id) : [...cur, s.id])} />
+                              <span className="vote-opt-text">{`@${s.submitter.username}`} · {s.files.length} 个文件</span>
+                            </label>
+                          );
+                        })}
+                        <button className="btn btn-primary btn-sm" onClick={doImport} disabled={busy || pickedSubs.length < 1}>导入 {pickedSubs.length} 件</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setImportOpen(false)}>取消</button>
+                      </>
+                    ) : (
+                      <p className="muted">该征集暂无可见作品。</p>
+                    )}
+                  </div>
+                )}
                 {canVote && (
                   <div className="hint" style={{ marginBottom: 8 }}>
                     投票：可选 {a.max_choices_per_voter} 个展品（{a.max_choices_per_voter === 1 ? "一人一展品" : "一人多展品"}），一经投出不可更改。赞/踩另算、可随时改。
@@ -416,6 +513,12 @@ export default function ActivityDetailPage() {
                               <button className={"rate-btn" + (ex.my_rating === "like" ? " is-on like" : "")} onClick={() => doRate(ex.id, "like")} disabled={busy || a.status !== "open"}>👍 {ex.like_count}</button>
                               <button className={"rate-btn" + (ex.my_rating === "dislike" ? " is-on dislike" : "")} onClick={() => doRate(ex.id, "dislike")} disabled={busy || a.status !== "open"}>👎 {ex.dislike_count}</button>
                             </div>
+                            {canCurate && (
+                              <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+                                <button className="btn btn-ghost btn-sm" onClick={() => doUpdateExhibit(ex.id, ex.title)} disabled={busy}>改</button>
+                                <button className="btn btn-ghost btn-sm" onClick={() => doDeleteExhibit(ex.id)} disabled={busy}>删</button>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
