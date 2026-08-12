@@ -440,32 +440,41 @@ export default function ActivityDetailPage() {
                     </div>
                   </div>
                 )}
-                {importOpen && collectionDetail && (
+                {importOpen && (
                   <div className="card card-pad" style={{ margin: "12px 0", background: "var(--c-surface-2, #f9fafb)" }}>
                     <h4 className="section-h">从征集导入</h4>
-                    <div className="field">
-                      <label className="label">选择征集</label>
-                      <select className="input" value={pickedCollection ?? ""} onChange={(e) => pickCollection(Number(e.target.value))}>
-                        {collections.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-                      </select>
-                    </div>
-                    {collectionDetail.submissions && collectionDetail.submissions.length > 0 ? (
+                    {collections.length === 0 ? (
                       <>
-                        <div className="hint" style={{ marginBottom: 8 }}>勾选要导入的作品（任意状态均可，复制成独立副本）。</div>
-                        {collectionDetail.submissions.map((s) => {
-                          const on = pickedSubs.includes(s.id);
-                          return (
-                            <label key={s.id} className={"vote-opt" + (on ? " is-on" : "")} style={{ marginBottom: 6 }}>
-                              <input type="checkbox" checked={on} onChange={() => setPickedSubs((cur) => on ? cur.filter((x) => x !== s.id) : [...cur, s.id])} />
-                              <span className="vote-opt-text">{`@${s.submitter.username}`} · {s.files.length} 个文件</span>
-                            </label>
-                          );
-                        })}
-                        <button className="btn btn-primary btn-sm" onClick={doImport} disabled={busy || pickedSubs.length < 1}>导入 {pickedSubs.length} 件</button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setImportOpen(false)}>取消</button>
+                        <p className="muted">暂无可导入的征集（先发起一场征集收件）。</p>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setImportOpen(false)}>关闭</button>
                       </>
                     ) : (
-                      <p className="muted">该征集暂无可见作品。</p>
+                      <>
+                        <div className="field">
+                          <label className="label">选择征集</label>
+                          <select className="input" value={pickedCollection ?? ""} onChange={(e) => pickCollection(Number(e.target.value))}>
+                            {collections.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                          </select>
+                        </div>
+                        {collectionDetail && collectionDetail.submissions && collectionDetail.submissions.length > 0 ? (
+                          <>
+                            <div className="hint" style={{ marginBottom: 8 }}>勾选要导入的作品（任意状态均可，复制成独立副本）。</div>
+                            {collectionDetail.submissions.map((s) => {
+                              const on = pickedSubs.includes(s.id);
+                              return (
+                                <label key={s.id} className={"vote-opt" + (on ? " is-on" : "")} style={{ marginBottom: 6 }}>
+                                  <input type="checkbox" checked={on} onChange={() => setPickedSubs((cur) => on ? cur.filter((x) => x !== s.id) : [...cur, s.id])} />
+                                  <span className="vote-opt-text">{`@${s.submitter.username}`} · {s.files.length} 个文件</span>
+                                </label>
+                              );
+                            })}
+                            <button className="btn btn-primary btn-sm" onClick={doImport} disabled={busy || pickedSubs.length < 1}>导入 {pickedSubs.length} 件</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => setImportOpen(false)}>取消</button>
+                          </>
+                        ) : (
+                          <p className="muted">该征集暂无可见作品。</p>
+                        )}
+                      </>
                     )}
                   </div>
                 )}
