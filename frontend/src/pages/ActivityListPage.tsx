@@ -6,8 +6,7 @@ import {
   ActivityListItem,
   ActivityType,
   ACTIVITY_TYPE_META,
-  ACTIVITY_STATUS_LABELS,
-  ACTIVITY_STATUS_BADGE_CLASS,
+  activityPhase,
 } from "../types/activities";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
@@ -97,30 +96,36 @@ export default function ActivityListPage() {
             <button className="btn btn-primary" onClick={() => navigate("/activity/new")}>发起第一个活动</button>
           </div>
         ) : (
-          activities.map((a) => (
-            <a key={a.id} className="prop-card" href="#" onClick={(e) => { e.preventDefault(); navigate(`/activity/${a.id}`); }}>
-              <div className="pc-title">{a.title}</div>
-              <div className="pc-meta">
-                <span className={"badge " + ACTIVITY_STATUS_BADGE_CLASS[a.status]}>{ACTIVITY_STATUS_LABELS[a.status]}</span>
-                <span className={"act-medal " + ACTIVITY_TYPE_META[a.type].medal}>
-                  <span className="act-medal-ico">{ACTIVITY_TYPE_META[a.type].emoji}</span>
-                  {ACTIVITY_TYPE_META[a.type].label}
-                </span>
-                {a.creator && (
-                  <span className="who">
-                    <Avatar user={a.creator} />
-                    {a.creator.nickname || a.creator.username}
+          activities.map((a) => {
+            const ph = activityPhase(a.type, a.status);
+            return (
+              <a key={a.id} className="prop-card" href="#" onClick={(e) => { e.preventDefault(); navigate(`/activity/${a.id}`); }}>
+                <div className="pc-title">{a.title}</div>
+                <div className="pc-meta">
+                  <span className={"act-medal " + ph.medalClass}>
+                    <span className="act-medal-ico">{ph.emoji}</span>
+                    {ph.label}
                   </span>
-                )}
-                {a.status === "scheduled" && a.start_at ? (
-                  <span>⏱ 距开始 {formatCountdown(a.start_at)}</span>
-                ) : a.end_at ? (
-                  <span>截止 {new Date(a.end_at).toLocaleDateString("zh-CN")}</span>
-                ) : null}
-                <span className="tnum">{new Date(a.created_at).toLocaleDateString("zh-CN")}</span>
-              </div>
-            </a>
-          ))
+                  <span className={"act-medal " + ACTIVITY_TYPE_META[a.type].medal}>
+                    <span className="act-medal-ico">{ACTIVITY_TYPE_META[a.type].emoji}</span>
+                    {ACTIVITY_TYPE_META[a.type].label}
+                  </span>
+                  {a.creator && (
+                    <span className="who">
+                      <Avatar user={a.creator} />
+                      {a.creator.nickname || a.creator.username}
+                    </span>
+                  )}
+                  {a.status === "scheduled" && a.start_at ? (
+                    <span>⏱ 距开始 {formatCountdown(a.start_at)}</span>
+                  ) : a.end_at ? (
+                    <span>截止 {new Date(a.end_at).toLocaleDateString("zh-CN")}</span>
+                  ) : null}
+                  <span className="tnum">{new Date(a.created_at).toLocaleDateString("zh-CN")}</span>
+                </div>
+              </a>
+            );
+          })
         )}
       </div>
     </AppShell>

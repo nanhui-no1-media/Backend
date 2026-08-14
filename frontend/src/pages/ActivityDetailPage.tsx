@@ -6,11 +6,11 @@ import {
   ActivityDetail,
   ActivityListItem,
   ACTIVITY_TYPE_META,
-  ACTIVITY_STATUS_LABELS,
-  ACTIVITY_STATUS_BADGE_CLASS,
+  activityPhase,
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_BADGE_CLASS,
 } from "../types/activities";
+import type { ActivityStatus } from "../types/activities";
 import type { Attachment } from "../types/tasks";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
@@ -67,6 +67,8 @@ export default function ActivityDetailPage() {
   const isCollection = a.type === "collection";
   const isExhibition = a.type === "exhibition";
   const total = a.total_ballots ?? 0;
+  // 阶段勋章：类型感知（展示 open=展示中，其余 open=投票中）
+  const phase = activityPhase(a.type, a.status);
 
   // 时间线阶段（stepper）：待开始(若有 start_at) → 开放态 → …；当前阶段高亮
   const fmtTime = (d: string | null) =>
@@ -238,7 +240,10 @@ export default function ActivityDetailPage() {
 
         <div className="card card-pad">
           <div className="pc-meta" style={{ marginBottom: 8 }}>
-            <span className={"badge " + ACTIVITY_STATUS_BADGE_CLASS[a.status]}>{ACTIVITY_STATUS_LABELS[a.status]}</span>
+            <span className={"act-medal " + phase.medalClass}>
+              <span className="act-medal-ico">{phase.emoji}</span>
+              {phase.label}
+            </span>
             <span className={"act-medal " + ACTIVITY_TYPE_META[a.type].medal}>
               <span className="act-medal-ico">{ACTIVITY_TYPE_META[a.type].emoji}</span>
               {ACTIVITY_TYPE_META[a.type].label}
@@ -265,7 +270,7 @@ export default function ActivityDetailPage() {
                 className={"act-step" + (i === currentIndex ? " is-current" : "") + (i < currentIndex ? " is-done" : "")}
                 style={i === currentIndex ? ({ ["--step-progress" as any]: `${Math.round(currentProgress * 100)}%` }) : undefined}
               >
-                <div className="act-step-dot">{i < currentIndex ? "✓" : i + 1}</div>
+                <div className="act-step-dot">{i < currentIndex ? "✓" : activityPhase(a.type, p.key as ActivityStatus).emoji}</div>
                 <div className="act-step-label">{p.label}</div>
                 {p.time && <div className="act-step-time">{p.time}</div>}
               </div>

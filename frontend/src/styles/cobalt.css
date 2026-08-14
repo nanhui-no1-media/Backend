@@ -187,6 +187,13 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 .medal-vote { background: var(--brand-100); color: var(--brand-800); }
 .medal-collect { background: oklch(0.95 0.040 160); color: oklch(0.42 0.110 160); }
 .medal-exhibit { background: oklch(0.95 0.035 300); color: oklch(0.42 0.10 300); }
+/* 阶段勋章配色（替换纯文字状态徽章；open 阶段按类型区分，展示=紫） */
+.medal-phase-amber { background: var(--warning-bg); color: var(--warning); }
+.medal-phase-brand { background: var(--brand-50); color: var(--brand-700); }
+.medal-phase-neutral { background: var(--surface-2); color: var(--ink-700); }
+.medal-phase-exhibit { background: oklch(0.95 0.035 300); color: oklch(0.42 0.10 300); }
+.act-medal--sm { padding: 1px 8px; font-size: 12px; }
+.act-medal--sm .act-medal-ico { font-size: 12px; }
 
 /* 活动详情头部行（面包屑左、编辑按钮右）+ 征集两栏（主区 + 右侧规则） */
 .act-head-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); }

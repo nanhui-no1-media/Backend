@@ -48,15 +48,6 @@ export interface FeedResponse {
   items: FeedItem[];
 }
 
-// —— 展示映射 ——
-export const ACTIVITY_STATUS_LABEL: Record<string, string> = {
-  open: "投票中",
-  closed: "已结束",
-  collecting: "收件中",
-  reviewing: "复审中",
-  archived: "已归档",
-};
-
 export const FEED_TASK_STATUS_LABEL: Record<FeedTaskStatus, string> = {
   pending: "待处理",
   in_progress: "进行中",

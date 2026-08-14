@@ -153,14 +153,51 @@ export const ACTIVITY_STATUS_LABELS: Record<ActivityStatus, string> = {
   archived: "已归档",
 };
 
-export const ACTIVITY_STATUS_BADGE_CLASS: Record<ActivityStatus, string> = {
-  scheduled: "badge-warning",
-  open: "badge-brand",
-  closed: "badge-neutral",
-  collecting: "badge-brand",
-  reviewing: "badge-warning",
-  archived: "badge-neutral",
+// ---- 阶段勋章（替换纯文字状态徽章）：emoji + 配色 pill ----
+// 类型勋章(ACTIVITY_TYPE_META)回答"这是什么活动"，阶段勋章回答"现在到哪一步了"。
+// open 阶段按类型区分（众议=投票中 / 展示=展示中）——展示在 open 态不再误显示"投票中"。
+export const ACTIVITY_PHASE_EMOJI: Record<ActivityStatus, string> = {
+  scheduled: "⏳",
+  open: "⚖️",
+  collecting: "📨",
+  reviewing: "🔍",
+  closed: "🏁",
+  archived: "📦",
 };
+
+const PHASE_CLASS: Record<ActivityStatus, string> = {
+  scheduled: "medal-phase-amber",
+  open: "medal-phase-brand",
+  collecting: "medal-phase-brand",
+  reviewing: "medal-phase-amber",
+  closed: "medal-phase-neutral",
+  archived: "medal-phase-neutral",
+};
+
+// open 阶段按类型差异化：展示=展示中(紫)，众议=投票中(brand)；征集不会进入 open（占位）。
+const OPEN_PHASE: Record<ActivityType, { label: string; medalClass: string }> = {
+  deliberation: { label: "投票中", medalClass: "medal-phase-brand" },
+  collection: { label: "投票中", medalClass: "medal-phase-brand" },
+  exhibition: { label: "展示中", medalClass: "medal-phase-exhibit" },
+};
+
+export interface ActivityPhaseMeta {
+  emoji: string;
+  label: string;
+  medalClass: string;
+}
+
+export function activityPhase(type: ActivityType, status: ActivityStatus): ActivityPhaseMeta {
+  if (status === "open") {
+    const o = OPEN_PHASE[type];
+    return { emoji: ACTIVITY_PHASE_EMOJI.open, label: o.label, medalClass: o.medalClass };
+  }
+  return {
+    emoji: ACTIVITY_PHASE_EMOJI[status],
+    label: ACTIVITY_STATUS_LABELS[status],
+    medalClass: PHASE_CLASS[status],
+  };
+}
 
 export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
   pending: "待复审",
