@@ -118,6 +118,18 @@ def is_verified(user):
     return user.verifications.filter(status=Verification.STATUS_APPROVED).exists()
 
 
+def verified_member_count():
+    """已验证成员数（任一通道 approved 的活跃用户）——众议「全员投完即结算」的分母。
+
+    distinct：一个用户可能有多条 approved 通道，按用户去重。纯计算，不含超管。
+    """
+    return (
+        User.objects.filter(is_active=True, verifications__status=Verification.STATUS_APPROVED)
+        .distinct()
+        .count()
+    )
+
+
 class IdentityProof(models.Model):
     """身份证明材料（学生证照片等）——审计留底，永久保存（审核通过后也不删）。
 

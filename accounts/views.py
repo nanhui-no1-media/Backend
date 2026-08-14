@@ -582,7 +582,9 @@ def _capabilities(user):
         "can_manage_tags": user.has_perm("tasks.manage_tags"),
         "can_approve_proposals": user.has_perm("proposals.approve_proposal"),
         "can_change_proposals": user.has_perm("proposals.change_proposal"),
+        "can_change_activity": user.has_perm("activities.change_activity"),
         "can_view_feedback": user.has_perm("proposals.view_feedback"),
+        "can_review_collections": user.has_perm("activities.review_collection"),
         "can_edit_about": user.has_perm("about.change_aboutpage"),
     }
 

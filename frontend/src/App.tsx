@@ -18,8 +18,10 @@ const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage"));
 const TaskFormPage = lazy(() => import("./pages/TaskFormPage"));
 const MessagePage = lazy(() => import("./pages/MessagePage"));
 const ProposalListPage = lazy(() => import("./pages/ProposalListPage"));
-const ProposalFormPage = lazy(() => import("./pages/ProposalFormPage"));
 const ProposalDetailPage = lazy(() => import("./pages/ProposalDetailPage"));
+const ActivityListPage = lazy(() => import("./pages/ActivityListPage"));
+const ActivityFormPage = lazy(() => import("./pages/ActivityFormPage"));
+const ActivityDetailPage = lazy(() => import("./pages/ActivityDetailPage"));
 const NewsListPage = lazy(() => import("./pages/NewsListPage"));
 const NewsDetailPage = lazy(() => import("./pages/NewsDetailPage"));
 const NewsFormPage = lazy(() => import("./pages/NewsFormPage"));
@@ -55,10 +57,12 @@ export default function App() {
           <Route path="/tasks/:id/edit" element={<ProtectedRoute><TaskFormPage /></ProtectedRoute>} />
           <Route path="/messages" element={<ProtectedRoute><MessagePage /></ProtectedRoute>} />
           <Route path="/messages/:id" element={<ProtectedRoute><MessagePage /></ProtectedRoute>} />
-          <Route path="/activity" element={<ProposalListPage />} />
-          <Route path="/activity/new" element={<ProtectedRoute><ProposalFormPage /></ProtectedRoute>} />
-          <Route path="/activity/:id" element={<ProtectedRoute><ProposalDetailPage /></ProtectedRoute>} />
-          <Route path="/activity/:id/edit" element={<ProtectedRoute><ProposalFormPage /></ProtectedRoute>} />
+          <Route path="/activity" element={<ActivityListPage />} />
+          <Route path="/activity/new" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
+          <Route path="/activity/:id" element={<ProtectedRoute><ActivityDetailPage /></ProtectedRoute>} />
+          <Route path="/activity/:id/edit" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
+          <Route path="/feedback" element={<ProposalListPage />} />
+          <Route path="/feedback/:id" element={<ProtectedRoute><ProposalDetailPage /></ProtectedRoute>} />
           <Route path="/news" element={<NewsListPage />} />
           <Route path="/news/new" element={<ProtectedRoute><NewsFormPage /></ProtectedRoute>} />
           <Route path="/news/:id" element={<NewsDetailPage />} />

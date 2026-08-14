@@ -15,6 +15,8 @@ from proposals.models import Proposal
 from tasks.lifecycle import is_active_participant
 from tasks.models import Task
 
+from activities.models import Submission
+
 
 def is_parent_creator(user, parent):
     """父级创建者（任务/申报的 creator）。News 用 author 维度，此处对无 creator 的父级返回 False。"""
@@ -27,13 +29,19 @@ def is_parent_creator(user, parent):
 
 
 def has_parent_manage_permission(user, parent):
-    """父级管理权限：任务 = tasks.manage_tasks；申报 = proposals.change_proposal；新闻 = news.change_news。"""
+    """父级管理权限：任务 = tasks.manage_tasks；申报 = proposals.change_proposal；新闻 = news.change_news；作品 = 作品所属活动的发起人 / change_activity / review_collection。"""
     if isinstance(parent, Task):
         return user.has_perm("tasks.manage_tasks")
     if isinstance(parent, Proposal):
         return user.has_perm("proposals.change_proposal")
     if isinstance(parent, News):
         return user.has_perm("news.change_news")
+    if isinstance(parent, Submission):
+        return (
+            parent.activity.creator_id == user.pk
+            or user.has_perm("activities.change_activity")
+            or user.has_perm("activities.review_collection")
+        )
     return False
 
 

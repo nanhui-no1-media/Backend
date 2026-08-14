@@ -14,7 +14,7 @@ const NEWS_CATEGORY: Record<string, string> = {
   notice: "社团公告", recap: "活动回顾", work: "作品展示", inform: "通知",
 };
 const PROPOSAL_TYPE: Record<string, string> = {
-  activity: "活动申报", feedback: "意见反馈",
+  feedback: "意见反馈",
 };
 const TASK_STATUS: Record<string, string> = {
   pending: "待处理", in_progress: "进行中", reviewing: "待验收", review: "审核中", completed: "已完成", cancelled: "已取消",

@@ -155,6 +155,26 @@ class MeViewTest(TestCase):
         self.assertTrue(perms["can_view_feedback"])
         self.assertFalse(perms["can_manage_news"])
 
+    def test_can_change_activity_decoupled_from_proposals(self):
+        # #52：活动管理门禁须与申报解耦——社长有 change_proposals 但无 change_activity，
+        # 故 can_change_activity 为 False（不该看到他人活动的编辑/关闭按钮）。
+        from django.contrib.auth.models import Group
+        grp, _ = Group.objects.get_or_create(name="社长")
+        self.user.groups.add(grp)
+        self.client.login(username="testuser", password="secret123")
+        perms = self.client.get("/auth/me/").json()["user"]["permissions"]
+        self.assertIn("can_change_activity", perms)
+        self.assertTrue(perms["can_change_proposals"])
+        self.assertFalse(perms["can_change_activity"])
+
+    def test_can_change_activity_true_when_perm_held(self):
+        from django.contrib.auth.models import Permission
+        perm = Permission.objects.get(content_type__app_label="activities", codename="change_activity")
+        self.user.user_permissions.add(perm)
+        self.client.login(username="testuser", password="secret123")
+        perms = self.client.get("/auth/me/").json()["user"]["permissions"]
+        self.assertTrue(perms["can_change_activity"])
+
 
 class PasswordResetViewTest(TestCase):
     def setUp(self):
@@ -342,7 +362,7 @@ class RecordUserSessionTest(TestCase):
         # 当前会话（最后一次 key24）必在保留之列且为 current
         current = UserSession.objects.get(user=self.user, is_current=True)
         self.assertEqual(current.session_key, "key24")
-        self.assertIn(current.id, [r.id for r in rows])
+        self.assertIn(current.id, [r.id for r in rows]) # type: ignore
 
 
 class LoginSignalIntegrationTest(TestCase):
@@ -712,7 +732,7 @@ class UserProfileViewTest(TestCase):
         self.assertNotIn("groups", data)
 
     def test_owner_sees_everything(self):
-        data = self._login(self.viewed).get(f"/auth/users/{self.viewed.id}/profile/").json()
+        data = self._login(self.viewed).get(f"/auth/users/{self.viewed.id}/profile/").json() # pyright: ignore[reportAttributeAccessIssue]
         self.assertTrue(data["viewer"]["is_owner"])
         self.assertEqual(data["user"]["email"], "v@e.com")
         self.assertIn("birthday", data["profile"])
@@ -721,7 +741,7 @@ class UserProfileViewTest(TestCase):
         self.assertIn("groups", data)
 
     def test_admin_sees_permissions_but_not_private_fields(self):
-        data = self._login(self.admin).get(f"/auth/users/{self.viewed.id}/profile/").json()
+        data = self._login(self.admin).get(f"/auth/users/{self.viewed.id}/profile/").json() # pyright: ignore[reportAttributeAccessIssue]
         self.assertTrue(data["viewer"]["is_admin"])
         self.assertFalse(data["viewer"]["is_owner"])
         self.assertIn("permissions", data)
@@ -741,8 +761,8 @@ class UserContentViewTest(TestCase):
         from tasks.models import Task
         News.objects.create(title="published", author=self.owner, is_published=True)
         News.objects.create(title="draft", author=self.owner, is_published=False)
-        Proposal.objects.create(title="approved", proposal_type="activity", status="approved", creator=self.owner)
-        Proposal.objects.create(title="pending", proposal_type="activity", status="pending_approval", creator=self.owner)
+        Proposal.objects.create(title="approved", proposal_type="feedback", status="approved", creator=self.owner)
+        Proposal.objects.create(title="pending", proposal_type="feedback", status="pending_approval", creator=self.owner)
         Task.objects.create(title="t", creator=self.owner, assignee=self.owner)
 
     def _login(self, user):
@@ -751,10 +771,10 @@ class UserContentViewTest(TestCase):
         return c
 
     def _get(self, client, type_):
-        return client.get(f"/auth/users/{self.owner.id}/content/?type={type_}")
+        return client.get(f"/auth/users/{self.owner.id}/content/?type={type_}") # pyright: ignore[reportAttributeAccessIssue]
 
     def test_unauthenticated_redirects(self):
-        self.assertEqual(Client().get(f"/auth/users/{self.owner.id}/content/?type=news").status_code, 302)
+        self.assertEqual(Client().get(f"/auth/users/{self.owner.id}/content/?type=news").status_code, 302) # pyright: ignore[reportAttributeAccessIssue]
 
     def test_unknown_user_404(self):
         c = self._login(self.other)

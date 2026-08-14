@@ -1,0 +1,304 @@
+from datetime import timedelta
+
+from django.utils import timezone
+from rest_framework import serializers
+
+from attachments.serializers import AttachmentSerializer
+from common.rich_text import sanitize_html
+from tasks.serializers import SimpleUserSerializer  # 复用（与申报/新闻一致）
+
+from .lifecycle import initial_status
+from .models import Activity, Ballot, Exhibit, VoteOption, Submission
+
+
+class VoteOptionSerializer(serializers.ModelSerializer):
+    """投票选项读侧：附各选项票数（聚合计数）。"""
+
+    vote_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = VoteOption
+        fields = ["id", "text", "order", "vote_count"]
+
+    def get_vote_count(self, obj):
+        return obj.selections.count()
+
+
+class BallotSerializer(serializers.ModelSerializer):
+    """公开选票：投票人 + 勾选的 option_ids。秘密投票下不输出（get_ballots 裁剪）。"""
+
+    voter = SimpleUserSerializer(read_only=True)
+    option_ids = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Ballot
+        fields = ["id", "voter", "option_ids", "created_at"]
+
+    def get_option_ids(self, obj):
+        return list(obj.selections.values_list("option_id", flat=True))
+
+
+class SubmissionSerializer(serializers.ModelSerializer):
+    """征集作品：提交者 + 一束文件 + 复审状态。"""
+
+    submitter = SimpleUserSerializer(read_only=True)
+    files = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Submission
+        fields = [
+            "id", "submitter", "files",
+            "review_status", "review_comment", "reviewed_at", "created_at",
+        ]
+
+    def get_files(self, obj):
+        return AttachmentSerializer(obj.attachments.all(), many=True, context=self.context).data
+
+
+class ExhibitSerializer(serializers.ModelSerializer):
+    """展品：标题 + 一束文件 + 投票计数 + 我的投票 + 赞/踩计数 + 我的评分。
+
+    每个展品绑定一个 VoteOption（``vote_option``），投票计数即该 option 的票数。
+    ``my_voted`` 在前端用 my_selections(option_ids) 推断，无需后端再算。
+    """
+
+    files = serializers.SerializerMethodField()
+    vote_option_id = serializers.SerializerMethodField()
+    vote_count = serializers.SerializerMethodField()
+    like_count = serializers.SerializerMethodField()
+    dislike_count = serializers.SerializerMethodField()
+    my_rating = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Exhibit
+        fields = ["id", "title", "files", "vote_option_id", "vote_count",
+                  "like_count", "dislike_count", "my_rating", "created_at"]
+
+    def get_files(self, obj):
+        return AttachmentSerializer(obj.attachments.all(), many=True, context=self.context).data
+
+    def get_vote_option_id(self, obj):
+        return obj.vote_option_id
+
+    def get_vote_count(self, obj):
+        # 经预取 exhibits__vote_option__selections 在内存计票，避免 N+1
+        if not obj.vote_option_id:
+            return 0
+        return len(obj.vote_option.selections.all())
+
+    def _ratings(self, obj):
+        # 用预取缓存（exhibits__ratings）在内存算，避免 N+1
+        return list(obj.ratings.all())
+
+    def get_like_count(self, obj):
+        return sum(1 for r in self._ratings(obj) if r.choice == "like")
+
+    def get_dislike_count(self, obj):
+        return sum(1 for r in self._ratings(obj) if r.choice == "dislike")
+
+    def get_my_rating(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return None
+        for r in self._ratings(obj):
+            if r.user_id == user.pk:
+                return r.choice
+        return None
+
+
+class ActivityListSerializer(serializers.ModelSerializer):
+    creator = SimpleUserSerializer(read_only=True)
+
+    class Meta:
+        model = Activity
+        fields = ["id", "type", "status", "title", "creator", "start_at", "end_at", "created_at", "updated_at"]
+
+
+def _is_reviewer(activity, user):
+    """征集复审者：活动发起人，或持 change_activity / review_collection 权限者。
+
+    review_collection 权限由 T5 落地；在此之前 has_perm 返回 False，复审者仅含发起人。
+    """
+    return user.is_authenticated and (
+        activity.creator_id == user.pk
+        or user.has_perm("activities.change_activity")
+        or user.has_perm("activities.review_collection")
+    )
+
+
+def _voting_active(activity):
+    """该活动是否走投票读侧：众议始终；展示仅 voting_enabled 时。纯陈列展示无投票数据。"""
+    if activity.type == "deliberation":
+        return True
+    return activity.type == "exhibition" and activity.voting_enabled
+
+
+class ActivityDetailSerializer(serializers.ModelSerializer):
+    creator = SimpleUserSerializer(read_only=True)
+    # 众议读侧（展示的"选项"即展品，走 exhibits，options 返回 None）
+    options = serializers.SerializerMethodField()
+    ballots = serializers.SerializerMethodField()
+    my_selections = serializers.SerializerMethodField()
+    total_ballots = serializers.SerializerMethodField()
+    # 征集读侧
+    my_submission = serializers.SerializerMethodField()
+    submissions = serializers.SerializerMethodField()
+    # 展示读侧
+    exhibits = serializers.SerializerMethodField()
+    # 众议写侧：创建时给选项文本（开放即锁定，无后续编辑）
+    option_texts = serializers.ListField(
+        child=serializers.CharField(max_length=200), write_only=True, required=False,
+    )
+
+    class Meta:
+        model = Activity
+        fields = [
+            "id", "type", "status", "title", "body", "creator",
+            "start_at", "end_at",
+            "max_choices_per_voter", "is_secret_ballot",
+            "allowed_extensions", "max_file_size", "max_files_per_submission", "max_submissions",
+            "review_enabled", "voting_enabled",
+            "options", "ballots", "my_selections", "total_ballots",
+            "my_submission", "submissions",
+            "exhibits",
+            "option_texts",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["creator", "status", "created_at", "updated_at"]
+
+    def validate_body(self, value):
+        # 与新闻同级：写时消毒，存消毒后 HTML，读时原样返回。
+        return sanitize_html(value or "")
+
+    def validate(self, attrs):
+        # 开始 < 截止（两者都给时；update 取实例现值兜底 partial）
+        start_at = attrs.get("start_at", getattr(self.instance, "start_at", None))
+        end_at = attrs.get("end_at", getattr(self.instance, "end_at", None))
+        if start_at and end_at and start_at >= end_at:
+            raise serializers.ValidationError({"start_at": "开始时间须早于截止时间"})
+        # 众议选项与 K 值校验
+        is_delib = attrs.get("type") == "deliberation" or (
+            self.instance is not None and self.instance.type == "deliberation"
+        )
+        if is_delib:
+            texts = attrs.get("option_texts")
+            if self.instance is None:
+                # 创建：必须给选项
+                if not texts or len(texts) < 2:
+                    raise serializers.ValidationError({"option_texts": "众议至少需要 2 个选项"})
+            if texts is not None:  # 创建必给；更新（待开始）给了才校验
+                if len(texts) > 50:
+                    raise serializers.ValidationError({"option_texts": "众议选项不超过 50 个"})
+                k = attrs.get("max_choices_per_voter", getattr(self.instance, "max_choices_per_voter", 1))
+                if k < 1 or k > len(texts):
+                    raise serializers.ValidationError(
+                        {"max_choices_per_voter": "每人最多选几项须在 1..选项数 之间"}
+                    )
+        is_exhib = attrs.get("type") == "exhibition" or (
+            self.instance is not None and self.instance.type == "exhibition"
+        )
+        if is_exhib and attrs.get("voting_enabled"):
+            k = attrs.get("max_choices_per_voter", getattr(self.instance, "max_choices_per_voter", 1))
+            if k < 1:
+                raise serializers.ValidationError(
+                    {"max_choices_per_voter": "每人最多选几项至少为 1"}
+                )
+        return attrs
+
+    def create(self, validated_data):
+        texts = validated_data.pop("option_texts", [])
+        activity_type = validated_data["type"]
+        # 截止默认相对开始时间：有 start_at 则从其起算，否则从现在；众议 +3 天 / 征集 +7 天。
+        start_at = validated_data.get("start_at")
+        if not validated_data.get("end_at"):
+            base = start_at or timezone.now()
+            days = 3 if activity_type == "deliberation" else 7
+            validated_data["end_at"] = base + timedelta(days=days)
+        validated_data["status"] = initial_status(activity_type, start_at)
+        activity = Activity.objects.create(**validated_data)
+        for i, text in enumerate(texts):
+            VoteOption.objects.create(activity=activity, text=text, order=i)
+        return activity
+
+    def update(self, instance, validated_data):
+        # 仅在 scheduled（待开始）期间允许更新（视图层已 gate）；含众议选项替换。
+        texts = validated_data.pop("option_texts", None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if texts is not None and instance.type == "deliberation":
+            instance.options.all().delete()
+            for i, text in enumerate(texts):
+                VoteOption.objects.create(activity=instance, text=text, order=i)
+        return instance
+
+    # ---- 众议读侧聚合 ----
+
+    def get_options(self, obj):
+        # 众议选项（附票数）；展示的选项即展品（见 exhibits），此处返回 None。
+        if obj.type != "deliberation":
+            return None
+        return VoteOptionSerializer(obj.options.all(), many=True, context=self.context).data
+
+    def get_ballots(self, obj):
+        # 秘密投票：个人明细仅 is_superuser 可见；其余（含发起人）只见聚合计数。
+        # 众议与展示（启用投票时）共用；纯陈列展示（voting_enabled=False）无投票数据。
+        if not _voting_active(obj):
+            return None
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if obj.is_secret_ballot and not (
+            user and user.is_authenticated and user.is_superuser
+        ):
+            return None
+        return BallotSerializer(obj.ballots.all(), many=True, context=self.context).data
+
+    def get_my_selections(self, obj):
+        if not _voting_active(obj):
+            return None
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return None
+        ballot = obj.ballots.filter(voter=user).first()
+        if ballot is None:
+            return None
+        return list(ballot.selections.values_list("option_id", flat=True))
+
+    def get_total_ballots(self, obj):
+        if not _voting_active(obj):
+            return None
+        return obj.ballots.count()
+
+    # ---- 征集读侧 ----
+
+    def get_my_submission(self, obj):
+        if obj.type != "collection":
+            return None
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return None
+        sub = obj.submissions.filter(submitter=user).first()
+        return SubmissionSerializer(sub, context=self.context).data if sub else None
+
+    def get_submissions(self, obj):
+        # 复审者见全部作品；其余只见录用作品（公开展示）。自己的作品另走 my_submission。
+        # 关闭复审（review_enabled=False）时：全部作品对所有人公开（无录用门槛）。
+        if obj.type != "collection":
+            return None
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return []
+        qs = obj.submissions.all()
+        if obj.review_enabled and not _is_reviewer(obj, user):
+            qs = qs.filter(review_status="accepted")
+        return SubmissionSerializer(qs, many=True, context=self.context).data
+
+    def get_exhibits(self, obj):
+        # 展示读侧：全部展品（含文件、赞踩计数、我的评分）。非展示类型返回 None。
+        if obj.type != "exhibition":
+            return None
+        return ExhibitSerializer(obj.exhibits.all(), many=True, context=self.context).data

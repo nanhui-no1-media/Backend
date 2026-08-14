@@ -2,20 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { proposalApi } from "../api/proposals";
 import { attachmentApi } from "../api/attachments";
-import { messagingApi } from "../api/messaging";
 import { api } from "../api/client";
 import {
   ProposalDetail,
-  VoteChoice,
-  ACTIVITY_TYPE_LABELS,
   FEEDBACK_CATEGORY_LABELS,
   PROPOSAL_STATUS_LABELS,
   PROPOSAL_STATUS_BADGE_CLASS,
-  VOTE_CHOICE_LABELS,
 } from "../types/proposals";
-import type { Message } from "../types/tasks";
 import Avatar from "../components/Avatar";
-import RichTextEditor from "../components/RichTextEditor";
 import AppShell from "../components/AppShell";
 import "../styles/detail.css";
 
@@ -38,15 +32,9 @@ export default function ProposalDetailPage() {
   const [attUploading, setAttUploading] = useState(false);
   const [attProgress, setAttProgress] = useState<number | null>(null);
 
-  // 审批理由表单
-  const [showReasonForm, setShowReasonForm] = useState<null | "return" | "reject">(null);
+  // 拒绝理由表单（反馈不可打回，仅通过/拒绝）
+  const [showReasonForm, setShowReasonForm] = useState(false);
   const [reason, setReason] = useState("");
-
-  // 讨论区
-  const [conversationId, setConversationId] = useState<number | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [message, setMessage] = useState("");
-  const [messageSending, setMessageSending] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,7 +43,7 @@ export default function ProposalDetailPage() {
       id: d.user.id,
       can_approve_proposals: d.user.permissions?.can_approve_proposals,
       can_change_proposals: d.user.permissions?.can_change_proposals,
-      can_view_feedback: d.user.permissions?.can_view_feedback
+      can_view_feedback: d.user.permissions?.can_view_feedback,
     })).catch(() => {});
   }, []);
 
@@ -63,120 +51,44 @@ export default function ProposalDetailPage() {
     if (!id) return;
     setLoading(true);
     proposalApi.get(Number(id))
-      .then((p) => {
-        setProposal(p);
-        // 仅活动申报开放讨论（反馈无创建人）
-        if (p.proposal_type === "activity") {
-          messagingApi.getProposalConversation(p.id)
-            .then((conv) => {
-              setConversationId(conv.id);
-              return messagingApi.getMessages(conv.id);
-            })
-            .then((msgs) => setMessages(msgs.results || msgs))
-            .catch(() => {});
-        }
-      })
+      .then(setProposal)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
-
-  const reload = async () => {
-    if (!id) return;
-    const p = await proposalApi.get(Number(id));
-    setProposal(p);
-  };
 
   const canApproveProposals = !!currentUser?.can_approve_proposals;
   const canChangeProposals = !!currentUser?.can_change_proposals;
   const canViewFeedback = !!currentUser?.can_view_feedback;
   const isCreator = !!proposal && !!currentUser && proposal.creator?.id === currentUser.id;
-  const isActivity = proposal?.proposal_type === "activity";
-
-  const handleVote = async (choice: VoteChoice) => {
-    if (!proposal) return;
-    setActionLoading(true);
-    setError("");
-    try {
-      const updated = await proposalApi.vote(proposal.id, choice);
-      setProposal(updated);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
   const handleApprove = async () => {
     if (!proposal) return;
     setActionLoading(true);
-    try {
-      setProposal(await proposalApi.approve(proposal.id));
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setActionLoading(false);
-    }
+    try { setProposal(await proposalApi.approve(proposal.id)); }
+    catch (err: any) { setError(err.message); }
+    finally { setActionLoading(false); }
   };
 
   const submitReason = async () => {
-    if (!proposal || !showReasonForm) return;
-    const r = reason.trim();
-    if (!r) {
-      setError("请填写理由");
-      return;
-    }
-    setActionLoading(true);
-    try {
-      const updated = showReasonForm === "return"
-        ? await proposalApi.returnProposal(proposal.id, r)
-        : await proposalApi.reject(proposal.id, r);
-      setProposal(updated);
-      setShowReasonForm(null);
-      setReason("");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleResubmit = async () => {
     if (!proposal) return;
+    const r = reason.trim();
+    if (!r) { setError("请填写拒绝理由"); return; }
     setActionLoading(true);
     try {
-      setProposal(await proposalApi.resubmit(proposal.id));
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setActionLoading(false);
-    }
+      setProposal(await proposalApi.reject(proposal.id, r));
+      setShowReasonForm(false);
+      setReason("");
+    } catch (err: any) { setError(err.message); }
+    finally { setActionLoading(false); }
   };
 
   const handleWithdraw = async () => {
     if (!proposal) return;
-    if (!window.confirm("确定撤回此申报吗？")) return;
+    if (!window.confirm("确定撤回此反馈吗？")) return;
     setActionLoading(true);
-    try {
-      setProposal(await proposalApi.withdraw(proposal.id));
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleSendMessage = async () => {
-    if (!conversationId || !message.trim()) return;
-    setMessageSending(true);
-    try {
-      const newMsg = await messagingApi.sendMessage(conversationId, message.trim());
-      setMessages([...messages, newMsg]);
-      setMessage("");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setMessageSending(false);
-    }
+    try { setProposal(await proposalApi.withdraw(proposal.id)); }
+    catch (err: any) { setError(err.message); }
+    finally { setActionLoading(false); }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -185,21 +97,16 @@ export default function ProposalDetailPage() {
     setAttUploading(true);
     setAttProgress(null);
     try {
-      // 按大小自动选路：≤50MB 同步、>50MB tus 可续传
       const att = await attachmentApi.uploadRouted({
         parentType: "proposal", parentId: proposal.id, file, onProgress: setAttProgress,
       });
       if (att) {
         setProposal({ ...proposal, attachments: [...proposal.attachments, att] });
       } else {
-        setProposal(await proposalApi.get(proposal.id));  // tus：附件由服务端 finished 钩子异步建，重新拉取
+        setProposal(await proposalApi.get(proposal.id));
       }
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setAttUploading(false);
-      setAttProgress(null);
-    }
+    } catch (err: any) { setError(err.message); }
+    finally { setAttUploading(false); setAttProgress(null); }
     e.target.value = "";
   };
 
@@ -208,9 +115,7 @@ export default function ProposalDetailPage() {
     try {
       await attachmentApi.delete(attachmentId);
       setProposal({ ...proposal, attachments: proposal.attachments.filter((a) => a.id !== attachmentId) });
-    } catch (err: any) {
-      setError(err.message);
-    }
+    } catch (err: any) { setError(err.message); }
   };
 
   const formatSize = (bytes: number) => {
@@ -219,40 +124,16 @@ export default function ProposalDetailPage() {
     return (bytes / 1024 / 1024).toFixed(1) + " MB";
   };
 
-  const formatRemaining = (endAt: string | null) => {
-    if (!endAt) return "";
-    const ms = new Date(endAt).getTime() - Date.now();
-    if (ms <= 0) return "已截止";
-    const h = Math.floor(ms / 3600000);
-    if (h < 24) return `剩余 ${h} 小时`;
-    return `剩余 ${Math.floor(h / 24)} 天`;
-  };
-
   if (loading) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中...</p></div></AppShell>;
   if (error && !proposal) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">{error}</p></div></AppShell>;
-  if (!proposal) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">申报不存在或无权查看</p></div></AppShell>;
+  if (!proposal) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">反馈不存在或无权查看</p></div></AppShell>;
 
   const p = proposal;
-  const summary = {
-    approve: p.votes.filter((v) => v.vote_choice === "approve").length,
-    oppose: p.votes.filter((v) => v.vote_choice === "oppose").length,
-    abstain: p.votes.filter((v) => v.vote_choice === "abstain").length,
-  };
-  const canVote = isActivity && p.status === "voting" && currentUser && p.my_vote === null;
   const canApprove = canApproveProposals && p.status === "pending_approval";
-  const canEdit = isActivity && p.status === "returned" && (isCreator || canChangeProposals);
-  const canResubmit = isActivity && p.status === "returned" && (isCreator || canChangeProposals);
-  const canWithdraw = isCreator && (p.status === "voting" || p.status === "pending_approval");
-  // 附件上传 / 删除权限（与后端 attachments.permissions 对齐）：
-  //  - 删除：创建者或 change_proposal 持有者（两种类型一致；社长对反馈「能删不能传」）。
-  //  - 上传：活动 = 创建者/社长；反馈 = 仅署名创建者且待审批
-  //    （社长不往别人反馈传证据，审结即锁——见 can_upload_to_parent 的反馈 carve-out）。
+  const canWithdraw = isCreator && p.status === "pending_approval";
+  // 附件：反馈 carve-out —— 仅署名创建者 + 待审批可传；删除：创建者或 change_proposal（社长能删不能传）
   const canDeleteAttachment = canChangeProposals || isCreator;
-  const canUploadAttachment = isActivity
-    ? (canChangeProposals || isCreator)
-    : (isCreator && p.status === "pending_approval");
-
-  const pct = (n: number, total: number) => (total > 0 ? Math.round((n / total) * 100) : 0) + "%";
+  const canUploadAttachment = isCreator && p.status === "pending_approval";
 
   return (
     <AppShell>
@@ -261,7 +142,7 @@ export default function ProposalDetailPage() {
           <nav className="breadcrumb">
             <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
             <span className="sep">/</span>
-            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/activity"); }}>活动申报</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); navigate("/feedback"); }}>意见反馈</a>
             <span className="sep">/</span>
             <span>{p.title}</span>
           </nav>
@@ -273,19 +154,13 @@ export default function ProposalDetailPage() {
               </span>
             </div>
             <div className="detail-head-actions">
-              {canEdit && (
-                <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/activity/${p.id}/edit`)}>编辑</button>
-              )}
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate("/activity")}>返回列表</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate("/feedback")}>返回列表</button>
             </div>
           </div>
           <p className="detail-sub">
-            {isActivity
-              ? (ACTIVITY_TYPE_LABELS[p.activity_type as keyof typeof ACTIVITY_TYPE_LABELS] || "活动")
-              : (FEEDBACK_CATEGORY_LABELS[p.feedback_category as keyof typeof FEEDBACK_CATEGORY_LABELS] || "反馈")}
-            {" · "}{isActivity ? "申报人" : "提交人"} {p.creator ? (p.creator.nickname || p.creator.username) : "匿名"}
+            {FEEDBACK_CATEGORY_LABELS[p.feedback_category as keyof typeof FEEDBACK_CATEGORY_LABELS] || "反馈"}
+            {" · "}提交人 {p.creator ? (p.creator.nickname || p.creator.username) : "匿名"}
             {" · "}{new Date(p.created_at).toLocaleDateString("zh-CN")}
-            {isActivity && p.status === "voting" && p.voting_end_at ? " · " + formatRemaining(p.voting_end_at) : ""}
           </p>
         </div>
       </div>
@@ -293,19 +168,12 @@ export default function ProposalDetailPage() {
       <div className="container detail-container detail-body">
         {error && <div className="alert alert-danger">{error}</div>}
 
-        {(p.status === "returned" || p.status === "rejected") && p.reject_reason && (
-          <div className="alert alert-danger">
-            <b>{p.status === "returned" ? "已打回" : "已拒绝"}：</b>{p.reject_reason}
-          </div>
+        {p.status === "rejected" && p.reject_reason && (
+          <div className="alert alert-danger"><b>已拒绝：</b>{p.reject_reason}</div>
         )}
 
-        {(canVote || canApprove || canResubmit || canWithdraw) && (
+        {(canApprove || canWithdraw) && (
           <div className="detail-actions">
-            {canResubmit && (
-              <button className="btn btn-primary" onClick={handleResubmit} disabled={actionLoading}>
-                {actionLoading ? "处理中…" : "重新提交（开始投票）"}
-              </button>
-            )}
             {canWithdraw && (
               <button className="btn btn-ghost" onClick={handleWithdraw} disabled={actionLoading}>撤回</button>
             )}
@@ -314,8 +182,7 @@ export default function ProposalDetailPage() {
                 <button className="btn btn-primary" onClick={handleApprove} disabled={actionLoading}>
                   {actionLoading ? "处理中…" : "通过"}
                 </button>
-                <button className="btn btn-ghost" onClick={() => setShowReasonForm("return")} disabled={actionLoading}>打回</button>
-                <button className="btn btn-danger" onClick={() => setShowReasonForm("reject")} disabled={actionLoading}>拒绝</button>
+                <button className="btn btn-danger" onClick={() => setShowReasonForm(true)} disabled={actionLoading}>拒绝</button>
               </>
             )}
           </div>
@@ -323,18 +190,15 @@ export default function ProposalDetailPage() {
 
         {showReasonForm && (
           <div className="card card-pad detail-section">
-            <h3 className="section-h">{showReasonForm === "return" ? "打回理由" : "拒绝理由"}</h3>
+            <h3 className="section-h">拒绝理由</h3>
             <textarea className="textarea" value={reason}
                       onChange={(e) => setReason(e.target.value)}
-                      placeholder={showReasonForm === "return" ? "说明需要修改的内容..." : "说明拒绝原因..."}
-                      rows={3} />
+                      placeholder="说明拒绝原因..." rows={3} />
             <div className="detail-row">
               <button className="btn btn-primary" onClick={submitReason} disabled={actionLoading}>
-                {actionLoading ? "处理中…" : `确认${showReasonForm === "return" ? "打回" : "拒绝"}`}
+                {actionLoading ? "处理中…" : "确认拒绝"}
               </button>
-              <button className="btn btn-ghost"
-                      onClick={() => { setShowReasonForm(null); setReason(""); }}
-                      disabled={actionLoading}>取消</button>
+              <button className="btn btn-ghost" onClick={() => { setShowReasonForm(false); setReason(""); }} disabled={actionLoading}>取消</button>
             </div>
           </div>
         )}
@@ -342,22 +206,10 @@ export default function ProposalDetailPage() {
         <div className="card card-pad detail-section">
           <h3 className="section-h">基本信息</h3>
           <div className="meta-grid">
-            {isActivity ? (
-              <>
-                <div className="meta-cell"><span className="meta-k">活动类型</span><span className="meta-v">{ACTIVITY_TYPE_LABELS[p.activity_type as keyof typeof ACTIVITY_TYPE_LABELS] || "-"}</span></div>
-                <div className="meta-cell"><span className="meta-k">拟办日期</span><span className="meta-v">{p.planned_date || "-"}</span></div>
-                <div className="meta-cell"><span className="meta-k">地点</span><span className="meta-v">{p.location || "-"}</span></div>
-                <div className="meta-cell"><span className="meta-k">预计人数</span><span className="meta-v">{p.expected_participants != null ? p.expected_participants : "-"}</span></div>
-                <div className="meta-cell"><span className="meta-k">预算</span><span className="meta-v">{p.budget != null ? `¥${p.budget}` : "-"}</span></div>
-              </>
-            ) : (
-              <>
-                <div className="meta-cell"><span className="meta-k">反馈类别</span><span className="meta-v">{FEEDBACK_CATEGORY_LABELS[p.feedback_category as keyof typeof FEEDBACK_CATEGORY_LABELS] || "-"}</span></div>
-                <div className="meta-cell"><span className="meta-k">提交人</span><span className="meta-v">匿名</span></div>
-                {!isActivity && p.contact && canViewFeedback && (
-                  <div className="meta-cell"><span className="meta-k">联系方式</span><span className="meta-v">{p.contact}</span></div>
-                )}
-              </>
+            <div className="meta-cell"><span className="meta-k">反馈类别</span><span className="meta-v">{FEEDBACK_CATEGORY_LABELS[p.feedback_category as keyof typeof FEEDBACK_CATEGORY_LABELS] || "-"}</span></div>
+            <div className="meta-cell"><span className="meta-k">提交人</span><span className="meta-v">{p.creator ? (p.creator.nickname || p.creator.username) : "匿名"}</span></div>
+            {p.contact && canViewFeedback && (
+              <div className="meta-cell"><span className="meta-k">联系方式</span><span className="meta-v">{p.contact}</span></div>
             )}
             <div className="meta-cell"><span className="meta-k">提交时间</span><span className="meta-v">{new Date(p.created_at).toLocaleString("zh-CN")}</span></div>
             {p.reviewed_by && (
@@ -370,60 +222,13 @@ export default function ProposalDetailPage() {
         </div>
 
         <div className="card card-pad detail-section">
-          <h3 className="section-h">详细说明</h3>
+          <h3 className="section-h">详细内容</h3>
           {p.description ? (
-            isActivity ? (
-              <RichTextEditor content={p.description} editable={false} />
-            ) : (
-              <div className="plain-text">{p.description}</div>
-            )
+            <div className="plain-text">{p.description}</div>
           ) : (
-            <p className="empty-text">暂无说明</p>
+            <p className="empty-text">暂无内容</p>
           )}
         </div>
-
-        {isActivity && (
-          <div className="card card-pad detail-section">
-            <h3 className="section-h">投票</h3>
-            <div className="vote-deadline">
-              {p.status === "voting"
-                ? <>投票进行中，<strong>{formatRemaining(p.voting_end_at)}</strong>（公开实名，每人一次，不可修改；结果仅供参考，社长最终决定）</>
-                : <>投票已结束（共 {p.votes.length} 票）</>}
-            </div>
-            <div className="votebar">
-              <i className="app" style={{ width: pct(summary.approve, p.votes.length) }} />
-              <i className="opp" style={{ width: pct(summary.oppose, p.votes.length) }} />
-              <i className="abs" style={{ width: pct(summary.abstain, p.votes.length) }} />
-            </div>
-            <div className="vote-num">
-              <span className="app">赞成 {summary.approve}</span>
-              <span className="opp">反对 {summary.oppose}</span>
-              <span className="abs">弃权 {summary.abstain}</span>
-            </div>
-            {canVote ? (
-              <div className="vote-actions">
-                <button className="btn vote-btn approve" onClick={() => handleVote("approve")} disabled={actionLoading}>{VOTE_CHOICE_LABELS.approve}</button>
-                <button className="btn vote-btn oppose" onClick={() => handleVote("oppose")} disabled={actionLoading}>{VOTE_CHOICE_LABELS.oppose}</button>
-                <button className="btn vote-btn abstain" onClick={() => handleVote("abstain")} disabled={actionLoading}>{VOTE_CHOICE_LABELS.abstain}</button>
-              </div>
-            ) : p.my_vote ? (
-              <div className="vote-cast-hint">你已投：<strong>{VOTE_CHOICE_LABELS[p.my_vote]}</strong>（不可修改）</div>
-            ) : p.status === "voting" ? (
-              <div className="empty-text">登录后可参与投票</div>
-            ) : null}
-            {p.votes.length > 0 && (
-              <div className="vote-list">
-                {p.votes.map((v) => (
-                  <div key={v.id} className="vote-item">
-                    <Link to={`/u/${v.voter.id}`}><Avatar user={v.voter} size="sm" /></Link>
-                    <span className="vote-name">{v.voter.nickname || v.voter.username}</span>
-                    <span className={"vote-choice " + v.vote_choice}>{VOTE_CHOICE_LABELS[v.vote_choice]}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         <div className="card card-pad detail-section">
           <div className="section-head-row">
@@ -463,40 +268,6 @@ export default function ProposalDetailPage() {
             <p className="empty-text">暂无附件</p>
           )}
         </div>
-
-        {isActivity && (
-          <div className="card card-pad detail-section">
-            <h3 className="section-h">讨论 ({messages.length})</h3>
-            {conversationId && (
-              <div className="comment-input">
-                <textarea className="textarea" value={message}
-                          onChange={(e) => setMessage(e.target.value)}
-                          placeholder="输入消息，使用 @用户名 提及他人..." rows={3} />
-                <button className="btn btn-primary btn-sm"
-                        onClick={handleSendMessage}
-                        disabled={!message.trim() || messageSending}>
-                  {messageSending ? "发送中…" : "发送"}
-                </button>
-              </div>
-            )}
-            {messages.length > 0 ? (
-              <div className="comment-list">
-                {messages.map((m) => (
-                  <div key={m.id} className="comment-item">
-                    <div className="comment-head">
-                      <Link to={`/u/${m.sender.id}`}><Avatar user={m.sender} size="md" /></Link>
-                      <strong>{m.sender.nickname || m.sender.username}</strong>
-                      <span className="comment-time">{new Date(m.created_at).toLocaleString("zh-CN")}</span>
-                    </div>
-                    <div className="comment-content">{m.content}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="empty-text">暂无讨论</p>
-            )}
-          </div>
-        )}
       </div>
     </AppShell>
   );

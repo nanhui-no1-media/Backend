@@ -11,9 +11,14 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+# 是否在跑测试（manage.py test / Django test runner）。仅据此切换「测试期才该变」的
+# 面向速度与隔离的设置——绝不影响 runserver / 生产。
+TESTING = "test" in sys.argv or os.environ.get("DJANGO_TESTING") == "1"
 
 # 拉取项目根 .env（.gitignore，不入库）。本地开发放 SECRET_KEY / SMTP 授权码 /
 # Turnstile secret 等运行期密钥；生产由进程环境提供，.env 缺失时 load_dotenv 安静返回。
@@ -21,6 +26,17 @@ load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+# ── 测试期提速（仅 TESTING=True 生效，零生产影响）───────────────────────────
+# 实测：默认 PBKDF2 约 374ms/次；全套 ~200 次 create_user → 光密码哈希就占
+# 总时长 816s 的 ~45%。切 MD5（不可逆弱哈希）后单类测试 16.8s → 0.09s（190×）。
+# 测试库数据每次清空、绝不进生产，密码强度在此无意义。
+if TESTING:
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+    # 邮件走内存后端：注册/验证/重置路径发信不触网、不阻塞、可断言 mail.outbox。
+    # （防御性：本地若在 .env 配了 EMAIL_HOST_USER，否则会被切到真实 SMTP smtp.163.com。）
+    EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 
 def _email_backend_for(host_user):
@@ -72,6 +88,7 @@ INSTALLED_APPS = [
     'tasks',
     'messaging',
     'proposals',
+    'activities',
     'exam_board',
     'news',
     'attachments',

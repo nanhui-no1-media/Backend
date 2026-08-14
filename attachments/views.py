@@ -87,7 +87,7 @@ class AttachmentViewSet(
     # ── 删除：DELETE /attachments/{id}/ ──
     def destroy(self, request, *args, **kwargs):
         attachment = self.get_object()
-        parent = attachment.task or attachment.proposal or attachment.news
+        parent = attachment.task or attachment.proposal or attachment.news or attachment.submission
         # 统一规则；此外附件上传者始终可删自己上传的（用户故事 #12）。
         allowed = (
             can_manage_parent_attachments(request.user, parent)
