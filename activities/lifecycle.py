@@ -85,11 +85,24 @@ def can_rate(activity, user):
 
 
 def can_curate(activity, user):
-    """展示布展守卫：类型=展示、状态=待开始(scheduled)、用户已认证。
+    """展示布展守卫：类型=展示、状态∈{待开始,展示中}、用户已认证。
 
     策展人(发起人 or change_activity)的角色/归属判定由 CanModifyActivity 权限类
-    在 get_object 时把关;此处只管「此刻能否布展」的状态机条件(与 can_edit 同源:
-    仅待开始期可加/改/删/导入展品,开放后冻结)。
+    在 get_object 时把关;此处只管「此刻能否布展」的状态机条件——加/删/导入展品
+    在待开始与展示中都可进行,仅已结束(closed)禁止。改展品(标题)另见 can_edit_exhibit。
+    """
+    return (
+        user.is_authenticated
+        and activity.type == "exhibition"
+        and activity.status in (SCHEDULED, OPEN)
+    )
+
+
+def can_edit_exhibit(activity, user):
+    """展示展品改标题守卫：类型=展示、状态=待开始(scheduled)、用户已认证。
+
+    与 can_curate 的差异：展示中(open)仍可加/删/导入展品，但**改**已上架展品
+    （可能已有投票/赞踩）仅限待开始期，开放后锁定。
     """
     return (
         user.is_authenticated

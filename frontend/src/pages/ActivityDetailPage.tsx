@@ -29,7 +29,7 @@ export default function ActivityDetailPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // 展示布展(策展人 + 待开始):手动添加 / 改 / 删 / 从征集导入
+  // 展示布展(策展人;待开始+展示中):手动添加 / 删 / 从征集导入(改标题仅待开始)
   const [newTitle, setNewTitle] = useState("");
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [importOpen, setImportOpen] = useState(false);
@@ -161,7 +161,9 @@ export default function ActivityDetailPage() {
     finally { setBusy(false); }
   };
 
-  const canCurate = isExhibition && canManage && a.status === "scheduled";
+  // 展示布展门控:加/导入/删 → 待开始+展示中(canManageExhibits);改标题 → 仅待开始(canEditExhibit,镜像后端 can_edit_exhibit)
+  const canManageExhibits = isExhibition && canManage && (a.status === "scheduled" || a.status === "open");
+  const canEditExhibit = isExhibition && canManage && a.status === "scheduled";
 
   const doAddExhibit = async () => {
     if (newFiles.length < 1) return;
@@ -429,9 +431,9 @@ export default function ActivityDetailPage() {
             return (
               <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
                 <h3 className="section-h">展品 ({a.exhibits?.length || 0})</h3>
-                {canCurate && (
+                {canManageExhibits && (
                   <div className="alert alert-info" style={{ marginBottom: 12 }}>
-                    <span>布展中（待开始）——可加 / 改 / 删展品，或从征集导入。开放后冻结。</span>
+                    <span>{a.status === "scheduled" ? "布展中（待开始）——可加 / 改 / 删展品，或从征集导入；开放后仍可加 / 删，但标题锁定。" : "展示中——可继续加 / 导入 / 删展品；已上架展品的标题已锁定。"}</span>
                     <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                       <input className="input" style={{ flex: "1 1 160px" }} value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="新展品标题（选填）" />
                       <input type="file" multiple onChange={(e) => setNewFiles(Array.from(e.target.files || []))} />
@@ -522,9 +524,9 @@ export default function ActivityDetailPage() {
                               <button className={"rate-btn" + (ex.my_rating === "like" ? " is-on like" : "")} onClick={() => doRate(ex.id, "like")} disabled={busy || a.status !== "open"}>👍 {ex.like_count}</button>
                               <button className={"rate-btn" + (ex.my_rating === "dislike" ? " is-on dislike" : "")} onClick={() => doRate(ex.id, "dislike")} disabled={busy || a.status !== "open"}>👎 {ex.dislike_count}</button>
                             </div>
-                            {canCurate && (
+                            {canManageExhibits && (
                               <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-                                <button className="btn btn-ghost btn-sm" onClick={() => doUpdateExhibit(ex.id, ex.title)} disabled={busy}>改</button>
+                                {canEditExhibit && <button className="btn btn-ghost btn-sm" onClick={() => doUpdateExhibit(ex.id, ex.title)} disabled={busy}>改</button>}
                                 <button className="btn btn-ghost btn-sm" onClick={() => doDeleteExhibit(ex.id)} disabled={busy}>删</button>
                               </div>
                             )}

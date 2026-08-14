@@ -18,6 +18,7 @@ from .lifecycle import (
     OPEN,
     SCHEDULED,
     can_curate,
+    can_edit_exhibit,
     can_vote,
     initial_status,
     transition_overdue,
@@ -113,6 +114,9 @@ class CanCurateTest(TestCase):
         self.exhibit_open = Activity.objects.create(
             type="exhibition", status=OPEN, title="e2",
         )
+        self.exhibit_closed = Activity.objects.create(
+            type="exhibition", status=CLOSED, title="e3",
+        )
         self.deliberation = Activity.objects.create(
             type="deliberation", status=SCHEDULED, title="d", max_choices_per_voter=1,
         )
@@ -120,11 +124,29 @@ class CanCurateTest(TestCase):
     def test_scheduled_exhibition_allows_curate(self):
         self.assertTrue(can_curate(self.exhibit_scheduled, self.user))
 
-    def test_open_exhibition_blocks_curate(self):
-        self.assertFalse(can_curate(self.exhibit_open, self.user))
+    def test_open_exhibition_allows_curate(self):
+        self.assertTrue(can_curate(self.exhibit_open, self.user))
+
+    def test_closed_exhibition_blocks_curate(self):
+        self.assertFalse(can_curate(self.exhibit_closed, self.user))
 
     def test_non_exhibition_blocks_curate(self):
         self.assertFalse(can_curate(self.deliberation, self.user))
 
     def test_anonymous_cannot_curate(self):
         self.assertFalse(can_curate(self.exhibit_scheduled, AnonymousUser()))
+
+    def test_scheduled_exhibition_allows_edit_exhibit(self):
+        self.assertTrue(can_edit_exhibit(self.exhibit_scheduled, self.user))
+
+    def test_open_exhibition_blocks_edit_exhibit(self):
+        self.assertFalse(can_edit_exhibit(self.exhibit_open, self.user))
+
+    def test_closed_exhibition_blocks_edit_exhibit(self):
+        self.assertFalse(can_edit_exhibit(self.exhibit_closed, self.user))
+
+    def test_non_exhibition_blocks_edit_exhibit(self):
+        self.assertFalse(can_edit_exhibit(self.deliberation, self.user))
+
+    def test_anonymous_cannot_edit_exhibit(self):
+        self.assertFalse(can_edit_exhibit(self.exhibit_scheduled, AnonymousUser()))

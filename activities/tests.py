@@ -836,9 +836,28 @@ class ExhibitionTest(TestCase):
         r = self._add_exhibit(self.curator, aid, files=[])
         self.assertEqual(r.status_code, 400)
 
-    def test_add_exhibit_blocked_when_open(self):
-        # 未排期 → open → 不可布展
+    def test_add_exhibit_allowed_when_open(self):
+        # 未排期 → open → 展示中仍可加展品
         aid = self._create_empty(self.curator, scheduled=False).data["id"]
+        r = self._add_exhibit(self.curator, aid, title="A")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["exhibits"]), 1)
+
+    def test_add_exhibit_open_builds_option_and_files(self):
+        # 展示中加展品保留副作用:启用投票建选项 + 文件落盘
+        aid = self._create_empty(self.curator, voting_enabled=True,
+                                 max_choices_per_voter=1, scheduled=False).data["id"]
+        r = self._add_exhibit(self.curator, aid, title="X",
+                               files=[self._img("a.png"), self._img("b.png")])
+        self.assertEqual(r.status_code, 200)
+        e = r.data["exhibits"][0]
+        self.assertIsNotNone(e["vote_option_id"])
+        self.assertEqual(len(e["files"]), 2)
+
+    def test_add_exhibit_blocked_when_closed(self):
+        # 已结束 → 不可加展品
+        aid = self._create_empty(self.curator, scheduled=False).data["id"]
+        _json(self.client, "post", f"/activities/activities/{aid}/close/", self.curator)
         r = self._add_exhibit(self.curator, aid, title="A")
         self.assertEqual(r.status_code, 400)
 
@@ -870,9 +889,19 @@ class ExhibitionTest(TestCase):
         from .models import VoteOption
         self.assertEqual(VoteOption.objects.filter(activity_id=aid).count(), 0)
 
-    def test_delete_exhibit_open_blocked(self):
-        # open 态(未排期)拒绝——状态门在「展品不存在」之前
-        aid = self._create_empty(self.curator, voting_enabled=True, scheduled=False).data["id"]
+    def test_delete_exhibit_open_allowed(self):
+        # open 态(未排期)放行——展示中可删展品
+        aid = self._create_empty(self.curator, voting_enabled=True,
+                                 max_choices_per_voter=1, scheduled=False).data["id"]
+        self._add_exhibit(self.curator, aid, title="A")
+        eid = self.client.get(f"/activities/activities/{aid}/").data["exhibits"][0]["id"]
+        r = self._delete_exhibit(self.curator, aid, eid)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["exhibits"]), 0)
+
+    def test_delete_exhibit_blocked_when_closed(self):
+        aid = self._create_empty(self.curator, scheduled=False).data["id"]
+        _json(self.client, "post", f"/activities/activities/{aid}/close/", self.curator)
         r = self._delete_exhibit(self.curator, aid, 999)
         self.assertEqual(r.status_code, 400)
 
@@ -908,6 +937,22 @@ class ExhibitionTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data["exhibits"][0]["files"]), 1)
         self.assertEqual(r.data["exhibits"][0]["files"][0]["file_name"], "c.png")
+
+    def test_update_exhibit_blocked_when_open(self):
+        # 展示中可加/删/导入,但改标题仍限待开始
+        aid = self._create_empty(self.curator, scheduled=False).data["id"]
+        self._add_exhibit(self.curator, aid, title="A")
+        eid = self.client.get(f"/activities/activities/{aid}/").data["exhibits"][0]["id"]
+        r = self._update_exhibit(self.curator, aid, eid, title="新名")
+        self.assertEqual(r.status_code, 400)
+
+    def test_update_exhibit_blocked_when_closed(self):
+        aid = self._create_empty(self.curator, scheduled=True).data["id"]
+        self._add_exhibit(self.curator, aid, title="A")
+        eid = self.client.get(f"/activities/activities/{aid}/").data["exhibits"][0]["id"]
+        Activity.objects.filter(pk=aid).update(status="closed")
+        r = self._update_exhibit(self.curator, aid, eid, title="新名")
+        self.assertEqual(r.status_code, 400)
 
     # ---- 展品投票（每展品一选项）----
 
@@ -1073,6 +1118,27 @@ class ExhibitionTest(TestCase):
         self.assertEqual(len(r.data["exhibits"]), 2)
         files = [f for e in r.data["exhibits"] for f in e["files"]]
         self.assertEqual(len(files), 2)
+
+    def test_import_from_collection_allowed_when_open(self):
+        # 展示中(未排期)仍可导入
+        cid, sub_ids = self._make_collection_with_submissions(self.curator, n=1)
+        aid = self._create_empty(self.curator, voting_enabled=False, scheduled=False).data["id"]
+        self.client.force_authenticate(self.curator)
+        r = self.client.post(f"/activities/activities/{aid}/import_from_collection/",
+                             data={"collection_id": cid, "submission_ids": sub_ids},
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["exhibits"]), 1)
+
+    def test_import_from_collection_blocked_when_closed(self):
+        cid, sub_ids = self._make_collection_with_submissions(self.curator, n=1)
+        aid = self._create_empty(self.curator, voting_enabled=False, scheduled=False).data["id"]
+        _json(self.client, "post", f"/activities/activities/{aid}/close/", self.curator)
+        self.client.force_authenticate(self.curator)
+        r = self.client.post(f"/activities/activities/{aid}/import_from_collection/",
+                             data={"collection_id": cid, "submission_ids": sub_ids},
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 400)
 
     def test_import_invalid_collection(self):
         aid = self._create_empty(self.curator, scheduled=True).data["id"]

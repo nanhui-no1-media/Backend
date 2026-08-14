@@ -29,6 +29,7 @@ from .lifecycle import (
     SCHEDULED,
     can_curate,
     can_edit,
+    can_edit_exhibit,
     can_rate,
     can_submit,
     can_vote,
@@ -314,12 +315,12 @@ class ActivityViewSet(viewsets.ModelViewSet):
         activity = self.get_queryset().get(pk=activity.pk)
         return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
 
-    # ── 展示:详情页布展(待开始期加/改/删/导入展品)──
+    # ── 展示:详情页布展(待开始/展示中加/删/导入;改标题限待开始)──
     @action(detail=True, methods=["post"], url_path="add_exhibit")
     def add_exhibit(self, request, pk=None):
         activity = self.get_object()
         if not can_curate(activity, request.user):
-            return Response({"detail": "仅展示可在待开始期加展品"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "仅展示可在待开始/展示中加展品"}, status=status.HTTP_400_BAD_REQUEST)
         files = request.FILES.getlist("files")
         if not files:
             return Response({"detail": "展品至少需要 1 个文件"}, status=status.HTTP_400_BAD_REQUEST)
@@ -337,7 +338,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
     def delete_exhibit(self, request, pk=None):
         activity = self.get_object()
         if not can_curate(activity, request.user):
-            return Response({"detail": "仅展示可在待开始期删展品"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "仅展示可在待开始/展示中删展品"}, status=status.HTTP_400_BAD_REQUEST)
         try:
             exhibit = activity.exhibits.get(pk=request.data.get("exhibit_id"))
         except (Exhibit.DoesNotExist, ValueError, TypeError):
@@ -352,7 +353,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="update_exhibit")
     def update_exhibit(self, request, pk=None):
         activity = self.get_object()
-        if not can_curate(activity, request.user):
+        if not can_edit_exhibit(activity, request.user):
             return Response({"detail": "仅展示可在待开始期改展品"}, status=status.HTTP_400_BAD_REQUEST)
         try:
             exhibit = activity.exhibits.get(pk=request.data.get("exhibit_id"))
@@ -388,7 +389,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
 
         activity = self.get_object()
         if not can_curate(activity, request.user):
-            return Response({"detail": "仅展示可在待开始期导入展品"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "仅展示可在待开始/展示中导入展品"}, status=status.HTTP_400_BAD_REQUEST)
         try:
             source = Activity.objects.get(pk=request.data.get("collection_id"), type="collection")
         except (Activity.DoesNotExist, ValueError, TypeError):
