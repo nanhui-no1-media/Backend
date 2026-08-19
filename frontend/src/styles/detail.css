@@ -57,16 +57,6 @@
 .att-del { color: var(--faint); width:26px; height:26px; border-radius: var(--r-xs); display:inline-flex; align-items:center; justify-content:center; }
 .att-del:hover { color: var(--danger); background: var(--danger-bg); }
 
-/* 讨论 */
-.comment-input { display:flex; flex-direction:column; gap: var(--s-2); }
-.comment-list { display:flex; flex-direction:column; gap:0; }
-.comment-item { padding: var(--s-3) 0; border-top:1px dashed var(--line); }
-.comment-item:first-child { border-top:none; }
-.comment-head { display:flex; align-items:center; gap: var(--s-2); margin-bottom:6px; }
-.comment-head strong { font-size:14px; }
-.comment-time { font-size:12px; color: var(--faint); font-family: var(--font-mono); }
-.comment-content { font-size:14px; color: var(--ink-900); line-height:1.6; }
-
 /* 投票（活动详情，取自原型 activity.html）
    .votebar / .vote-num 基元已上移到 cobalt.css（与列表页共用）；此处仅保留详情专属样式。 */
 .vote-deadline { font-size:13px; color: var(--muted); background: var(--bg-soft); border-radius: var(--r-md); padding: var(--s-3) var(--s-4); }

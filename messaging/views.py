@@ -39,6 +39,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
         return (
             Conversation.objects
             .filter(participants=self.request.user)
+            .order_by("-updated_at", "-id")
             .select_related("task", "proposal")
             .prefetch_related(
                 "participants", "participants__profile",
@@ -86,7 +87,10 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def messages(self, request):
-        """获取会话的消息列表（通过 conversation id 参数）"""
+        """获取会话的消息列表（通过 conversation id 参数）。
+
+        倒序分页（最新在前，DRF 默认 20/页）：前端「最新优先 + 向上加载更早」消费信封。
+        """
         conversation_id = request.query_params.get("conversation_id")
         if not conversation_id:
             return Response({"detail": "缺少 conversation_id"}, status=status.HTTP_400_BAD_REQUEST)
@@ -95,7 +99,17 @@ class ConversationViewSet(viewsets.ModelViewSet):
         except Conversation.DoesNotExist:
             return Response({"detail": "会话不存在"}, status=status.HTTP_404_NOT_FOUND)
 
-        messages = conversation.messages.select_related("sender", "sender__profile").prefetch_related("mentions", "mentions__profile").order_by("created_at")
+        messages = (
+            conversation.messages
+            .select_related("sender", "sender__profile")
+            .prefetch_related("mentions", "mentions__profile")
+            .order_by("-created_at")
+        )
+        page = self.paginate_queryset(messages)
+        if page is not None:
+            serializer = MessageSerializer(page, many=True, context={"request": request})
+            return self.get_paginated_response(serializer.data)
+        # 无分页兜底（未配全局分页时）：仍按最新在前返回
         return Response(MessageSerializer(messages, many=True, context={"request": request}).data)
 
     @action(detail=False, methods=["post"])

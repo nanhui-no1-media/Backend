@@ -57,9 +57,18 @@ export const api = {
   listUsers: () =>
     request("/users/"),
 
+  // 用户搜索（任务表单指派/协作者）：分页信封 + ?search=（用户名/昵称模糊）
+  searchUsers: (search: string) =>
+    request(`/users/${search ? `?search=${encodeURIComponent(search)}` : ""}`) as Promise<{
+      count: number;
+      next: string | null;
+      previous: string | null;
+      results: { id: number; username: string; nickname: string; avatar: string | null }[];
+    }>,
+
   getUserProfile: (id: number) =>
     request(`/users/${id}/profile/`),
 
-  getUserContent: (id: number, type: "news" | "proposals" | "tasks") =>
-    request(`/users/${id}/content/?type=${type}`),
+  getUserContent: (id: number, type: "news" | "proposals" | "tasks", page = 1) =>
+    request(`/users/${id}/content/?type=${type}&page=${page}`),
 };

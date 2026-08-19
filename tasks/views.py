@@ -36,11 +36,12 @@ from .serializers import (
 
 
 class TagViewSet(viewsets.ModelViewSet):
-    """标签管理"""
+    """标签管理（标签量小，关分页：前端表单一次性拉全量）"""
     queryset = Tag.objects.all()
     serializer_class = TagSerializer
     permission_classes = [IsAuthenticated, CanManageTag]
     search_fields = ["name"]
+    pagination_class = None
 
 
 # apply 拒绝类别 → HTTP 状态码（默认 bad_request → 400）。
@@ -91,6 +92,13 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return super().get_queryset()
+
+    def list(self, request, *args, **kwargs):
+        """列表：默认分页（20/页）；?all=1 逃生口返回全量裸数组（时间线/甘特图用）。"""
+        if request.query_params.get("all") == "1":
+            qs = self.filter_queryset(self.get_queryset())
+            return Response(self.get_serializer(qs, many=True).data)
+        return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         serializer.save(creator=self.request.user)

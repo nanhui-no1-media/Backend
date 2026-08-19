@@ -16,10 +16,14 @@ from django.contrib.auth import login, logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.core.mail import send_mail
+from rest_framework.exceptions import NotFound
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.request import Request
 
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .models import Profile, IdentityProof, UserSession, Verification, is_verified
@@ -307,12 +311,19 @@ def me_view(request):
 @require_GET
 @login_required
 def sessions_view(request):
-    """本人最近登录记录（设备/IP/时间，当前会话高亮），按时间倒序裁剪到历史上限。"""
-    rows = (
-        UserSession.objects.filter(user=request.user)
-        .order_by("-created_at", "-id")[:SESSION_HISTORY_LIMIT]
-    )
+    """本人最近登录记录（设备/IP/时间，当前会话高亮），按时间倒序裁剪到历史上限。
+
+    数据本身按用户裁剪到 SESSION_HISTORY_LIMIT 条，分页按同上限做单页，
+    返回完整信封（count/next/previous/results）供前端统一消费。
+    """
+    qs = UserSession.objects.filter(user=request.user).order_by("-created_at", "-id")
+    paginator = PageNumberPagination()
+    paginator.page_size = SESSION_HISTORY_LIMIT
+    page = paginator.paginate_queryset(qs, Request(request))  # 单页（存储层已裁剪）
     return JsonResponse({
+        "count": paginator.page.paginator.count,
+        "next": paginator.get_next_link(),
+        "previous": paginator.get_previous_link(),
         "results": [
             {
                 "id": r.id, # type: ignore
@@ -322,8 +333,8 @@ def sessions_view(request):
                 "created_at": r.created_at.isoformat(),
                 "is_current": r.is_current,
             }
-            for r in rows
-        ]
+            for r in page
+        ],
     })
 
 
@@ -678,12 +689,28 @@ def change_password_view(request):
     return JsonResponse({"message": "密码修改成功"})
 
 
+@require_GET
 @login_required
 def users_view(request):
-    """用户列表（给任务表单选人用）"""
-    users = User.objects.select_related("profile").filter(is_active=True)
+    """用户列表（给任务表单选人用）：DRF 分页 + 可选 ?search=（用户名/昵称模糊）。
+
+    分页信封与 DRF 默认保持一致（count/next/previous/results，页大小 20）。
+    search 为空时返回全部激活用户的第一页（任务表单搜人用，前端按需追加页）。
+    """
+    qs = User.objects.select_related("profile").filter(is_active=True).order_by("username", "id")
+    search = (request.GET.get("search") or "").strip()
+    if search:
+        qs = qs.filter(Q(username__icontains=search) | Q(profile__nickname__icontains=search))
+
+    paginator = PageNumberPagination()
+    try:
+        page = paginator.paginate_queryset(qs, Request(request))
+    except NotFound:
+        # 越界页：返回空 results，信封仍在（前端页码器不会请求越界页，防御性处理）
+        return JsonResponse({"count": qs.count(), "next": None, "previous": None, "results": []})
+
     data = []
-    for u in users:
+    for u in page:
         profile = getattr(u, "profile", None)
         data.append({
             "id": u.id, # type: ignore
@@ -691,7 +718,12 @@ def users_view(request):
             "nickname": profile.nickname if profile else "",
             "avatar": profile.avatar.url if profile and profile.avatar else None,
         })
-    return JsonResponse({"results": data})
+    return JsonResponse({
+        "count": paginator.page.paginator.count,
+        "next": paginator.get_next_link(),
+        "previous": paginator.get_previous_link(),
+        "results": data,
+    })
 
 
 @require_GET
@@ -735,7 +767,10 @@ def user_profile_view(request, id):
 @require_GET
 @login_required
 def user_content_view(request, id):
-    """某用户的 tab 内容（按身份裁剪可见性，委托可见性模块）。"""
+    """某用户的 tab 内容（按身份裁剪可见性，委托可见性模块）。
+
+    分页（CONTENT_LIMIT/页）：前端内容面板「加载更多」逐页向下翻。
+    """
     viewed = User.objects.filter(pk=id, is_active=True).first()
     if viewed is None:
         return JsonResponse({"error": "用户不存在"}, status=404)
@@ -750,7 +785,22 @@ def user_content_view(request, id):
 
     if type_ == "news":
         from news.models import News
-        qs = News.objects.filter(author=viewed, **visibility.extra_filter)
+        qs = News.objects.filter(author=viewed, **visibility.extra_filter).order_by("-created_at", "-id")
+    elif type_ == "proposals":
+        from proposals.models import Proposal
+        qs = Proposal.objects.filter(creator=viewed, **visibility.extra_filter).order_by("-created_at", "-id")
+    else:  # tasks（visibility.denied 已保证仅本人到此）
+        from tasks.models import Task
+        qs = Task.objects.filter(assignee=viewed, **visibility.extra_filter).order_by("-created_at", "-id")
+
+    paginator = PageNumberPagination()
+    paginator.page_size = CONTENT_LIMIT
+    try:
+        page = paginator.paginate_queryset(qs, Request(request))
+    except NotFound:
+        return JsonResponse({"count": qs.count(), "next": None, "previous": None, "results": []})
+
+    if type_ == "news":
         results = [{
             "id": n.id,
             "title": n.title,
@@ -758,29 +808,28 @@ def user_content_view(request, id):
             "cover_image": n.cover_image.url if n.cover_image else None,
             "is_published": n.is_published,
             "published_at": (n.published_at or n.created_at).isoformat(),
-        } for n in qs[:CONTENT_LIMIT]]
-
+        } for n in page]
     elif type_ == "proposals":
-        from proposals.models import Proposal
-        qs = Proposal.objects.filter(creator=viewed, **visibility.extra_filter)
         results = [{
             "id": p.id,
             "title": p.title,
             "proposal_type": p.proposal_type,
             "status": p.status,
             "created_at": p.created_at.isoformat(),
-        } for p in qs[:CONTENT_LIMIT]]
-
-    else:  # tasks（visibility.denied 已保证仅本人到此）
-        from tasks.models import Task
-        qs = Task.objects.filter(assignee=viewed, **visibility.extra_filter)
+        } for p in page]
+    else:
         results = [{
             "id": t.id,
             "title": t.title,
             "status": t.status,
             "priority": t.priority,
             "created_at": t.created_at.isoformat(),
-        } for t in qs[:CONTENT_LIMIT]]
+        } for t in page]
 
-    return JsonResponse({"results": results})
+    return JsonResponse({
+        "count": paginator.page.paginator.count,
+        "next": paginator.get_next_link(),
+        "previous": paginator.get_previous_link(),
+        "results": results,
+    })
 

@@ -48,15 +48,38 @@ interface Props {
 export default function ContentListPanel({ userId, type }: Props) {
   const [items, setItems] = useState<ContentItem[] | null>(null);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     setItems(null);
     setError("");
-    api.getUserContent(userId, type)
-      .then((d: any) => setItems(d.results as ContentItem[]))
+    setPage(1);
+    setHasMore(false);
+    api.getUserContent(userId, type, 1)
+      .then((d: any) => {
+        setItems(d.results as ContentItem[]);
+        setHasMore(d.next != null);
+      })
       .catch((e: any) => setError(e.status === 403 ? "无权查看" : "加载失败"));
   }, [userId, type]);
+
+  const loadMore = async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const d: any = await api.getUserContent(userId, type, page + 1);
+      setItems((prev) => [...(prev || []), ...(d.results as ContentItem[])]);
+      setPage((p) => p + 1);
+      setHasMore(d.next != null);
+    } catch {
+      setError("加载失败");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   if (error) return <p className="muted">{error}</p>;
   if (items === null) return <p className="muted">加载中…</p>;
@@ -65,20 +88,27 @@ export default function ContentListPanel({ userId, type }: Props) {
   const go = (id: number) => navigate(`${DETAIL_PATH[type]}/${id}`);
 
   return (
-    <ul className="profile-content-list">
-      {items.map((it) => (
-        <li
-          key={it.id}
-          className="profile-content-item"
-          role="button"
-          tabIndex={0}
-          onClick={() => go(it.id)}
-          onKeyDown={(e) => { if (e.key === "Enter") go(it.id); }}
-        >
-          <div className="pci-title">{it.title}</div>
-          <div className="pci-meta">{metaFor(type, it)}</div>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="profile-content-list">
+        {items.map((it) => (
+          <li
+            key={it.id}
+            className="profile-content-item"
+            role="button"
+            tabIndex={0}
+            onClick={() => go(it.id)}
+            onKeyDown={(e) => { if (e.key === "Enter") go(it.id); }}
+          >
+            <div className="pci-title">{it.title}</div>
+            <div className="pci-meta">{metaFor(type, it)}</div>
+          </li>
+        ))}
+      </ul>
+      {hasMore && (
+        <button className="profile-load-more" onClick={loadMore} disabled={loadingMore}>
+          {loadingMore ? "加载中…" : "加载更多"}
+        </button>
+      )}
+    </>
   );
 }

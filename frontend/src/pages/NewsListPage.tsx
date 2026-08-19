@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
+import Pagination from "../components/Pagination";
+import { usePagedList } from "../hooks/usePagedList";
 import { api } from "../api/client";
 import { newsApi } from "../api/news";
 import {
@@ -24,14 +26,10 @@ export default function NewsListPage() {
   const navigate = useNavigate();
   const [me, setMe] = useState<Me | null>(null);
   const [featured, setFeatured] = useState<NewsListItem | null>(null);
-  const [items, setItems] = useState<NewsListItem[]>([]);
-  const [count, setCount] = useState(0);
   const [hot, setHot] = useState<NewsListItem[]>([]);
   const [tagCloud, setTagCloud] = useState<NewsTag[]>([]);
   const [category, setCategory] = useState<NewsCategory | "">("");
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
 
   // 公开页：匿名也可读，故 me() 失败静默（不弹登录）
   useEffect(() => {
@@ -44,38 +42,24 @@ export default function NewsListPage() {
     newsApi.tags().then(setTagCloud).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    setLoading(true);
-    const params: Record<string, string> = { page: String(page) };
-    if (category) params.category = category;
-    if (search) params.search = search;
-    newsApi.list(params)
-      .then((data) => { setItems(data.results || []); setCount(data.count); })
-      .catch(() => { setItems([]); setCount(0); })
-      .finally(() => setLoading(false));
-  }, [category, search, page]);
+  const {
+    data: items,
+    page,
+    setPage,
+    totalPages,
+    loading,
+  } = usePagedList<NewsListItem>(
+    (params) => newsApi.list(params),
+    NEWS_PAGE_SIZE,
+    { category: category || undefined, search: search || undefined },
+  );
 
-  const totalPages = Math.max(1, Math.ceil(count / NEWS_PAGE_SIZE));
   const showFeatured = !category && !search && page === 1;
   // 头条同时在列表中出现会重复，hero 展示时从列表中剔除
   const visibleItems = showFeatured && featured ? items.filter((n) => n.id !== featured.id) : items;
 
-  const pickCategory = (c: NewsCategory | "") => { setCategory(c); setPage(1); };
-  const onSearch = (v: string) => { setSearch(v); setPage(1); };
-
-  // 分页按钮：1 … (page-1,page,page+1) … totalPages
-  const pagerEntries = (): (number | "ellipsis")[] => {
-    const nums = new Set<number>([1, totalPages, page, page - 1, page + 1]);
-    const sorted = [...nums].filter((n) => n >= 1 && n <= totalPages).sort((a, b) => a - b);
-    const out: (number | "ellipsis")[] = [];
-    let prev = 0;
-    for (const n of sorted) {
-      if (prev && n - prev > 1) out.push("ellipsis");
-      out.push(n);
-      prev = n;
-    }
-    return out;
-  };
+  const pickCategory = (c: NewsCategory | "") => setCategory(c);
+  const onSearch = (v: string) => setSearch(v);
 
   return (
     <AppShell>
@@ -173,23 +157,7 @@ export default function NewsListPage() {
             )}
 
             {/* 分页 */}
-            {!loading && totalPages > 1 && (
-              <nav className="pager" aria-label="分页" style={{ marginTop: "var(--s-10)" }}>
-                <button aria-label="上一页" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M11 6l-6 6 6 6" /></svg>
-                </button>
-                {pagerEntries().map((b, i) =>
-                  b === "ellipsis" ? (
-                    <span key={"e" + i} className="ellipsis">…</span>
-                  ) : (
-                    <button key={b} aria-current={b === page ? "page" : undefined} onClick={() => setPage(b)}>{b}</button>
-                  )
-                )}
-                <button aria-label="下一页" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-                </button>
-              </nav>
-            )}
+            {!loading && <Pagination page={page} totalPages={totalPages} onChange={setPage} />}
           </div>
 
           {/* 侧栏 */}

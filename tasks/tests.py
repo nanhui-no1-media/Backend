@@ -181,3 +181,47 @@ class TaskAvailableActionsTest(TestCase):
         data = resp.data
         items = data["results"] if isinstance(data, dict) and "results" in data else data
         self.assertNotIn("available_actions", items[0])
+
+
+class TaskListPaginationTest(TestCase):
+    """任务列表分页 + ?all=1 逃生口 + 标签关分页。
+
+    - 默认返回分页信封（20/页）；?all=1 返回全量裸数组（时间线/甘特用），并尊重筛选。
+    - /tasks/tags/ 关分页：一次返回全部标签（表单下拉需要全量）。
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="plain", password="x")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        for i in range(25):
+            Task.objects.create(title=f"任务{i:02d}", creator=self.user, status="pending")
+
+    def test_default_paginated_envelope(self):
+        resp = self.client.get("/tasks/tasks/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(set(resp.data.keys()), {"count", "next", "previous", "results"})
+        self.assertEqual(resp.data["count"], 25)
+        self.assertEqual(len(resp.data["results"]), 20)
+        self.assertIsNotNone(resp.data["next"])
+
+    def test_all_returns_bare_full_array(self):
+        resp = self.client.get("/tasks/tasks/?all=1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsInstance(resp.data, list)
+        self.assertEqual(len(resp.data), 25)
+
+    def test_all_respects_filters(self):
+        Task.objects.filter(title="任务01").update(status="completed")
+        resp = self.client.get("/tasks/tasks/?all=1&status=completed")
+        self.assertEqual(len(resp.data), 1)
+        self.assertEqual(resp.data[0]["title"], "任务01")
+
+    def test_tags_unpaginated(self):
+        from .models import Tag
+        for i in range(5):
+            Tag.objects.create(name=f"标签{i}")
+        resp = self.client.get("/tasks/tags/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsInstance(resp.data, list)
+        self.assertEqual(len(resp.data), 5)

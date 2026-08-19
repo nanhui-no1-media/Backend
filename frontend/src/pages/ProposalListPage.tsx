@@ -11,9 +11,14 @@ import {
   PROPOSAL_STATUS_BADGE_CLASS,
   FEEDBACK_CATEGORY_LABELS,
 } from "../types/proposals";
+import Pagination from "../components/Pagination";
 import AppShell from "../components/AppShell";
 import { useLoginModal } from "../components/LoginModalProvider";
+import { usePagedList } from "../hooks/usePagedList";
+import type { Paginated } from "../types/pagination";
 import "../styles/list.css";
+
+const PAGE_SIZE = 20;
 
 interface CurrentUser {
   id: number;
@@ -26,12 +31,9 @@ export default function ProposalListPage() {
   const { openLogin } = useLoginModal();
   // undefined = 解析中, null = 未登录（匿名）
   const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
-  const [proposals, setProposals] = useState<ProposalListItem[]>([]);
-  const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
-  const [reloadKey, setReloadKey] = useState(0);
 
   // 反馈表单（公开匿名提交）
   const [showFeedbackForm, setShowFeedbackForm] = useState(false);
@@ -61,19 +63,22 @@ export default function ProposalListPage() {
     if (user === null) setShowFeedbackForm(true);
   }, [user]);
 
-  // 加载列表：社长见全部反馈，普通成员见自己提交的（后端按 view_feedback 裁剪）
-  useEffect(() => {
-    if (user === undefined || user === null) return;
-    setLoading(true);
-    setError("");
-    const params: Record<string, string> = {};
-    if (statusFilter) params.status = statusFilter;
-    if (search) params.search = search;
-    proposalApi.list(params)
-      .then((data: any) => setProposals(data.results || data))
-      .catch((err) => { setError(err.message); setProposals([]); })
-      .finally(() => setLoading(false));
-  }, [user, statusFilter, search, reloadKey]);
+  // 加载列表：社长见全部反馈，普通成员见自己提交的（后端按 view_feedback 裁剪）；分页 20/页。
+  // enabled 等身份解析（undefined=解析中 / null=匿名不展示列表 / 登录后才拉）。
+  const {
+    data: proposals,
+    page,
+    setPage,
+    totalPages,
+    loading,
+    error: listError,
+    refetch,
+  } = usePagedList<ProposalListItem>(
+    (params) => proposalApi.list(params) as Promise<Paginated<ProposalListItem>>,
+    PAGE_SIZE,
+    { status: statusFilter || undefined, search: search || undefined },
+    isLoggedIn,
+  );
 
   const submitFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,7 +116,7 @@ export default function ProposalListPage() {
       setFbCategory("suggestion");
       setFbAttributed(false);
       setFbFiles([]);
-      setReloadKey((k) => k + 1);
+      refetch();
       setTimeout(() => setFbSuccess(false), 5000);
     } catch (err: any) {
       setError(err.status === 429
@@ -156,10 +161,10 @@ export default function ProposalListPage() {
       </div>
 
       <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
-        {error && (
+        {(error || listError) && (
           <div className="alert alert-danger" style={{ margin: "var(--s-6) 0 var(--s-4)" }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
-            <span>{error}</span>
+            <span>{error || listError}</span>
           </div>
         )}
 
@@ -270,6 +275,9 @@ export default function ProposalListPage() {
               </div>
             ) : (
               proposals.map(renderCard)
+            )}
+            {!loading && proposals.length > 0 && (
+              <Pagination page={page} totalPages={totalPages} onChange={setPage} />
             )}
           </>
         )}

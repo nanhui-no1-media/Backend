@@ -801,3 +801,130 @@ class UserContentViewTest(TestCase):
         self.assertNotIn("pending", proposals)
         self.assertEqual(self._get(c, "tasks").status_code, 403)
 
+
+class UsersViewTest(TestCase):
+    """GET /auth/users/ —— DRF 分页信封 + ?search=（用户名/昵称模糊）。
+
+    任务表单指派/协作者搜索式下拉的数据源；无 search 时返回全量激活用户第一页。
+    """
+
+    URL = "/auth/users/"
+
+    def setUp(self):
+        self.client = Client()
+        self.client.force_login(User.objects.create_user(username="login", password="p"))
+        from accounts.models import Profile
+        self.bob = User.objects.create_user(username="bob", password="p")
+        Profile.objects.create(user=self.bob, nickname="")
+        self.alice = User.objects.create_user(username="alice", password="p")
+        Profile.objects.create(user=self.alice, nickname="爱丽丝")
+
+    def test_requires_auth(self):
+        self.assertIn(Client().get(self.URL).status_code, (401, 403, 302))
+
+    def test_returns_paginated_envelope(self):
+        resp = self.client.get(self.URL)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(set(data), {"count", "next", "previous", "results"})
+        self.assertEqual(data["count"], 3)  # login + bob + alice
+        self.assertEqual(len(data["results"]), 3)
+        self.assertIn("id", data["results"][0])
+        self.assertIn("username", data["results"][0])
+        self.assertIn("nickname", data["results"][0])
+        self.assertIn("avatar", data["results"][0])
+
+    def test_search_by_username(self):
+        data = self.client.get(self.URL, {"search": "alice"}).json()
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["results"][0]["username"], "alice")
+
+    def test_search_by_nickname(self):
+        data = self.client.get(self.URL, {"search": "爱丽丝"}).json()
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["results"][0]["username"], "alice")
+
+    def test_search_no_match_empty_results(self):
+        data = self.client.get(self.URL, {"search": "zzznomatch"}).json()
+        self.assertEqual(data["count"], 0)
+        self.assertEqual(data["results"], [])
+
+    def test_page_size_20_and_pagination(self):
+        # 造 25 个用户 → 分两页；第二页 next=null
+        for i in range(25):
+            User.objects.create_user(username=f"user{i}", password="p")
+        first = self.client.get(self.URL).json()
+        self.assertEqual(len(first["results"]), 20)
+        self.assertIsNotNone(first["next"])
+        second = self.client.get(self.URL, {"page": 2}).json()
+        self.assertEqual(len(second["results"]), 8)  # 3 + 25 = 28，第二页 8 条
+        self.assertIsNone(second["next"])
+
+    def test_out_of_range_page_returns_empty_results(self):
+        data = self.client.get(self.URL, {"page": 999}).json()
+        self.assertEqual(data["results"], [])
+
+
+
+class SessionsEnvelopeTest(TestCase):
+    """GET /auth/sessions/ —— 信封补全：count/next/previous/results 齐备（数据本身单页）。"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="sess-env", password="secret123")
+
+    def test_full_envelope_single_page(self):
+        c = Client()
+        c.post(
+            "/auth/login/",
+            data=json.dumps({"username": "sess-env", "password": "secret123"}),
+            content_type="application/json",
+            REMOTE_ADDR="1.2.3.4",
+            HTTP_USER_AGENT="Mozilla/5.0 (Windows NT 10.0) Chrome/120.0",
+        )
+        data = c.get("/auth/sessions/").json()
+        self.assertEqual(set(data.keys()), {"count", "next", "previous", "results"})
+        self.assertEqual(data["count"], len(data["results"]))
+        self.assertIsNone(data["next"])
+        self.assertIsNone(data["previous"])
+
+
+class UserContentPaginationTest(TestCase):
+    """GET /auth/users/{id}/content/ —— 分页信封 + 逐页翻。
+
+    面板「加载更多」消费信封：page=1 为最新 CONTENT_LIMIT 条，next 非空即还有更多。
+    """
+
+    URL_TMPL = "/auth/users/{}/content/?type=tasks"
+
+    def setUp(self):
+        self.owner = User.objects.create_user(username="owner", password="p")
+        from tasks.models import Task
+        for i in range(17):
+            Task.objects.create(title=f"t{i:02d}", creator=self.owner, assignee=self.owner)
+
+    def test_envelope_and_two_pages(self):
+        c = Client()
+        c.force_login(self.owner)
+        url = self.URL_TMPL.format(self.owner.pk)
+        page1 = c.get(url).json()
+        self.assertEqual(set(page1.keys()), {"count", "next", "previous", "results"})
+        self.assertEqual(page1["count"], 17)
+        self.assertEqual(len(page1["results"]), 15)
+        self.assertIsNotNone(page1["next"])
+        self.assertIsNone(page1["previous"])
+        self.assertEqual(page1["results"][0]["title"], "t16")  # 最新在前
+
+        page2 = c.get(f"{url}&page=2").json()
+        self.assertEqual(len(page2["results"]), 2)
+        self.assertIsNone(page2["next"])
+        self.assertIsNotNone(page2["previous"])
+        self.assertEqual(page2["results"][-1]["title"], "t00")  # 最早的兜底
+
+    def test_out_of_range_page_empty_envelope(self):
+        c = Client()
+        c.force_login(self.owner)
+        data = c.get(f"{self.URL_TMPL.format(self.owner.pk)}&page=99").json()
+        self.assertEqual(data["count"], 17)
+        self.assertEqual(data["results"], [])
+        self.assertIsNone(data["next"])
+        self.assertIsNone(data["previous"])

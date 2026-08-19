@@ -1,21 +1,21 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api } from "../api/client";
 import { taskApi } from "../api/tasks";
 import {
   TaskDetail, TaskPriority, TaskFormData,
   Tag, PRIORITY_LABELS,
 } from "../types/tasks";
 import RichTextEditor from "../components/RichTextEditor";
-import Avatar from "../components/Avatar";
+import UserSearchSelect, { type SelectUser } from "../components/UserSearchSelect";
 import "./TaskFormPage.css";
 
-interface SimpleUser {
-  id: number;
-  username: string;
-  nickname: string;
-  avatar: string | null;
-}
+// 任务详情返回的 TaskUser → 选择器最小形状
+const toSelect = (u: { id: number; username: string; nickname: string; avatar: string | null }): SelectUser => ({
+  id: u.id,
+  username: u.username,
+  nickname: u.nickname,
+  avatar: u.avatar,
+});
 
 export default function TaskFormPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,21 +30,14 @@ export default function TaskFormPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("medium");
-  const [assigneeId, setAssigneeId] = useState<number | "">("");
+  const [assignee, setAssignee] = useState<SelectUser[]>([]);
   const [tagIds, setTagIds] = useState<number[]>([]);
-  const [collaboratorIds, setCollaboratorIds] = useState<number[]>([]);
+  const [collaborators, setCollaborators] = useState<SelectUser[]>([]);
 
   const [tags, setTags] = useState<Tag[]>([]);
-  const [users, setUsers] = useState<SimpleUser[]>([]);
 
   useEffect(() => {
     taskApi.listTags().then((d) => setTags(d.results || d)).catch(console.error);
-    api.listUsers().then((d) => {
-      const list: SimpleUser[] = (d.results || []).map((u: any) => ({
-        id: u.id, username: u.username, nickname: u.nickname, avatar: u.avatar,
-      }));
-      setUsers(list);
-    }).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -59,9 +52,9 @@ export default function TaskFormPage() {
         setTitle(task.title);
         setDescription(task.description);
         setPriority(task.priority);
-        setAssigneeId(task.assignee?.id || "");
+        setAssignee(task.assignee ? [toSelect(task.assignee)] : []);
         setTagIds(task.tags.map((t) => t.id));
-        setCollaboratorIds(task.collaborators.map((c) => c.id));
+        setCollaborators(task.collaborators.map(toSelect));
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -70,12 +63,6 @@ export default function TaskFormPage() {
   const toggleTag = (tagId: number) => {
     setTagIds((prev) =>
       prev.includes(tagId) ? prev.filter((x) => x !== tagId) : [...prev, tagId]
-    );
-  };
-
-  const toggleCollaborator = (userId: number) => {
-    setCollaboratorIds((prev) =>
-      prev.includes(userId) ? prev.filter((x) => x !== userId) : [...prev, userId]
     );
   };
 
@@ -93,9 +80,9 @@ export default function TaskFormPage() {
       description,
       priority,
     };
-    if (assigneeId) data.assignee_id = Number(assigneeId);
+    if (assignee.length > 0) data.assignee_id = assignee[0].id;
     if (tagIds.length > 0) data.tag_ids = tagIds;
-    if (collaboratorIds.length > 0) data.collaborator_ids = collaboratorIds;
+    if (collaborators.length > 0) data.collaborator_ids = collaborators.map((c) => c.id);
 
     try {
       const result = isEdit
@@ -164,12 +151,7 @@ export default function TaskFormPage() {
 
           <div className="form-field">
             <label>负责人</label>
-            <select value={assigneeId} onChange={(e) => setAssigneeId(Number(e.target.value) || "")}>
-              <option value="">未分配（可后续认领）</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>{u.nickname || u.username}</option>
-              ))}
-            </select>
+            <UserSearchSelect selected={assignee} onChange={setAssignee} single placeholder="搜索并选择负责人（可选）" />
           </div>
 
           <div className="form-field">
@@ -191,19 +173,7 @@ export default function TaskFormPage() {
 
           <div className="form-field">
             <label>协作者</label>
-            <div className="collaborator-selector">
-              {users.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  className={`collab-option user-with-avatar${collaboratorIds.includes(u.id) ? " selected" : ""}`}
-                  onClick={() => toggleCollaborator(u.id)}
-                >
-                  <Avatar user={u} />
-                  {u.nickname || u.username}
-                </button>
-              ))}
-            </div>
+            <UserSearchSelect selected={collaborators} onChange={setCollaborators} placeholder="搜索并添加协作者（可多选）" />
           </div>
 
           <div className="form-actions">
