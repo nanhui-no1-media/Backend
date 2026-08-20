@@ -27,7 +27,11 @@ function metaFor(type: ContentType, it: ContentItem): string {
   if (type === "news") {
     const cat = it.category ? NEWS_CATEGORY[it.category] ?? it.category : "";
     const draft = it.is_published === false ? " · 草稿" : "";
-    return [cat, it.published_at?.slice(0, 10)].filter(Boolean).join(" · ") + draft;
+    const review = it.review_status === "pending" ? " · 待审"
+      : it.review_status === "rejected" ? " · 已驳回"
+      : it.review_status === "removed" ? " · 已下架"
+      : "";
+    return [cat, it.published_at?.slice(0, 10)].filter(Boolean).join(" · ") + draft + review;
   }
   if (type === "proposals") {
     return [it.proposal_type ? PROPOSAL_TYPE[it.proposal_type] ?? it.proposal_type : "", it.created_at?.slice(0, 10)]

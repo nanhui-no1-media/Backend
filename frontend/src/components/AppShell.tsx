@@ -9,6 +9,7 @@ interface AppShellUser {
   id: number;
   username: string;
   email: string;
+  permissions?: { can_review_content?: boolean };
 }
 interface AppShellProfile {
   nickname?: string;
@@ -168,6 +169,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
                         {m.label}
                       </button>
                     ))}
+                    {user?.permissions?.can_review_content && (
+                      <button className="user-menu-item" type="button" onClick={() => go("/reviews")}>
+                        审核队列
+                      </button>
+                    )}
                     <div className="um-sep" />
                     <button className="user-menu-item danger" type="button" onClick={logout}>退出登录</button>
                   </div>
@@ -193,6 +199,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <button className="sheet-item" type="button" onClick={() => go("/tasks")}>任务管理</button>
               <button className="sheet-item" type="button" onClick={() => go("/activity")}>活动</button>
               <button className="sheet-item" type="button" onClick={() => go("/feedback")}>意见反馈</button>
+              {user.permissions?.can_review_content && (
+                <button className="sheet-item" type="button" onClick={() => go("/reviews")}>审核队列</button>
+              )}
               <button className="sheet-item" type="button" onClick={() => go("/messages")}>站内通信</button>
               <button className="sheet-item" type="button" onClick={logout}>退出登录</button>
             </>

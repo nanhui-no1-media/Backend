@@ -5,6 +5,7 @@ import Avatar from "../components/Avatar";
 import { newsApi } from "../api/news";
 import { type NewsDetail, CATEGORY_LABELS, CATEGORY_BADGE_CLASS } from "../types/news";
 import "../styles/news.css";
+import "../styles/form.css";
 
 const fmtDate = (d: string | null) => {
   if (!d) return "—";
@@ -56,6 +57,15 @@ export default function NewsDetailPage() {
             </nav>
 
             <span className="badge badge-brand article-cat"><span className="badge-dot" />{CATEGORY_LABELS[news.category]}</span>
+            {news.review_status === "pending" && (
+              <div className="form-notice" style={{ margin: "12px 0" }}>此稿待审，仅你与审核员可见，尚未对公众公开。</div>
+            )}
+            {news.review_status === "rejected" && (
+              <div className="alert alert-warning" style={{ margin: "12px 0" }}>此稿已驳回，不对公众展示。</div>
+            )}
+            {news.review_status === "removed" && (
+              <div className="alert alert-warning" style={{ margin: "12px 0" }}>此稿已下架，不对公众展示。</div>
+            )}
             <h1>{news.title}</h1>
 
             <div className="article-meta">

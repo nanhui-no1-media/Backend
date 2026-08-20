@@ -597,6 +597,8 @@ def _capabilities(user):
         "can_view_feedback": user.has_perm("proposals.view_feedback"),
         "can_review_collections": user.has_perm("activities.review_collection"),
         "can_edit_about": user.has_perm("about.change_aboutpage"),
+        "can_review_content": user.has_perm("reviews.moderate"),
+        "can_force_publish": user.has_perm("reviews.force_publish"),
     }
 
 
@@ -785,7 +787,8 @@ def user_content_view(request, id):
 
     if type_ == "news":
         from news.models import News
-        qs = News.objects.filter(author=viewed, **visibility.extra_filter).order_by("-created_at", "-id")
+        from reviews.visibility import review_status_of
+        qs = News.objects.filter(author=viewed, **visibility.extra_filter).select_related("review").order_by("-created_at", "-id")
     elif type_ == "proposals":
         from proposals.models import Proposal
         qs = Proposal.objects.filter(creator=viewed, **visibility.extra_filter).order_by("-created_at", "-id")
@@ -807,6 +810,7 @@ def user_content_view(request, id):
             "category": n.category,
             "cover_image": n.cover_image.url if n.cover_image else None,
             "is_published": n.is_published,
+            "review_status": review_status_of(n),
             "published_at": (n.published_at or n.created_at).isoformat(),
         } for n in page]
     elif type_ == "proposals":

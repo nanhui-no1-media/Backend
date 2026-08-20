@@ -6,6 +6,7 @@
 from django.utils import timezone
 
 from activities.models import Activity
+from reviews.visibility import public_news_kwargs
 from tasks.models import Task
 
 from .models import News
@@ -99,7 +100,7 @@ def build_feed(*, request, limit=6):
     except (TypeError, ValueError):
         limit = 6
 
-    published = News.objects.filter(is_published=True)
+    published = News.objects.filter(**public_news_kwargs())
     featured_obj = published.filter(featured=True).first()
     if featured_obj is None:
         featured_obj = published.order_by("-views", "-published_at", "-created_at").first()

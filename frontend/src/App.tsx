@@ -25,6 +25,7 @@ const ActivityDetailPage = lazy(() => import("./pages/ActivityDetailPage"));
 const NewsListPage = lazy(() => import("./pages/NewsListPage"));
 const NewsDetailPage = lazy(() => import("./pages/NewsDetailPage"));
 const NewsFormPage = lazy(() => import("./pages/NewsFormPage"));
+const ReviewQueuePage = lazy(() => import("./pages/ReviewQueuePage"));
 const AboutPage = lazy(() => import("./pages/AboutPage"));
 
 function Loading() {
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="/news/new" element={<ProtectedRoute><NewsFormPage /></ProtectedRoute>} />
           <Route path="/news/:id" element={<NewsDetailPage />} />
           <Route path="/news/:id/edit" element={<ProtectedRoute><NewsFormPage /></ProtectedRoute>} />
+          <Route path="/reviews" element={<ProtectedRoute><ReviewQueuePage /></ProtectedRoute>} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/" element={<HomePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

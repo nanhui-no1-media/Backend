@@ -759,7 +759,8 @@ class UserContentViewTest(TestCase):
         from news.models import News
         from proposals.models import Proposal
         from tasks.models import Task
-        News.objects.create(title="published", author=self.owner, is_published=True)
+        from reviews.test_helpers import approve_news
+        approve_news(News.objects.create(title="published", author=self.owner, is_published=True))
         News.objects.create(title="draft", author=self.owner, is_published=False)
         Proposal.objects.create(title="approved", proposal_type="feedback", status="approved", creator=self.owner)
         Proposal.objects.create(title="pending", proposal_type="feedback", status="pending_approval", creator=self.owner)

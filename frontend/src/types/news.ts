@@ -34,6 +34,7 @@ export interface NewsListItem {
   featured: boolean;
   views: number;
   is_published: boolean;
+  review_status?: "pending" | "approved" | "rejected" | "removed" | null;
   published_at: string | null;
   created_at: string;
 }

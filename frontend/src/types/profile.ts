@@ -25,6 +25,7 @@ export interface ContentItem {
   category?: string;
   cover_image?: string | null;
   is_published?: boolean;
+  review_status?: string | null;
   proposal_type?: string;
   status?: string;
   priority?: string;
