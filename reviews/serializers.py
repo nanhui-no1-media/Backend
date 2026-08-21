@@ -26,14 +26,18 @@ class ReviewSerializer(serializers.ModelSerializer):
             return "news"
         if obj.activity_id:
             return "activity"
+        if obj.tutorial_id:
+            return "tutorial"
         return None
 
     def get_target_id(self, obj):
-        return obj.news_id or obj.activity_id
+        return obj.news_id or obj.activity_id or obj.tutorial_id
 
     def get_title(self, obj):
         if obj.news_id:
             return obj.news.title
         if obj.activity_id:
             return obj.activity.title
+        if obj.tutorial_id:
+            return obj.tutorial.title
         return ""

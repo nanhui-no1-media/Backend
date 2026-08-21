@@ -31,6 +31,8 @@ urlpatterns = [
     path('news/', include('news.urls')),
     path('reviews/', include('reviews.urls')),
     path('about/', include('about.urls')),
+    path('tutorials/', include('tutorials.urls')),
+    path('recruitment/', include('recruitment.urls')),
     path('attachments/', include('attachments.urls')),
     path('uploads/', include('attachments.tus_urls')),
     path('', TemplateView.as_view(template_name='index.html'), name='home'),

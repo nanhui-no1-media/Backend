@@ -13,8 +13,21 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.test_helpers import grant_verification
+from reviews.test_helpers import approve_activity
 
 from .models import Activity
+
+
+def _publish_created(resp):
+    """既有活动测试默认走「已过审」夹具；待审可见性由 reviews/tests_activity.py 覆盖。"""
+    if getattr(resp, "status_code", None) == 201:
+        data = getattr(resp, "data", None) or {}
+        pk = data.get("id")
+        if pk:
+            approve_activity(Activity.objects.get(pk=pk))
+            if isinstance(data, dict):
+                data["review_status"] = "approved"
+    return resp
 
 
 def _json(client, method, path, user, payload=None):
@@ -22,7 +35,10 @@ def _json(client, method, path, user, payload=None):
     fn = getattr(client, method)
     if payload is None:
         return fn(path)
-    return fn(path, data=json.dumps(payload), content_type="application/json")
+    resp = fn(path, data=json.dumps(payload), content_type="application/json")
+    if method == "post" and path.rstrip("/") == "/activities/activities":
+        _publish_created(resp)
+    return resp
 
 
 class ActivityCreateReadTest(TestCase):
@@ -736,6 +752,7 @@ class ExhibitionTest(TestCase):
         self.client.force_authenticate(user)
         r = self.client.post("/activities/activities/", data=body, content_type="application/json")
         assert r.status_code == 201, r.data
+        _publish_created(r)
         aid = r.data["id"]
         assert r.data["status"] == "scheduled", r.data
         for title, files in exhibits:
@@ -760,7 +777,9 @@ class ExhibitionTest(TestCase):
         if scheduled:
             body["start_at"] = (datetime.now(dtz.utc) + timedelta(days=1)).isoformat()
         self.client.force_authenticate(user)
-        return self.client.post("/activities/activities/", data=body, content_type="application/json")
+        return _publish_created(
+            self.client.post("/activities/activities/", data=body, content_type="application/json")
+        )
 
     def _add_exhibit(self, user, aid, title="", files=None):
         files = files if files is not None else [self._img()]
@@ -787,6 +806,7 @@ class ExhibitionTest(TestCase):
             "type": "collection", "title": "征", "body": "<p>x</p>",
             "review_enabled": "false",  # 跳过复审,作品直接公开可见
         }, content_type="application/json")
+        _publish_created(c)
         cid = c.data["id"]
         sub_ids = []
         submitters = [self.member, self.m2]

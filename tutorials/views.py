@@ -1,0 +1,135 @@
+from django.db.models import F
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.response import Response
+
+from accounts.permissions import IsVerified
+from accounts.utils import get_client_ip
+from reviews.lifecycle import open_review
+from reviews.models import Review
+from reviews.visibility import public_tutorial_q, review_status_of
+
+from .models import Tutorial, TutorialFavorite, TutorialTag, TutorialView
+from .permissions import CanModifyTutorial, CanViewTutorial
+from .serializers import (
+    TutorialDetailSerializer,
+    TutorialListSerializer,
+    TutorialTagSerializer,
+    validate_tutorial_upload,
+)
+
+
+class TutorialViewSet(viewsets.ModelViewSet):
+    """教程集锦：公开读已过审；已验证成员可上传；收藏 + 去重播放量。"""
+
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    filterset_fields = ["file_type"]
+    search_fields = ["title", "description"]
+    ordering_fields = ["created_at", "views"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        qs = Tutorial.objects.select_related(
+            "uploader", "uploader__profile", "review",
+        ).prefetch_related("tags", "favorites")
+        public = qs.filter(public_tutorial_q())
+        if self.action == "list":
+            tag = self.request.query_params.get("tag")
+            if tag:
+                public = public.filter(tags__id=tag)
+            return public.distinct()
+        user = self.request.user
+        if self.action == "mine" and user.is_authenticated:
+            return qs.filter(uploader=user)
+        if user.is_authenticated:
+            if user.has_perm("reviews.moderate"):
+                return qs
+            return (public | qs.filter(uploader=user)).distinct()
+        return public
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return TutorialListSerializer
+        return TutorialDetailSerializer
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve", "tags"):
+            return [CanViewTutorial()]
+        if self.action == "create":
+            return [IsVerified()]
+        if self.action in ("favorite", "mine"):
+            return [IsVerified()]
+        if self.action in ("update", "partial_update", "destroy"):
+            return [CanModifyTutorial()]
+        return [CanViewTutorial()]
+
+    def create(self, request, *args, **kwargs):
+        upload = request.FILES.get("file")
+        if not upload:
+            return Response({"detail": "请上传视频或文档"}, status=status.HTTP_400_BAD_REQUEST)
+        file_type = validate_tutorial_upload(upload)
+        title = (request.data.get("title") or "").strip()
+        if not title:
+            return Response({"detail": "请填写标题"}, status=status.HTTP_400_BAD_REQUEST)
+        tag_ids = request.data.getlist("tag_ids") if hasattr(request.data, "getlist") else request.data.get("tag_ids") or []
+        if isinstance(tag_ids, str):
+            tag_ids = [x for x in tag_ids.split(",") if x]
+        tags = TutorialTag.objects.filter(pk__in=tag_ids)
+        tutorial = Tutorial.objects.create(
+            title=title[:200],
+            description=(request.data.get("description") or "")[:2000],
+            file=upload,
+            file_type=file_type,
+            file_name=upload.name,
+            file_size=upload.size,
+            cover=request.FILES.get("cover") or "",
+            uploader=request.user,
+        )
+        tutorial.tags.set(tags)
+        open_review(tutorial=tutorial, actor=request.user)
+        serializer = TutorialDetailSerializer(tutorial, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if review_status_of(instance) == Review.STATUS_APPROVED:
+            if request.user.is_authenticated:
+                reader_key = f"user:{request.user.pk}"
+            else:
+                ip = get_client_ip(request) or ""
+                reader_key = "ip:" + hashlib.sha256(ip.encode()).hexdigest()
+            _, created = TutorialView.objects.get_or_create(tutorial=instance, reader_key=reader_key)
+            if created:
+                Tutorial.objects.filter(pk=instance.pk).update(views=F("views") + 1)
+                instance.refresh_from_db()
+        return Response(self.get_serializer(instance).data)
+
+    @action(detail=False, methods=["get"])
+    def tags(self, request):
+        return Response(TutorialTagSerializer(TutorialTag.objects.all(), many=True).data)
+
+    @action(detail=False, methods=["get"])
+    def mine(self, request):
+        qs = self.get_queryset()
+        page = self.paginate_queryset(qs)
+        ser = TutorialListSerializer(page or qs, many=True, context={"request": request})
+        if page is not None:
+            return self.get_paginated_response(ser.data)
+        return Response(ser.data)
+
+    @action(detail=True, methods=["post"])
+    def favorite(self, request, pk=None):
+        tutorial = self.get_object()
+        existing = TutorialFavorite.objects.filter(tutorial=tutorial, user=request.user).first()
+        if existing:
+            existing.delete()
+            favorited = False
+        else:
+            TutorialFavorite.objects.create(tutorial=tutorial, user=request.user)
+            favorited = True
+        tutorial.refresh_from_db()
+        data = self.get_serializer(tutorial).data
+        data["favorited"] = favorited
+        data["favorite_count"] = TutorialFavorite.objects.filter(tutorial=tutorial).count()
+        return Response(data)

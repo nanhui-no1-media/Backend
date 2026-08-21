@@ -1,6 +1,6 @@
 """统一审核：正交于对象自身生命周期，只门控公开可见性。
 
-一条 Review 恰好挂一个父级（新闻或活动；教程在 T08 落地后再加 FK）。
+一条 Review 恰好挂一个父级（新闻 / 活动 / 教程）。
 状态机见 lifecycle.py；此处只给字段与约束。
 """
 from django.conf import settings
@@ -37,6 +37,10 @@ class Review(models.Model):
         "activities.Activity", on_delete=models.CASCADE,
         null=True, blank=True, related_name="publication_review", verbose_name="活动",
     )
+    tutorial = models.OneToOneField(
+        "tutorials.Tutorial", on_delete=models.CASCADE,
+        null=True, blank=True, related_name="review", verbose_name="教程",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -52,13 +56,14 @@ class Review(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    models.Q(news__isnull=False, activity__isnull=True)
-                    | models.Q(news__isnull=True, activity__isnull=False)
+                    models.Q(news__isnull=False, activity__isnull=True, tutorial__isnull=True)
+                    | models.Q(news__isnull=True, activity__isnull=False, tutorial__isnull=True)
+                    | models.Q(news__isnull=True, activity__isnull=True, tutorial__isnull=False)
                 ),
                 name="review_exactly_one_parent",
             ),
         ]
 
     def __str__(self):
-        target = self.news or self.activity
+        target = self.news or self.activity or self.tutorial
         return f"{self.get_status_display()}:{target}"

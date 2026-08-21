@@ -1,9 +1,11 @@
-from django.urls import path
-from . import views
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+
+from .views import ExamDataViewSet
+
+router = DefaultRouter()
+router.register(r"exams", ExamDataViewSet, basename="exam")
 
 urlpatterns = [
-    # 访问 /exam_board/upload/ 触发上传
-    path('upload/', views.upload_data, name='upload_data'),
-    # 访问 /exam_board/read/ 触发读取
-    path('read/', views.read_data, name='read_data'),
+    path("", include(router.urls)),
 ]

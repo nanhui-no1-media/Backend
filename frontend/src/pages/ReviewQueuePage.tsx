@@ -18,6 +18,7 @@ const PAGE_SIZE = 20;
 const TARGET_PATH: Record<string, string> = {
   news: "/news",
   activity: "/activity",
+  tutorial: "/tutorials",
 };
 
 export default function ReviewQueuePage() {

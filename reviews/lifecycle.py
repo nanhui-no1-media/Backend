@@ -18,17 +18,22 @@ class TransitionDenied(Exception):
     """当前状态不允许该审核动作。"""
 
 
-def open_review(*, news=None, activity=None, actor, force_publish):
-    """为新对象打开一条审核。免审发布者直接通过，否则待审。"""
+def open_review(*, news=None, activity=None, tutorial=None, actor, force_publish=None):
+    """为新对象打开一条审核。免审发布者直接通过，否则待审。
+
+    是否免审由 ``reviews.force_publish`` 判定（调用方不必再查权限）。
+    """
+    if force_publish is None:
+        force_publish = bool(actor and actor.has_perm("reviews.force_publish"))
+    kwargs = {"news": news, "activity": activity, "tutorial": tutorial}
     if force_publish:
         return Review.objects.create(
-            news=news,
-            activity=activity,
+            **kwargs,
             status=Review.STATUS_APPROVED,
             reviewer=actor,
             reviewed_at=timezone.now(),
         )
-    return Review.objects.create(news=news, activity=activity, status=Review.STATUS_PENDING)
+    return Review.objects.create(**kwargs, status=Review.STATUS_PENDING)
 
 
 def apply(action, review, user, *, comment=""):

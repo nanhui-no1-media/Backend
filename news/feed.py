@@ -6,7 +6,7 @@
 from django.utils import timezone
 
 from activities.models import Activity
-from reviews.visibility import public_news_kwargs
+from reviews.visibility import public_activity_q, public_news_kwargs
 from tasks.models import Task
 
 from .models import News
@@ -111,7 +111,7 @@ def build_feed(*, request, limit=6):
     for n in news_qs:
         candidates.append(((n.published_at or n.created_at), _news_dict(n, request)))
 
-    for a in Activity.objects.exclude(status="archived"):
+    for a in Activity.objects.filter(public_activity_q()).exclude(status="archived"):
         candidates.append((a.created_at, _activity_dict(a, request)))
 
     if is_authed:

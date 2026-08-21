@@ -1,21 +1,79 @@
+from rest_framework import status
 from rest_framework.generics import RetrieveUpdateAPIView
-from rest_framework.permissions import DjangoModelPermissionsOrAnonReadOnly
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.response import Response
+from rest_framework.viewsets import GenericViewSet
+from rest_framework.mixins import RetrieveModelMixin, UpdateModelMixin
 
-from .models import AboutPage
-from .serializers import AboutPageSerializer
+from .models import AboutBlock, AboutPage
+from .permissions import CanEditAbout
+from .serializers import (
+    AboutBlockSerializer,
+    AboutOverviewSerializer,
+    validate_about_document,
+)
 
 
 class AboutPageView(RetrieveUpdateAPIView):
-    """GET /about/（公开）/ PUT /about/（需 about.change_aboutpage）。
+    """GET /about/ 公开聚合；PUT /about/overview/ 由 ClubOverviewView 处理。
 
-    始终作用于单例：get_object 忽略 URL 参数，返回 AboutPage 唯一行。
-    权限走 DRF 内置 DjangoModelPermissionsOrAnonReadOnly——GET（perms_map 为空）
-    匿名可读，PUT 按 about.change_aboutpage 校验，与 news 一致（见角色→权限迁移设计）。
+    本视图只做公开读：返回全部区块 + 社团概览静态行。
     """
 
-    queryset = AboutPage.objects.all()
-    serializer_class = AboutPageSerializer
-    permission_classes = [DjangoModelPermissionsOrAnonReadOnly]
+    permission_classes = [CanEditAbout]
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request, *args, **kwargs):
+        page = AboutPage.objects.get_solo()
+        blocks = AboutBlock.objects.all()
+        return Response({
+            "blocks": AboutBlockSerializer(blocks, many=True, context={"request": request}).data,
+            "overview": AboutOverviewSerializer(page).data,
+            "updated_at": page.updated_at,
+        })
+
+
+class ClubOverviewView(RetrieveUpdateAPIView):
+    """GET/PUT /about/overview/：社团概览静态行（成立 / 指导 / 简介）。"""
+
+    serializer_class = AboutOverviewSerializer
+    permission_classes = [CanEditAbout]
+    http_method_names = ["get", "put", "patch", "head", "options"]
 
     def get_object(self):
         return AboutPage.objects.get_solo()
+
+
+class AboutBlockViewSet(RetrieveModelMixin, UpdateModelMixin, GenericViewSet):
+    """GET/PATCH /about/blocks/<key>/：按键读写单个关于区块。"""
+
+    serializer_class = AboutBlockSerializer
+    permission_classes = [CanEditAbout]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    lookup_field = "key"
+    queryset = AboutBlock.objects.all()
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def partial_update(self, request, *args, **kwargs):
+        block = self.get_object()
+        payload = {}
+        for field in ("title", "content", "panorama_url"):
+            if field in request.data:
+                payload[field] = request.data.get(field)
+        upload = request.FILES.get("document")
+        if upload:
+            validate_about_document(upload)
+            if block.document:
+                block.document.delete(save=False)
+            block.document = upload
+        elif str(request.data.get("clear_document", "")).lower() in ("1", "true", "yes"):
+            if block.document:
+                block.document.delete(save=False)
+            block.document = ""
+
+        serializer = self.get_serializer(block, data=payload, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        if upload or str(request.data.get("clear_document", "")).lower() in ("1", "true", "yes"):
+            block.save(update_fields=["document", "updated_at"])
+        return Response(self.get_serializer(block).data, status=status.HTTP_200_OK)

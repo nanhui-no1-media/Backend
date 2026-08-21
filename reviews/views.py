@@ -19,7 +19,7 @@ class ReviewViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         return Review.objects.select_related(
-            "news", "activity",
+            "news", "activity", "tutorial",
             "reviewer", "reviewer__profile",
         )
 

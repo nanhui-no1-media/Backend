@@ -68,11 +68,7 @@ class NewsViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         news = serializer.save(author=self.request.user)
-        open_review(
-            news=news,
-            actor=self.request.user,
-            force_publish=self.request.user.has_perm("reviews.force_publish"),
-        )
+        open_review(news=news, actor=self.request.user)
 
     @action(detail=False, methods=["post"], url_path="upload_image")
     def upload_image(self, request):
