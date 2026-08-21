@@ -6,6 +6,7 @@
 from django.utils import timezone
 
 from activities.models import Activity
+from reviews.visibility import public_activity_q, public_news_kwargs
 from tasks.models import Task
 
 from .models import News
@@ -28,7 +29,6 @@ def _news_dict(news, request):
         "id": news.pk,
         "title": news.title,
         "timestamp": (news.published_at or news.created_at).isoformat(),
-        "category": news.category,
         "summary": news.summary,
         "cover_image_url": _abs_url(request, news.cover_image),
         "views": news.views,
@@ -99,7 +99,7 @@ def build_feed(*, request, limit=6):
     except (TypeError, ValueError):
         limit = 6
 
-    published = News.objects.filter(is_published=True)
+    published = News.objects.filter(**public_news_kwargs())
     featured_obj = published.filter(featured=True).first()
     if featured_obj is None:
         featured_obj = published.order_by("-views", "-published_at", "-created_at").first()
@@ -110,7 +110,7 @@ def build_feed(*, request, limit=6):
     for n in news_qs:
         candidates.append(((n.published_at or n.created_at), _news_dict(n, request)))
 
-    for a in Activity.objects.exclude(status="archived"):
+    for a in Activity.objects.filter(public_activity_q()).exclude(status="archived"):
         candidates.append((a.created_at, _activity_dict(a, request)))
 
     if is_authed:

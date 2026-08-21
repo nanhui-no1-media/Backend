@@ -2,6 +2,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from common.rich_text import sanitize_html
+from reviews.visibility import public_news_kwargs, review_status_of
 from tasks.models import Tag
 from tasks.serializers import SimpleUserSerializer
 
@@ -43,14 +44,18 @@ class NewsListSerializer(serializers.ModelSerializer):
     author = SimpleUserSerializer(read_only=True)
     tags = NewsTagSerializer(many=True, read_only=True)
     cover_image_url = serializers.SerializerMethodField()
+    review_status = serializers.SerializerMethodField()
 
     class Meta:
         model = News
         fields = [
-            "id", "title", "category", "summary", "cover_image_url",
+            "id", "title", "summary", "cover_image_url",
             "author", "tags", "featured", "views", "is_published",
-            "published_at", "created_at",
+            "review_status", "published_at", "created_at",
         ]
+
+    def get_review_status(self, obj):
+        return review_status_of(obj)
 
     def get_cover_image_url(self, obj):
         return _absolute_cover_url(obj, self.context.get("request"))
@@ -73,6 +78,7 @@ class NewsDetailSerializer(serializers.ModelSerializer):
     cover_image_url = serializers.SerializerMethodField()
     related = serializers.SerializerMethodField()
     attachments = NewsAttachmentSerializer(many=True, read_only=True)
+    review_status = serializers.SerializerMethodField()
 
     tag_ids = serializers.PrimaryKeyRelatedField(
         queryset=Tag.objects.all(), many=True, required=False, write_only=True, source="tags",
@@ -81,10 +87,10 @@ class NewsDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = News
         fields = [
-            "id", "title", "category", "summary", "content",
+            "id", "title", "summary", "content",
             "cover_image", "cover_image_url",
             "author", "tags", "tag_ids",
-            "featured", "views", "is_published", "published_at",
+            "featured", "views", "is_published", "review_status", "published_at",
             "related", "created_at", "updated_at", "attachments",
         ]
         read_only_fields = ["author", "views", "published_at", "created_at", "updated_at"]
@@ -92,10 +98,13 @@ class NewsDetailSerializer(serializers.ModelSerializer):
     def get_cover_image_url(self, obj):
         return _absolute_cover_url(obj, self.context.get("request"))
 
+    def get_review_status(self, obj):
+        return review_status_of(obj)
+
     def get_related(self, obj):
-        """同分类、已发布、最新 3 条（排除自身）。"""
+        """已发布且过审、按发布时间最新 3 条（排除自身）。"""
         qs = (
-            News.objects.filter(is_published=True, category=obj.category)
+            News.objects.filter(**public_news_kwargs())
             .exclude(pk=obj.pk)
             .select_related("author", "author__profile")
             .prefetch_related("tags")

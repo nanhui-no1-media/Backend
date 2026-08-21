@@ -52,6 +52,14 @@
 .pci-title { font-weight: 600; }
 .pci-meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
 
+.profile-load-more {
+  align-self: center; margin-top: var(--s-2); padding: var(--s-1) var(--s-4);
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg);
+  color: var(--muted); font-size: 13px; cursor: pointer; transition: all var(--dur-1);
+}
+.profile-load-more:hover:not(:disabled) { color: var(--brand-600); border-color: var(--brand-300); }
+.profile-load-more:disabled { opacity: 0.6; cursor: default; }
+
 .profile-sessions { display: flex; flex-direction: column; }
 .profile-session { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-3) 0; border-bottom: 1px solid var(--line); }
 .profile-session:last-child { border-bottom: none; }

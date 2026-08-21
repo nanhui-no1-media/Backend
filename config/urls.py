@@ -29,11 +29,14 @@ urlpatterns = [
     path('activities/', include('activities.urls')),
     path('exam_board/', include('exam_board.urls')),
     path('news/', include('news.urls')),
+    path('reviews/', include('reviews.urls')),
     path('about/', include('about.urls')),
+    path('tutorials/', include('tutorials.urls')),
+    path('recruitment/', include('recruitment.urls')),
     path('attachments/', include('attachments.urls')),
     path('uploads/', include('attachments.tus_urls')),
     path('', TemplateView.as_view(template_name='index.html'), name='home'),
-    re_path(r'^(?!static/|admin/|auth/|tasks/|media/|messaging/|proposals/|activities/|news/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
+    re_path(r'^(?!static/|admin/|auth/|tasks/|media/|messaging/|proposals/|activities/|news/|reviews/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
 ]
 
 if settings.DEBUG:

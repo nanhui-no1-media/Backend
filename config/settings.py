@@ -91,6 +91,9 @@ INSTALLED_APPS = [
     'activities',
     'exam_board',
     'news',
+    'reviews',
+    'tutorials',
+    'recruitment',
     'attachments',
     'rest_framework_tus',
 ]

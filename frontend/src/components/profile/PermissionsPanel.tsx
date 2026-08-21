@@ -13,6 +13,9 @@ const CAP_LABELS: Record<string, string> = {
   can_view_feedback: "查看反馈",
   can_review_collections: "复审征集",
   can_edit_about: "编辑关于",
+  can_manage_exam: "管理考试看板",
+  can_review_content: "审核内容",
+  can_force_publish: "免审发布",
 };
 
 /** 统一的 24x24 线性图标外壳，沿用项目内联 SVG 约定（stroke=currentColor）。 */
@@ -83,6 +86,26 @@ const CAP_ICONS: Record<string, ReactNode> = {
       <circle cx={12} cy={12} r={9} />
       <path d="M12 11v5" />
       <path d="M12 7.5h.01" />
+    </Svg>
+  ),
+  can_manage_exam: (
+    <Svg>
+      <rect x={4} y={3} width={16} height={18} rx={2} />
+      <path d="M8 7h8" />
+      <path d="M8 11h5" />
+      <path d="M8 15h8" />
+    </Svg>
+  ),
+  can_review_content: (
+    <Svg>
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </Svg>
+  ),
+  can_force_publish: (
+    <Svg>
+      <path d="M12 19V5" />
+      <path d="M5 12l7-7 7 7" />
     </Svg>
   ),
 };

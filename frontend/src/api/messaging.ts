@@ -1,4 +1,6 @@
 import { createRequest } from "./shared";
+import type { Message } from "../types/tasks";
+import type { Paginated } from "../types/pagination";
 
 const request = createRequest("/messaging");
 
@@ -10,8 +12,9 @@ export const messagingApi = {
   // 未读消息总数（驱动顶栏铃铛红点）；不含自己发出的消息。
   unreadCount: () => request(`/conversations/unread_count/`),
   getConversation: (id: number) => request(`/conversations/${id}/`),
-  getMessages: (conversationId: number) =>
-    request(`/conversations/messages/?conversation_id=${conversationId}`),
+  // 倒序分页（最新在前）：page=1 为最新一页，向上翻页拿更早。
+  getMessages: (conversationId: number, page = 1) =>
+    request(`/conversations/messages/?conversation_id=${conversationId}&page=${page}`) as Promise<Paginated<Message>>,
   sendMessage: (conversationId: number, content: string) =>
     request(`/conversations/${conversationId}/send_message/`, { method: "POST", body: JSON.stringify({ content }) }),
   markRead: (conversationId: number) =>

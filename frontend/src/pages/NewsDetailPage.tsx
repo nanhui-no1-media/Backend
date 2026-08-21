@@ -3,8 +3,9 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import Avatar from "../components/Avatar";
 import { newsApi } from "../api/news";
-import { type NewsDetail, CATEGORY_LABELS, CATEGORY_BADGE_CLASS } from "../types/news";
+import { type NewsDetail } from "../types/news";
 import "../styles/news.css";
+import "../styles/form.css";
 
 const fmtDate = (d: string | null) => {
   if (!d) return "—";
@@ -52,10 +53,18 @@ export default function NewsDetailPage() {
               <span className="sep">/</span>
               <a href="#" onClick={(e) => { e.preventDefault(); navigate("/news"); }}>新闻</a>
               <span className="sep">/</span>
-              <span>{CATEGORY_LABELS[news.category]}</span>
+              <span>{news.title}</span>
             </nav>
 
-            <span className="badge badge-brand article-cat"><span className="badge-dot" />{CATEGORY_LABELS[news.category]}</span>
+            {news.review_status === "pending" && (
+              <div className="form-notice" style={{ margin: "12px 0" }}>此稿待审，仅你与审核员可见，尚未对公众公开。</div>
+            )}
+            {news.review_status === "rejected" && (
+              <div className="alert alert-warning" style={{ margin: "12px 0" }}>此稿已驳回，不对公众展示。</div>
+            )}
+            {news.review_status === "removed" && (
+              <div className="alert alert-warning" style={{ margin: "12px 0" }}>此稿已下架，不对公众展示。</div>
+            )}
             <h1>{news.title}</h1>
 
             <div className="article-meta">
@@ -115,7 +124,6 @@ export default function NewsDetailPage() {
           <aside className="detail-side">
             <div className="side-card">
               <h4><span className="bar" /> 文章信息</h4>
-              <div className="meta-row"><span className="k">分类</span><span className="v">{CATEGORY_LABELS[news.category]}</span></div>
               <div className="meta-row"><span className="k">发布</span><span className="v tnum">{fmtDate(news.published_at || news.created_at)}</span></div>
               <div className="meta-row"><span className="k">来源</span><span className="v">传媒社</span></div>
               <div className="meta-row"><span className="k">阅读</span><span className="v">{news.views}</span></div>
@@ -126,7 +134,6 @@ export default function NewsDetailPage() {
                 {related.map((r) => (
                   <a key={r.id} className="rel-item" href="#"
                      onClick={(e) => { e.preventDefault(); navigate(`/news/${r.id}`); }}>
-                    <span className="rcat">{CATEGORY_LABELS[r.category]}</span>
                     <h5>{r.title}</h5>
                     <span className="rdate">{fmtDate(r.published_at || r.created_at)}</span>
                   </a>
@@ -156,7 +163,7 @@ export default function NewsDetailPage() {
                     )}
                   </div>
                   <div className="card-body">
-                    <span className={"badge " + CATEGORY_BADGE_CLASS[r.category]}>{CATEGORY_LABELS[r.category]}</span>
+                    <span className="date tnum">{fmtDate(r.published_at || r.created_at)}</span>
                     <h3 style={{ marginTop: "10px" }}>{r.title}</h3>
                   </div>
                 </a>

@@ -18,6 +18,7 @@ export interface ActivityListItem {
   status: ActivityStatus;
   title: string;
   creator: TaskUser | null;
+  review_status?: "pending" | "approved" | "rejected" | "removed" | null;
   start_at: string | null;
   end_at: string | null;
   created_at: string;
@@ -67,6 +68,7 @@ export interface ActivityDetail {
   title: string;
   body: string;
   creator: TaskUser | null;
+  review_status?: "pending" | "approved" | "rejected" | "removed" | null;
   start_at: string | null;
   end_at: string | null;
   // 众议

@@ -80,7 +80,7 @@ class ContentVisibility:
 def content_visibility(viewer, viewed, content_type):
     """某类内容对查看者的可见性裁定（:class:`ContentVisibility`）。
 
-    - news：他人仅已发布；本人全部。
+    - news：他人仅已发布且过审；本人全部。
     - proposals：他人仅已通过；本人全部。
     - tasks：仅本人；他人无权（denied）。
 
@@ -89,7 +89,7 @@ def content_visibility(viewer, viewed, content_type):
     """
     owner = _is_owner(viewer, viewed)
     if content_type == "news":
-        return ContentVisibility(denied=False, extra_filter={} if owner else {"is_published": True})
+        return ContentVisibility(denied=False, extra_filter={} if owner else {"is_published": True, "review__status": "approved"})
     if content_type == "proposals":
         return ContentVisibility(denied=False, extra_filter={} if owner else {"status": "approved"})
     if content_type == "tasks":

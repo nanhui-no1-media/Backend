@@ -9,6 +9,7 @@ from proposals.models import Proposal
 from activities.models import Activity
 from tasks.models import Task
 
+from reviews.test_helpers import approve_news
 from .models import News
 from .feed import build_feed
 
@@ -34,7 +35,7 @@ class NewsPermissionTest(TestCase):
         self.author = _info(User.objects.create_user(username="info", password="x"))
         self.normal = User.objects.create_user(username="normal", password="x")
         self.client = APIClient()
-        self.news = News.objects.create(title="t", author=self.author, is_published=True)
+        self.news = approve_news(News.objects.create(title="t", author=self.author, is_published=True))
 
     def test_anon_can_read_list(self):
         self.assertEqual(self.client.get("/news/news/").status_code, 200)
@@ -57,7 +58,7 @@ class NewsReaderCountTest(TestCase):
         self.author = _info(User.objects.create_user(username="info", password="x"))
         self.normal = User.objects.create_user(username="normal", password="x")
         self.client = APIClient()
-        self.news = News.objects.create(title="t", author=self.author, is_published=True)
+        self.news = approve_news(News.objects.create(title="t", author=self.author, is_published=True))
 
     def test_view_once_per_user(self):
         """同一登录用户多次打开详情只算一次阅读。"""
@@ -87,18 +88,18 @@ class NewsReaderCountTest(TestCase):
 
     def test_featured_manual_priority(self):
         """手工置顶（featured）优先于阅读人数最高。"""
-        News.objects.create(title="hot", author=self.author, is_published=True, views=100)
-        feat = News.objects.create(
+        approve_news(News.objects.create(title="hot", author=self.author, is_published=True, views=100))
+        feat = approve_news(News.objects.create(
             title="feat", author=self.author, is_published=True, views=1, featured=True
-        )
+        ))
         resp = self.client.get("/news/news/featured/")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["id"], feat.id)
 
     def test_featured_fallback_hottest(self):
         """无手工置顶时头条取阅读人数最高的一条。"""
-        News.objects.create(title="low", author=self.author, is_published=True, views=1)
-        high = News.objects.create(title="high", author=self.author, is_published=True, views=100)
+        approve_news(News.objects.create(title="low", author=self.author, is_published=True, views=1))
+        high = approve_news(News.objects.create(title="high", author=self.author, is_published=True, views=100))
         resp = self.client.get("/news/news/featured/")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["id"], high.id)
@@ -112,6 +113,7 @@ class NewsOverviewTest(TestCase):
         self.normal = User.objects.create_user(username="normal", password="x")
         News.objects.create(title="published", author=self.author, is_published=True)
         News.objects.create(title="draft", author=self.author, is_published=False)
+        approve_news(News.objects.get(title="published"))
         self.client = APIClient()
 
     def test_anon_overview_counts(self):
@@ -149,7 +151,7 @@ class FeedTest(TestCase):
         kw.setdefault("author", self.author)
         kw.setdefault("is_published", True)
         kw["published_at"] = self._ts(days_ago)
-        return News.objects.create(title=title, **kw)
+        return approve_news(News.objects.create(title=title, **kw))
 
     def _activity(self, title, days_ago=0, **kw):
         # 活动已迁移至 activities app（ADR 0007）；feed 取 created_at 作时间戳。
@@ -255,7 +257,7 @@ class FeedEndpointTest(TestCase):
     def setUp(self):
         self.author = _info(User.objects.create_user(username="info", password="x"))
         self.member = User.objects.create_user(username="member", password="x")
-        News.objects.create(title="n1", author=self.author, is_published=True)
+        approve_news(News.objects.create(title="n1", author=self.author, is_published=True))
         Activity.objects.create(type="deliberation", status="open", title="a1", creator=self.author)
         Task.objects.create(title="t1", creator=self.member, status="in_progress")
         self.client = APIClient()
@@ -277,3 +279,32 @@ class FeedEndpointTest(TestCase):
         resp = self.client.get("/news/news/feed/?limit=1")
         self.assertEqual(resp.status_code, 200)
         self.assertLessEqual(len(resp.data["items"]), 1)
+
+
+class NewsRelatedTest(TestCase):
+    """详情 related：按发布时间最新 3 条公开稿，不含自身。"""
+
+    def setUp(self):
+        self.author = _info(User.objects.create_user(username="info", password="x"))
+        self.client = APIClient()
+
+    def _news(self, title, days_ago=0):
+        n = approve_news(News.objects.create(
+            title=title, author=self.author, is_published=True,
+        ))
+        News.objects.filter(pk=n.pk).update(
+            published_at=timezone.now() - timedelta(days=days_ago),
+        )
+        return n
+
+    def test_related_is_latest_public_excluding_self(self):
+        current = self._news("current", days_ago=0)
+        for i in range(1, 5):
+            self._news(f"n{i}", days_ago=i)
+        resp = self.client.get(f"/news/news/{current.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        titles = [r["title"] for r in resp.data["related"]]
+        self.assertEqual(titles, ["n1", "n2", "n3"])
+        self.assertNotIn("current", titles)
+        self.assertNotIn("n4", titles)
+        self.assertNotIn("category", resp.data)

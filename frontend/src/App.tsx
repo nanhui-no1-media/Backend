@@ -25,7 +25,15 @@ const ActivityDetailPage = lazy(() => import("./pages/ActivityDetailPage"));
 const NewsListPage = lazy(() => import("./pages/NewsListPage"));
 const NewsDetailPage = lazy(() => import("./pages/NewsDetailPage"));
 const NewsFormPage = lazy(() => import("./pages/NewsFormPage"));
+const ReviewQueuePage = lazy(() => import("./pages/ReviewQueuePage"));
 const AboutPage = lazy(() => import("./pages/AboutPage"));
+const ExamBoardPage = lazy(() => import("./pages/ExamBoardPage"));
+const TutorialListPage = lazy(() => import("./pages/TutorialListPage"));
+const TutorialDetailPage = lazy(() => import("./pages/TutorialDetailPage"));
+const TutorialFormPage = lazy(() => import("./pages/TutorialFormPage"));
+const JoinPage = lazy(() => import("./pages/JoinPage"));
+const JoinFormPage = lazy(() => import("./pages/JoinFormPage"));
+const JoinEditorPage = lazy(() => import("./pages/JoinEditorPage"));
 
 function Loading() {
   return <div style={{ textAlign: "center", padding: "80px 0", color: "#6b7280" }}>加载中...</div>;
@@ -67,7 +75,15 @@ export default function App() {
           <Route path="/news/new" element={<ProtectedRoute><NewsFormPage /></ProtectedRoute>} />
           <Route path="/news/:id" element={<NewsDetailPage />} />
           <Route path="/news/:id/edit" element={<ProtectedRoute><NewsFormPage /></ProtectedRoute>} />
+          <Route path="/reviews" element={<ProtectedRoute><ReviewQueuePage /></ProtectedRoute>} />
           <Route path="/about" element={<AboutPage />} />
+          <Route path="/exam" element={<ExamBoardPage />} />
+          <Route path="/tutorials" element={<TutorialListPage />} />
+          <Route path="/tutorials/new" element={<ProtectedRoute><TutorialFormPage /></ProtectedRoute>} />
+          <Route path="/tutorials/:id" element={<TutorialDetailPage />} />
+          <Route path="/join" element={<JoinPage />} />
+          <Route path="/join/form" element={<JoinFormPage />} />
+          <Route path="/join/editor" element={<ProtectedRoute><JoinEditorPage /></ProtectedRoute>} />
           <Route path="/" element={<HomePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

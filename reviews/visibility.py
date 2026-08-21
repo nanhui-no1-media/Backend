@@ -1,0 +1,29 @@
+"""公开可见性：审核轴只门控「公开展示」，不改对象自身生命周期。"""
+from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import Q
+
+from .models import Review
+
+
+def public_news_kwargs():
+    """新闻公开读过滤：已发布且审核通过。"""
+    return {"is_published": True, "review__status": Review.STATUS_APPROVED}
+
+
+def public_activity_q():
+    """活动公开读：已过审，或尚无审核行（存量 ORM 数据 / 未接入前的测试夹具）。"""
+    return Q(publication_review__status=Review.STATUS_APPROVED) | Q(publication_review__isnull=True)
+
+
+def public_tutorial_q():
+    """教程公开读：仅已过审（新模块，创建必开审核行，无存量夹具例外）。"""
+    return Q(review__status=Review.STATUS_APPROVED)
+
+
+def review_status_of(obj, related="review"):
+    """读对象当前审核状态；尚无审核记录时返回 None（不抛 OneToOne 的 DoesNotExist）。"""
+    try:
+        review = getattr(obj, related)
+    except ObjectDoesNotExist:
+        return None
+    return review.status if review else None

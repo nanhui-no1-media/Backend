@@ -11,6 +11,8 @@ from rest_framework.permissions import DjangoModelPermissionsOrAnonReadOnly
 from rest_framework.response import Response
 
 from accounts.utils import get_client_ip
+from reviews.lifecycle import open_review
+from reviews.visibility import public_news_kwargs
 from tasks.models import Tag
 
 from .models import News, NewsView
@@ -33,16 +35,25 @@ def _content_image_path(filename):
 class NewsViewSet(viewsets.ModelViewSet):
     """新闻：公开读（已发布），有 news 写权限者（信息组）可写。"""
 
-    filterset_fields = ["category", "featured", "is_published"]
+    filterset_fields = ["featured", "is_published"]
     search_fields = ["title", "summary", "content"]
     ordering_fields = ["published_at", "views", "created_at"]
     ordering = ["-published_at"]
 
     def get_queryset(self): # pyright: ignore[reportIncompatibleMethodOverride]
-        qs = News.objects.select_related("author", "author__profile").prefetch_related("tags")
-        # 公开读只返回已发布；写操作（信息组）可见全部
+        qs = News.objects.select_related(
+            "author", "author__profile", "review",
+        ).prefetch_related("tags")
+        # 公开读只返回已发布且过审；写操作可见全部。retrieve 对作者/审核员开放预览。
         if self.action in PUBLIC_ACTIONS:
-            qs = qs.filter(is_published=True)
+            public = qs.filter(**public_news_kwargs())
+            if self.action == "retrieve":
+                user = self.request.user
+                if user.is_authenticated:
+                    if user.has_perm("reviews.moderate"):
+                        return qs
+                    return (public | qs.filter(author=user)).distinct()
+            return public
         return qs
 
     def get_serializer_class(self): # type: ignore
@@ -56,7 +67,8 @@ class NewsViewSet(viewsets.ModelViewSet):
         return [DjangoModelPermissionsOrAnonReadOnly()]
 
     def perform_create(self, serializer):
-        serializer.save(author=self.request.user)
+        news = serializer.save(author=self.request.user)
+        open_review(news=news, actor=self.request.user)
 
     @action(detail=False, methods=["post"], url_path="upload_image")
     def upload_image(self, request):
@@ -110,7 +122,11 @@ class NewsViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def tags(self, request):
         """标签云：仅返回被新闻引用过的标签，附新闻数。"""
-        qs = Tag.objects.filter(news__isnull=False).distinct()
+        qs = Tag.objects.filter(
+            news__isnull=False,
+            news__is_published=True,
+            news__review__status="approved",
+        ).distinct()
         return Response(NewsTagSerializer(qs, many=True, context={"request": request}).data)
 
     @action(detail=False, methods=["get"])
@@ -118,7 +134,7 @@ class NewsViewSet(viewsets.ModelViewSet):
         """社团概览：成员=活跃用户数，作品=已发布新闻数。匿名可读。"""
         return Response({
             "members": User.objects.filter(is_active=True).count(),
-            "works": News.objects.filter(is_published=True).count(),
+            "works": News.objects.filter(**public_news_kwargs()).count(),
         })
 
     @action(detail=False, methods=["get"])

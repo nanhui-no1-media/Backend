@@ -2,14 +2,18 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { newsApi } from "../api/news";
+import { aboutApi, type ClubOverview } from "../api/about";
 import AppShell from "../components/AppShell";
 import ClubFeed from "../components/ClubFeed";
 import { useLoginModal } from "../components/LoginModalProvider";
+import "../styles/form.css";
 import "../styles/home.css";
+import "../styles/about.css";
 
 interface User {
   id: number;
   username: string;
+  can_edit_about?: boolean;
 }
 
 
@@ -20,39 +24,52 @@ const EqBars = () => (
 export default function HomePage() {
   const [user, setUser] = useState<User | null>(null);
   const [overview, setOverview] = useState<{ members: number; works: number } | null>(null);
+  const [club, setClub] = useState<ClubOverview | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({ founded: "", advisor: "", intro: "" });
   const navigate = useNavigate();
   const { openLogin, authNonce } = useLoginModal();
 
   useEffect(() => {
     document.title = "南汇一中 · 传媒社";
     api.me()
-      .then((data) => setUser({ id: data.user.id, username: data.user.username }))
+      .then((data) => setUser({
+        id: data.user.id,
+        username: data.user.username,
+        can_edit_about: data.user.permissions?.can_edit_about,
+      }))
       .catch(() => setUser(null));
   }, [authNonce]);
 
-  // 社团概览统计：匿名可读，与登录态无关，挂载时拉一次
   useEffect(() => {
     newsApi.overview()
       .then(setOverview)
       .catch(() => setOverview(null));
+    aboutApi.getOverview()
+      .then(setClub)
+      .catch(() => setClub(null));
   }, []);
 
-  // 受保护目的地：游客改走登录弹窗（带 redirectTo）
   const go = (path: string) => {
     if (user) navigate(path);
     else openLogin(path);
   };
 
+  const saveOverview = async () => {
+    const updated = await aboutApi.updateOverview(draft);
+    setClub(updated);
+    setEditing(false);
+  };
+
   return (
     <AppShell>
-      {/* ── Hero ── */}
       <section className="hero">
         <div className="hero-inner">
           <span className="hero-badge"><EqBars /> 上海市南汇第一中学 · 传媒社</span>
           <h1>用镜头记录青春<br /><span className="accent">用设计诠释创意</span></h1>
           <p className="hero-sub">校园影像、短视频与新媒体作品的策展窗口；社团动态、活动申报与站内通信，一站式直达。</p>
           <div className="hero-actions">
-            <button className="btn btn-primary btn-lg" type="button" onClick={() => go("/activity")}>
+            <button className="btn btn-primary btn-lg" type="button" onClick={() => navigate("/join")}>
               加入社团
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
             </button>
@@ -72,10 +89,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── 两栏主体 ── */}
       <div className="container">
         <div className="home-grid">
-          {/* 左：看板娘栏 + 社团概览 */}
           <aside className="mascot-rail">
             <div className="mascot-frame">
               <div className="mascot-note">
@@ -84,11 +99,46 @@ export default function HomePage() {
               </div>
             </div>
             <div className="rail-card">
-              <h4><span className="bar" /> 社团概览</h4>
-              <div className="stat-row"><span className="k">成立</span><span className="v tnum">2026.03</span></div>
-              <div className="stat-row"><span className="k">成员</span><span className="v tnum">{overview ? overview.members : "—"}</span></div>
-              <div className="stat-row"><span className="k">指导</span><span className="v">信息组</span></div>
-              <div className="stat-row"><span className="k">作品</span><span className="v tnum">{overview ? overview.works : "—"}</span></div>
+              <h4>
+                <span className="bar" /> 社团概览
+                {user?.can_edit_about && !editing && (
+                  <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} type="button"
+                          onClick={() => {
+                            setDraft({
+                              founded: club?.founded || "",
+                              advisor: club?.advisor || "",
+                              intro: club?.intro || "",
+                            });
+                            setEditing(true);
+                          }}>编辑</button>
+                )}
+              </h4>
+              {editing ? (
+                <div className="form-stack">
+                  <input className="input" value={draft.founded} onChange={(e) => setDraft({ ...draft, founded: e.target.value })} placeholder="成立" />
+                  <input className="input" value={draft.advisor} onChange={(e) => setDraft({ ...draft, advisor: e.target.value })} placeholder="指导" />
+                  <input className="input" value={draft.intro} onChange={(e) => setDraft({ ...draft, intro: e.target.value })} placeholder="简介" />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" type="button" onClick={saveOverview}>保存</button>
+                    <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditing(false)}>取消</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="stat-row"><span className="k">成立</span><span className="v tnum">{club?.founded || "—"}</span></div>
+                  <div className="stat-row"><span className="k">成员</span><span className="v tnum">{overview ? overview.members : "—"}</span></div>
+                  <div className="stat-row"><span className="k">指导</span><span className="v">{club?.advisor || "—"}</span></div>
+                  <div className="stat-row"><span className="k">作品</span><span className="v tnum">{overview ? overview.works : "—"}</span></div>
+                  {club?.intro && <p className="detail-sub" style={{ marginTop: 8 }}>{club.intro}</p>}
+                </>
+              )}
+            </div>
+            <div className="rail-card">
+              <h4><span className="bar" /> 小工具</h4>
+              <div className="widget-links">
+                <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate("/exam")}>考试看板</button>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => navigate("/tutorials")}>教程集锦</button>
+              </div>
             </div>
             <div className="rail-card rail-actions">
               <h4><span className="bar" /> 快速入口</h4>
@@ -98,7 +148,6 @@ export default function HomePage() {
             </div>
           </aside>
 
-          {/* 右：社团动态 */}
           <div className="home-main">
             <ClubFeed user={user} />
           </div>

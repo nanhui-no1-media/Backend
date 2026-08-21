@@ -2,4 +2,6 @@ from django.apps import AppConfig
 
 
 class ExamBoardConfig(AppConfig):
-    name = 'exam_board'
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "exam_board"
+    verbose_name = "考试看板"

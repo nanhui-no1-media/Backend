@@ -113,7 +113,7 @@ class ContentVisibilityTest(TestCase):
     def test_news_other_only_published(self):
         self.assertEqual(
             content_visibility(self.other, self.owner, "news"),
-            ContentVisibility(denied=False, extra_filter={"is_published": True}),
+            ContentVisibility(denied=False, extra_filter={"is_published": True, "review__status": "approved"}),
         )
 
     def test_proposals_owner_sees_all(self):

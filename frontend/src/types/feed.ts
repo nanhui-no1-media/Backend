@@ -1,4 +1,3 @@
-import type { NewsCategory } from "./news";
 import type { ActivityType } from "./activities"; // 活动类型单一事实源（与表单/详情页共用）
 
 export type FeedType = "news" | "activity" | "task";
@@ -22,7 +21,6 @@ interface FeedItemBase {
 
 export interface NewsFeedItem extends FeedItemBase {
   type: "news";
-  category: NewsCategory;
   summary: string;
   cover_image_url: string | null;
   views: number;

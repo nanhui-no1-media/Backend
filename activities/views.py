@@ -20,6 +20,8 @@ from accounts.permissions import IsVerified
 
 from attachments.models import Attachment
 from attachments.validation import MAX_FILE_SIZE, classify_file_type, upload_error
+from reviews.lifecycle import open_review
+from reviews.visibility import public_activity_q
 
 from .lifecycle import (
     CLOSED,
@@ -77,10 +79,11 @@ class ActivityViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         # 惰性流转：到 start_at 的待开始活动自动开放；到 end_at 的众议/展示自动结算。
+        # 审核轴只门控可见性，不阻断上述状态机。
         transition_due_starts()
         transition_overdue()
-        return Activity.objects.select_related(
-            "creator", "creator__profile",
+        qs = Activity.objects.select_related(
+            "creator", "creator__profile", "publication_review",
         ).prefetch_related(
             "options", "options__selections",
             "ballots", "ballots__selections", "ballots__voter__profile",
@@ -90,6 +93,15 @@ class ActivityViewSet(viewsets.ModelViewSet):
             "exhibits__vote_option", "exhibits__vote_option__selections",
             "exhibits__ratings",
         )
+        public = qs.filter(public_activity_q())
+        if self.action == "list":
+            return public
+        user = self.request.user
+        if user.is_authenticated:
+            if user.has_perm("reviews.moderate"):
+                return qs
+            return (public | qs.filter(creator=user)).distinct()
+        return public
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -121,7 +133,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated(), CanViewActivity()]  # list / retrieve
 
     def perform_create(self, serializer):
-        serializer.save(creator=self.request.user)
+        activity = serializer.save(creator=self.request.user)
+        open_review(activity=activity, actor=self.request.user)
 
     def create(self, request, *args, **kwargs):
         # 展示:展品在详情页布展(待开始期),创建只收标量——0 展品可建,走 JSON 通用路径。

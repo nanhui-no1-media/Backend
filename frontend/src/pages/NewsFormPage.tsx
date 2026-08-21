@@ -6,7 +6,6 @@ import { api } from "../api/client";
 import { newsApi } from "../api/news";
 import { taskApi } from "../api/tasks";
 import { attachmentApi } from "../api/attachments";
-import { type NewsCategory, CATEGORY_LABELS } from "../types/news";
 import type { Tag } from "../types/tasks";
 import "../styles/news.css";
 import "../styles/form.css";
@@ -14,7 +13,6 @@ import "../styles/form.css";
 interface DraftSnap {
   title: string;
   summary: string;
-  category: NewsCategory;
   content: string;
   tagIds: number[];
   featured: boolean;
@@ -42,7 +40,6 @@ export default function NewsFormPage() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [tags, setTags] = useState<Tag[]>([]);
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<NewsCategory>("notice");
   const [summary, setSummary] = useState("");
   const [content, setContent] = useState("");
   const [cover, setCover] = useState<File | null>(null);
@@ -73,7 +70,6 @@ export default function NewsFormPage() {
           const snap = JSON.parse(raw) as DraftSnap;
           setTitle(snap.title || "");
           setSummary(snap.summary || "");
-          setCategory(snap.category || "notice");
           setContent(snap.content || "");
           setTagIds(Array.isArray(snap.tagIds) ? snap.tagIds : []);
           setFeatured(!!snap.featured);
@@ -88,7 +84,6 @@ export default function NewsFormPage() {
     newsApi.get(Number(id))
       .then((n) => {
         setTitle(n.title);
-        setCategory(n.category);
         setSummary(n.summary);
         setContent(n.content);
         setTagIds(n.tags.map((t) => t.id));
@@ -110,7 +105,7 @@ export default function NewsFormPage() {
       // 空内容不落盘，避免无意义草稿
       if (!title && !summary && !content && tagIds.length === 0) return;
       const snap: DraftSnap = {
-        title, summary, category, content, tagIds, featured, isPublished,
+        title, summary, content, tagIds, featured, isPublished,
         savedAt: Date.now(),
       };
       localStorage.setItem(draftKey, JSON.stringify(snap));
@@ -118,7 +113,7 @@ export default function NewsFormPage() {
     }, 800);
     return () => { if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, summary, category, content, tagIds, featured, isPublished]);
+  }, [title, summary, content, tagIds, featured, isPublished]);
 
   const onPickCover = (f: File | null) => {
     if (f && f.size > 2 * 1024 * 1024) {
@@ -135,7 +130,7 @@ export default function NewsFormPage() {
 
   const discardDraft = () => {
     localStorage.removeItem(draftKey);
-    setTitle(""); setSummary(""); setCategory("notice"); setContent("");
+    setTitle(""); setSummary(""); setContent("");
     setTagIds([]); setFeatured(false); setIsPublished(true);
     setSavedAt(null); setDraftRestored(false);
     setRteKey((k) => k + 1);
@@ -146,7 +141,6 @@ export default function NewsFormPage() {
     if (!newsIdRef.current) {
       const draftFd = new FormData();
       draftFd.append("title", title.trim() || "未命名草稿");
-      draftFd.append("category", category);
       draftFd.append("content", content);
       draftFd.append("summary", summary);
       draftFd.append("is_published", "false");
@@ -172,7 +166,6 @@ export default function NewsFormPage() {
     try {
       const fd = new FormData();
       fd.append("title", title.trim());
-      fd.append("category", category);
       fd.append("summary", summary);
       fd.append("content", content);
       fd.append("featured", String(featured));
@@ -240,18 +233,8 @@ export default function NewsFormPage() {
             aria-label="标题"
           />
 
-          {/* 元信息行：分类 / 状态 / 封面 */}
+          {/* 元信息行：状态 / 封面 */}
           <div className="compose-meta">
-            <label className="compose-pill">
-              <span className="cp-label">分类</span>
-              <select className="select" value={category}
-                      onChange={(e) => setCategory(e.target.value as NewsCategory)}>
-                {(Object.keys(CATEGORY_LABELS) as NewsCategory[]).map((c) => (
-                  <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
-                ))}
-              </select>
-            </label>
-
             <div className="compose-pill">
               <span className="cp-label">状态</span>
               <div className="seg seg-sm" role="tablist" aria-label="发布状态">

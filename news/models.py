@@ -12,17 +12,9 @@ def cover_upload_path(instance, filename):
 
 
 class News(models.Model):
-    """新闻 / 公告（社团公告、活动回顾、作品展示、通知）。"""
-
-    CATEGORY_CHOICES = [
-        ("notice", "社团公告"),
-        ("recap", "活动回顾"),
-        ("work", "作品展示"),
-        ("inform", "通知"),
-    ]
+    """新闻 / 公告。"""
 
     title = models.CharField("标题", max_length=200)
-    category = models.CharField("分类", max_length=20, choices=CATEGORY_CHOICES, default="notice")
     summary = models.CharField("摘要", max_length=280, blank=True, default="")
     content = models.TextField("正文（HTML）", blank=True, default="")
     cover_image = models.ImageField("封面图", upload_to=cover_upload_path, blank=True)

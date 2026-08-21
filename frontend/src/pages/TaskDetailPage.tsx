@@ -3,14 +3,16 @@ import { useNavigate, useParams, Link } from "react-router-dom";
 import { taskApi } from "../api/tasks";
 import { attachmentApi } from "../api/attachments";
 import { messagingApi } from "../api/messaging";
+import { api } from "../api/client";
 import {
-  TaskDetail, Message, TaskAction,
+  TaskDetail, TaskUser, TaskAction,
   STATUS_LABELS, PRIORITY_LABELS,
   STATUS_BADGE_CLASS, PRIORITY_DOT_CLASS,
 } from "../types/tasks";
 import RichTextEditor from "../components/RichTextEditor";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
+import MessageThread from "../components/MessageThread";
 import "../styles/detail.css";
 
 export default function TaskDetailPage() {
@@ -19,10 +21,9 @@ export default function TaskDetailPage() {
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const [messageSubmitting, setMessageSubmitting] = useState(false);
+  const [currentUser, setCurrentUser] = useState<TaskUser | null>(null);
+  const [messageCount, setMessageCount] = useState(0);
   const [conversationId, setConversationId] = useState<number | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
   const [claimReason, setClaimReason] = useState("");
   const [claiming, setClaiming] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -38,36 +39,25 @@ export default function TaskDetailPage() {
     taskApi.get(Number(id))
       .then((t) => {
         setTask(t);
+        // 讨论消息由 <MessageThread> 按 conversationId 自行倒序分页加载
         messagingApi.getTaskConversation(t.id)
-          .then((conv) => {
-            setConversationId(conv.id);
-            return messagingApi.getMessages(conv.id);
-          })
-          .then((msgs) => setMessages(msgs.results || msgs))
+          .then((conv) => setConversationId(conv.id))
           .catch(() => {});
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
 
+  useEffect(() => {
+    api.me()
+      .then((d) => setCurrentUser({ ...d.user, avatar: d.profile.avatar, nickname: d.profile.nickname }))
+      .catch(() => {});
+  }, []);
+
   const reloadTask = async () => {
     if (!task) return;
     const updated = await taskApi.get(task.id);
     setTask(updated);
-  };
-
-  const handleSendMessage = async () => {
-    if (!conversationId || !message.trim()) return;
-    setMessageSubmitting(true);
-    try {
-      const newMsg = await messagingApi.sendMessage(conversationId, message.trim());
-      setMessages([...messages, newMsg]);
-      setMessage("");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setMessageSubmitting(false);
-    }
   };
 
   const handleClaim = async () => {
@@ -400,32 +390,14 @@ export default function TaskDetailPage() {
         </div>
 
         <div className="card card-pad detail-section">
-          <h3 className="section-h">讨论 ({messages.length})</h3>
-          {conversationId && (
-            <div className="comment-input">
-              <textarea className="textarea" value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                        placeholder="输入消息，使用 @用户名 提及他人..." rows={3} />
-              <button className="btn btn-primary"
-                      onClick={handleSendMessage}
-                      disabled={!message.trim() || messageSubmitting}>
-                {messageSubmitting ? "发送中…" : "发送"}
-              </button>
-            </div>
-          )}
-          {messages.length > 0 ? (
-            <div className="comment-list">
-              {messages.map((m) => (
-                <div key={m.id} className="comment-item">
-                  <div className="comment-head">
-                    <Link to={`/u/${m.sender.id}`}><Avatar user={m.sender} size="md" /></Link>
-                    <strong>{m.sender.nickname || m.sender.username}</strong>
-                    <span className="comment-time">{new Date(m.created_at).toLocaleString("zh-CN")}</span>
-                  </div>
-                  <div className="comment-content">{m.content}</div>
-                </div>
-              ))}
-            </div>
+          <h3 className="section-h">讨论 ({messageCount})</h3>
+          {conversationId && currentUser ? (
+            <MessageThread
+              conversationId={conversationId}
+              currentUser={currentUser}
+              autoScroll={false}
+              onCountChange={setMessageCount}
+            />
           ) : (
             <p className="empty-text">暂无讨论</p>
           )}

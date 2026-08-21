@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api/client";
 import { activityApi } from "../api/activities";
 import {
   ActivityListItem,
@@ -8,9 +7,13 @@ import {
   ACTIVITY_TYPE_META,
   activityPhase,
 } from "../types/activities";
+import { usePagedList } from "../hooks/usePagedList";
+import Pagination from "../components/Pagination";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
 import "../styles/list.css";
+
+const PAGE_SIZE = 20;
 
 function formatCountdown(iso: string): string {
   const ms = new Date(iso).getTime() - Date.now();
@@ -22,27 +25,14 @@ function formatCountdown(iso: string): string {
 
 export default function ActivityListPage() {
   const navigate = useNavigate();
-  const [activities, setActivities] = useState<ActivityListItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState<ActivityType | "">("");
   const [search, setSearch] = useState("");
-  const [error, setError] = useState("");
 
-  useEffect(() => {
-    setLoading(true);
-    setError("");
-    const params: Record<string, string> = {};
-    if (typeFilter) params.type = typeFilter;
-    if (search) params.search = search;
-    activityApi
-      .list(params)
-      .then((data) => setActivities(data.results || []))
-      .catch((err) => {
-        setError(err.message);
-        setActivities([]);
-      })
-      .finally(() => setLoading(false));
-  }, [typeFilter, search]);
+  const { data: activities, page, setPage, totalPages, loading, error } = usePagedList<ActivityListItem>(
+    (params) => activityApi.list(params),
+    PAGE_SIZE,
+    { type: typeFilter || undefined, search: search || undefined },
+  );
 
   return (
     <AppShell>
@@ -67,12 +57,6 @@ export default function ActivityListPage() {
       </div>
 
       <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
-        {error && (
-          <div className="alert alert-danger" style={{ margin: "var(--s-6) 0 var(--s-4)" }}>
-            <span>{error}</span>
-          </div>
-        )}
-
         <div className="prop-tabs">
           <div className="seg" role="tablist" aria-label="活动类型">
             <button className="seg-btn" type="button" aria-selected={typeFilter === ""} onClick={() => setTypeFilter("")}>全部</button>
@@ -87,6 +71,13 @@ export default function ActivityListPage() {
             <input className="input" type="search" placeholder="搜索活动…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
+
+        {error && (
+          <div className="alert alert-danger" style={{ margin: "var(--s-6) 0 var(--s-4)" }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
+            <span>{error}</span>
+          </div>
+        )}
 
         {loading ? (
           <p className="muted" style={{ padding: "var(--s-8) 0" }}>加载中…</p>
@@ -126,6 +117,9 @@ export default function ActivityListPage() {
               </a>
             );
           })
+        )}
+        {!loading && activities.length > 0 && (
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
         )}
       </div>
     </AppShell>
