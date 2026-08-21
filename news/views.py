@@ -35,7 +35,7 @@ def _content_image_path(filename):
 class NewsViewSet(viewsets.ModelViewSet):
     """新闻：公开读（已发布），有 news 写权限者（信息组）可写。"""
 
-    filterset_fields = ["category", "featured", "is_published"]
+    filterset_fields = ["featured", "is_published"]
     search_fields = ["title", "summary", "content"]
     ordering_fields = ["published_at", "views", "created_at"]
     ordering = ["-published_at"]

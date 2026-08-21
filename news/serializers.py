@@ -49,7 +49,7 @@ class NewsListSerializer(serializers.ModelSerializer):
     class Meta:
         model = News
         fields = [
-            "id", "title", "category", "summary", "cover_image_url",
+            "id", "title", "summary", "cover_image_url",
             "author", "tags", "featured", "views", "is_published",
             "review_status", "published_at", "created_at",
         ]
@@ -87,7 +87,7 @@ class NewsDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = News
         fields = [
-            "id", "title", "category", "summary", "content",
+            "id", "title", "summary", "content",
             "cover_image", "cover_image_url",
             "author", "tags", "tag_ids",
             "featured", "views", "is_published", "review_status", "published_at",
@@ -102,9 +102,9 @@ class NewsDetailSerializer(serializers.ModelSerializer):
         return review_status_of(obj)
 
     def get_related(self, obj):
-        """同分类、已发布且过审、最新 3 条（排除自身）。"""
+        """已发布且过审、按发布时间最新 3 条（排除自身）。"""
         qs = (
-            News.objects.filter(category=obj.category, **public_news_kwargs())
+            News.objects.filter(**public_news_kwargs())
             .exclude(pk=obj.pk)
             .select_related("author", "author__profile")
             .prefetch_related("tags")

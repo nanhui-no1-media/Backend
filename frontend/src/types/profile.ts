@@ -22,7 +22,6 @@ export interface ContentItem {
   title: string;
   created_at?: string;
   published_at?: string;
-  category?: string;
   cover_image?: string | null;
   is_published?: boolean;
   review_status?: string | null;

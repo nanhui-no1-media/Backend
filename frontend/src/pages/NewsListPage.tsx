@@ -6,10 +6,9 @@ import { usePagedList } from "../hooks/usePagedList";
 import { api } from "../api/client";
 import { newsApi } from "../api/news";
 import {
-  type NewsCategory,
   type NewsListItem,
   type NewsTag,
-  CATEGORY_LABELS, CATEGORY_BADGE_CLASS, NEWS_PAGE_SIZE,
+  NEWS_PAGE_SIZE,
 } from "../types/news";
 import "../styles/news.css";
 
@@ -28,7 +27,6 @@ export default function NewsListPage() {
   const [featured, setFeatured] = useState<NewsListItem | null>(null);
   const [hot, setHot] = useState<NewsListItem[]>([]);
   const [tagCloud, setTagCloud] = useState<NewsTag[]>([]);
-  const [category, setCategory] = useState<NewsCategory | "">("");
   const [search, setSearch] = useState("");
 
   // 公开页：匿名也可读，故 me() 失败静默（不弹登录）
@@ -54,14 +52,13 @@ export default function NewsListPage() {
   } = usePagedList<NewsListItem>(
     (params) => newsApi.list(params),
     NEWS_PAGE_SIZE,
-    { category: category || undefined, search: search || undefined },
+    { search: search || undefined },
   );
 
-  const showFeatured = !category && !search && page === 1;
+  const showFeatured = !search && page === 1;
   // 头条同时在列表中出现会重复，hero 展示时从列表中剔除
   const visibleItems = showFeatured && featured ? items.filter((n) => n.id !== featured.id) : items;
 
-  const pickCategory = (c: NewsCategory | "") => setCategory(c);
   const onSearch = (v: string) => setSearch(v);
 
   return (
@@ -76,7 +73,7 @@ export default function NewsListPage() {
           <div className="page-head-row">
             <div>
               <h1>新闻</h1>
-              <p className="section-sub">社团公告、活动回顾、社员作品与通知。</p>
+              <p className="section-sub">社团公告、回顾与通知。</p>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {me?.can_review_content && (
@@ -94,15 +91,6 @@ export default function NewsListPage() {
       </div>
 
       <div className="container">
-        <div className="filter-bar" role="tablist" aria-label="新闻分类">
-          <button className="chip" aria-pressed={category === ""} onClick={() => pickCategory("")}>全部</button>
-          {(Object.keys(CATEGORY_LABELS) as NewsCategory[]).map((c) => (
-            <button key={c} className="chip" aria-pressed={category === c} onClick={() => pickCategory(c)}>
-              {CATEGORY_LABELS[c]}
-            </button>
-          ))}
-        </div>
-
         <div className="news-layout">
           <div>
             {/* 头条：仅在未筛选首页展示 */}
@@ -120,7 +108,7 @@ export default function NewsListPage() {
                   )}
                 </div>
                 <div className="feature-body">
-                  <span className="badge badge-brand feature-tag"><span className="badge-dot" />{CATEGORY_LABELS[featured.category]} · 头条</span>
+                  <span className="badge badge-brand feature-tag"><span className="badge-dot" />头条</span>
                   <h2>{featured.title}</h2>
                   <p>{featured.summary}</p>
                   <div className="feature-meta">
@@ -136,7 +124,7 @@ export default function NewsListPage() {
             {loading ? (
               <p className="news-empty">加载中…</p>
             ) : visibleItems.length === 0 ? (
-              <p className="news-empty">{category || search ? "该筛选下暂无内容。" : "暂无新闻。"}</p>
+              <p className="news-empty">{search ? "该筛选下暂无内容。" : "暂无新闻。"}</p>
             ) : (
               visibleItems.map((n) => (
                 <a key={n.id} className="news-item" href="#"
@@ -153,7 +141,6 @@ export default function NewsListPage() {
                   </div>
                   <div>
                     <div className="meta">
-                      <span className={"badge " + CATEGORY_BADGE_CLASS[n.category]}>{CATEGORY_LABELS[n.category]}</span>
                       <span className="date tnum">{fmtDate(n.published_at || n.created_at)}</span>
                     </div>
                     <h3>{n.title}</h3>

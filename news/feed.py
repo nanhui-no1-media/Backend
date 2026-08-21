@@ -29,7 +29,6 @@ def _news_dict(news, request):
         "id": news.pk,
         "title": news.title,
         "timestamp": (news.published_at or news.created_at).isoformat(),
-        "category": news.category,
         "summary": news.summary,
         "cover_image_url": _abs_url(request, news.cover_image),
         "views": news.views,

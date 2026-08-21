@@ -10,9 +10,6 @@ const DETAIL_PATH: Record<ContentType, string> = {
   tasks: "/tasks",
 };
 
-const NEWS_CATEGORY: Record<string, string> = {
-  notice: "社团公告", recap: "活动回顾", work: "作品展示", inform: "通知",
-};
 const PROPOSAL_TYPE: Record<string, string> = {
   feedback: "意见反馈",
 };
@@ -25,13 +22,12 @@ const TASK_PRIORITY: Record<string, string> = {
 
 function metaFor(type: ContentType, it: ContentItem): string {
   if (type === "news") {
-    const cat = it.category ? NEWS_CATEGORY[it.category] ?? it.category : "";
     const draft = it.is_published === false ? " · 草稿" : "";
     const review = it.review_status === "pending" ? " · 待审"
       : it.review_status === "rejected" ? " · 已驳回"
       : it.review_status === "removed" ? " · 已下架"
       : "";
-    return [cat, it.published_at?.slice(0, 10)].filter(Boolean).join(" · ") + draft + review;
+    return (it.published_at?.slice(0, 10) || "") + draft + review;
   }
   if (type === "proposals") {
     return [it.proposal_type ? PROPOSAL_TYPE[it.proposal_type] ?? it.proposal_type : "", it.created_at?.slice(0, 10)]

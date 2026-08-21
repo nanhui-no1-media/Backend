@@ -808,7 +808,6 @@ def user_content_view(request, id):
         results = [{
             "id": n.id,
             "title": n.title,
-            "category": n.category,
             "cover_image": n.cover_image.url if n.cover_image else None,
             "is_published": n.is_published,
             "review_status": review_status_of(n),

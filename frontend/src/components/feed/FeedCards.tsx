@@ -1,4 +1,3 @@
-import { CATEGORY_BADGE_CLASS, CATEGORY_LABELS } from "../../types/news";
 import { ACTIVITY_TYPE_META, activityPhase, type ActivityStatus } from "../../types/activities";
 import {
   FEED_TASK_PRIORITY_BARS,
@@ -36,9 +35,7 @@ export function FeaturedNewsCard({ item, onClick }: { item: NewsFeedItem; onClic
     <button type="button" className="feed-featured" onClick={onClick}>
       <Cover url={item.cover_image_url} />
       <div className="feed-featured-body">
-        <span className={`badge ${CATEGORY_BADGE_CLASS[item.category]}`}>
-          {CATEGORY_LABELS[item.category]}
-        </span>
+        <span className="badge badge-brand">头条</span>
         <h3>{item.title}</h3>
         {item.summary && <p>{item.summary}</p>}
         <div className="feed-meta">
@@ -54,9 +51,7 @@ export function NewsCard({ item, onClick }: { item: NewsFeedItem; onClick: () =>
     <button type="button" className="feed-cell feed-cell--news" onClick={onClick}>
       <Cover url={item.cover_image_url} />
       <div className="feed-cell-body">
-        <span className={`badge ${CATEGORY_BADGE_CLASS[item.category]}`}>
-          {CATEGORY_LABELS[item.category]}
-        </span>
+        <span className="badge badge-brand">新闻</span>
         <h4>{item.title}</h4>
         <div className="feed-meta">
           <span>👁 {item.views}</span>

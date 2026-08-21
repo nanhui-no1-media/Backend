@@ -279,3 +279,32 @@ class FeedEndpointTest(TestCase):
         resp = self.client.get("/news/news/feed/?limit=1")
         self.assertEqual(resp.status_code, 200)
         self.assertLessEqual(len(resp.data["items"]), 1)
+
+
+class NewsRelatedTest(TestCase):
+    """详情 related：按发布时间最新 3 条公开稿，不含自身。"""
+
+    def setUp(self):
+        self.author = _info(User.objects.create_user(username="info", password="x"))
+        self.client = APIClient()
+
+    def _news(self, title, days_ago=0):
+        n = approve_news(News.objects.create(
+            title=title, author=self.author, is_published=True,
+        ))
+        News.objects.filter(pk=n.pk).update(
+            published_at=timezone.now() - timedelta(days=days_ago),
+        )
+        return n
+
+    def test_related_is_latest_public_excluding_self(self):
+        current = self._news("current", days_ago=0)
+        for i in range(1, 5):
+            self._news(f"n{i}", days_ago=i)
+        resp = self.client.get(f"/news/news/{current.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        titles = [r["title"] for r in resp.data["related"]]
+        self.assertEqual(titles, ["n1", "n2", "n3"])
+        self.assertNotIn("current", titles)
+        self.assertNotIn("n4", titles)
+        self.assertNotIn("category", resp.data)
