@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { messagingApi } from "../api/messaging";
 import { useLoginModal } from "./LoginModalProvider";
 import "./AppShell.css";
 
@@ -14,6 +13,7 @@ interface AppShellUser {
 interface AppShellProfile {
   nickname?: string;
   avatar?: string | null;
+  is_verified?: boolean;
 }
 interface AppShellRole {
   variant?: string;
@@ -29,18 +29,13 @@ const NAV: { label: string; path: string }[] = [
 ];
 const USER_MENU: { label: string; path: string }[] = [
   { label: "个人中心", path: "/profile" },
+  { label: "待办", path: "/inbox" },
   { label: "任务管理", path: "/tasks" },
   { label: "活动", path: "/activity" },
   { label: "意见反馈", path: "/feedback" },
   { label: "后台管理", path: "/admin/" },
 ];
 
-const BellIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
-    <path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z" />
-    <path d="M10 19a2 2 0 0 0 4 0" />
-  </svg>
-);
 const Caret = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
     <path d="M6 9l6 6 6-6" />
@@ -55,10 +50,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [roleVariant, setRoleVariant] = useState<string>("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
-  const [bellOpen, setBellOpen] = useState(false);
-  const [unread, setUnread] = useState(0);
+  const [inboxCount, setInboxCount] = useState(0);
+  const [showTop, setShowTop] = useState(false);
   const userWrap = useRef<HTMLDivElement>(null);
-  const bellWrap = useRef<HTMLDivElement>(null);
   const { openLogin, authNonce, notifyAuthChange } = useLoginModal();
 
   useEffect(() => {
@@ -68,17 +62,18 @@ export default function AppShell({ children }: { children: ReactNode }) {
         setProfile(d.profile ?? {});
         setRoleVariant(d.role?.variant ?? "");
       })
-      .catch(() => setUser(null));
+      .catch(() => { setUser(null); setRoleVariant(""); });
   }, [authNonce]);
 
-  // 铃铛红点：仅在「确有未读」时亮。登录态、跳转路由（含从 /messages 读毕返回）时刷新；
-  // 不做轮询——校园门户按需刷新即可。失败则按 0 处理（红点隐去），不阻塞顶栏。
+  const showInbox = !!user && roleVariant !== "visitor" && !(roleVariant === "admin" && !profile.is_verified);
+
+  // 待办角标：与原先未读同一节奏——登录态、路由跳转时刷新，不轮询。
   useEffect(() => {
-    if (!user) { setUnread(0); return; }
-    messagingApi.unreadCount()
-      .then((d: any) => setUnread(Number(d?.total) || 0))
-      .catch(() => setUnread(0));
-  }, [user, authNonce, location.pathname]);
+    if (!showInbox) { setInboxCount(0); return; }
+    api.inbox()
+      .then((d: any) => setInboxCount(Number(d?.count) || 0))
+      .catch(() => setInboxCount(0));
+  }, [showInbox, authNonce, location.pathname]);
 
   // 用 body.is-authed 驱动 cobalt 的 .act-guest/.act-user 显隐
   useEffect(() => {
@@ -86,28 +81,33 @@ export default function AppShell({ children }: { children: ReactNode }) {
     return () => { document.body.classList.remove("is-authed"); };
   }, [user]);
 
+  useEffect(() => {
+    const onScroll = () => setShowTop(window.scrollY > window.innerHeight * 0.9);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [location.pathname]);
+
   // 点击外部关闭下拉
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (userWrap.current && !userWrap.current.contains(t)) setUserOpen(false);
-      if (bellWrap.current && !bellWrap.current.contains(t)) setBellOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
   const go = (path: string) => {
-    setDrawerOpen(false); setUserOpen(false); setBellOpen(false);
+    setDrawerOpen(false); setUserOpen(false);
     if (path.startsWith("http") || path === "/admin/") window.location.href = path;
     else navigate(path);
   };
   const isActive = (p: string) =>
     p === "/" ? location.pathname === "/" : location.pathname.startsWith(p);
   const logout = async () => {
-    setDrawerOpen(false); setUserOpen(false); setBellOpen(false);
+    setDrawerOpen(false); setUserOpen(false);
     try { await api.logout(); } finally {
-      // 通知认证态变化：同页（如首页）不重挂时，顶栏与本页 user 状态仍能立即刷新为游客
       notifyAuthChange();
       navigate("/");
     }
@@ -135,20 +135,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <button className="btn btn-primary btn-sm" onClick={() => openLogin()}>登录</button>
             </div>
             <div className="act-user">
-              <div className="bell-wrap" ref={bellWrap}>
-                <button className="bell" type="button" aria-label={unread > 0 ? `站内通信，${unread} 条未读` : "站内通信"}
-                        aria-expanded={bellOpen} onClick={() => setBellOpen((v) => !v)}>
-                  <BellIcon />
-                  {unread > 0 && <span className="bell-dot" />}
+              {showInbox && (
+                <button
+                  className={"inbox-entry" + (isActive("/inbox") ? " is-current" : "")}
+                  type="button"
+                  aria-label={inboxCount > 0 ? `待办，${inboxCount} 项` : "待办"}
+                  onClick={() => go("/inbox")}
+                >
+                  待办
+                  {inboxCount > 0 && <span className="inbox-badge tnum">{inboxCount}</span>}
                 </button>
-                {bellOpen && (
-                  <div className="bell-panel is-open" role="menu" aria-label="站内通信">
-                    <div className="bell-head"><span>站内通信</span></div>
-                    <a className="bell-foot" href="#"
-                       onClick={(e) => { e.preventDefault(); go("/messages"); }}>查看全部站内通信</a>
-                  </div>
-                )}
-              </div>
+              )}
               <div className="user-chip-wrap" ref={userWrap}>
                 <button className="user-chip" type="button" aria-expanded={userOpen}
                         onClick={() => setUserOpen((v) => !v)}>
@@ -165,7 +162,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                         <div className="um-sub">@{user?.username}</div>
                       </div>
                     </div>
-                    {USER_MENU.map((m) => (
+                    {USER_MENU.filter((m) => m.path !== "/inbox" || showInbox).map((m) => (
                       <button key={m.path} className="user-menu-item" type="button" onClick={() => go(m.path)}>
                         {m.label}
                       </button>
@@ -197,13 +194,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
           {user ? (
             <>
               <button className="sheet-item" type="button" onClick={() => go("/profile")}>个人中心</button>
+              {showInbox && (
+                <button className="sheet-item" type="button" onClick={() => go("/inbox")}>
+                  待办{inboxCount > 0 ? `（${inboxCount}）` : ""}
+                </button>
+              )}
               <button className="sheet-item" type="button" onClick={() => go("/tasks")}>任务管理</button>
               <button className="sheet-item" type="button" onClick={() => go("/activity")}>活动</button>
               <button className="sheet-item" type="button" onClick={() => go("/feedback")}>意见反馈</button>
               {user.permissions?.can_review_content && (
                 <button className="sheet-item" type="button" onClick={() => go("/reviews")}>审核队列</button>
               )}
-              <button className="sheet-item" type="button" onClick={() => go("/messages")}>站内通信</button>
               <button className="sheet-item" type="button" onClick={logout}>退出登录</button>
             </>
           ) : (
@@ -223,6 +224,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
       )}
 
       <main className="page">{children}</main>
+
+      {showTop && (
+        <button
+          className="back-to-top"
+          type="button"
+          aria-label="回到顶部"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        >
+          ↑
+        </button>
+      )}
 
       <footer className="footer">
         <div className="footer-inner">

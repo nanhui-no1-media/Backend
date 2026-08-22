@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import RichTextEditor from "../components/RichTextEditor";
 import DocxPreview from "../components/DocxPreview";
+import ArticleToc from "../components/ArticleToc";
 import { api } from "../api/client";
 import { aboutApi, type AboutBlock, type AboutPageData } from "../api/about";
 import { newsApi } from "../api/news";
@@ -129,7 +130,10 @@ export default function AboutPage() {
                 {!editing ? (
                   <>
                     {block.content ? (
-                      <RichTextEditor key={`read-${block.key}`} content={block.content} editable={false} />
+                      <>
+                        <ArticleToc html={block.content} />
+                        <RichTextEditor key={`read-${block.key}`} content={block.content} editable={false} />
+                      </>
                     ) : (
                       <p className="empty-text">{canEdit ? "尚未填写内容，点击「编辑」开始。" : "内容即将上线。"}</p>
                     )}

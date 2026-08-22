@@ -46,7 +46,7 @@ export default function ActivityListPage() {
           <div className="page-head-row">
             <div>
               <h1>活动</h1>
-              <p className="section-sub">众议（投票）与征集（收作品），发起即对全体已验证成员开放。</p>
+              <p className="section-sub">众议、征集、展示，发起即对全体已验证成员开放。</p>
             </div>
             <button className="btn btn-primary" onClick={() => navigate("/activity/new")}>
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
@@ -62,6 +62,7 @@ export default function ActivityListPage() {
             <button className="seg-btn" type="button" aria-selected={typeFilter === ""} onClick={() => setTypeFilter("")}>全部</button>
             <button className="seg-btn" type="button" aria-selected={typeFilter === "deliberation"} onClick={() => setTypeFilter("deliberation")}>众议</button>
             <button className="seg-btn" type="button" aria-selected={typeFilter === "collection"} onClick={() => setTypeFilter("collection")}>征集</button>
+            <button className="seg-btn" type="button" aria-selected={typeFilter === "exhibition"} onClick={() => setTypeFilter("exhibition")}>展示</button>
           </div>
         </div>
 
@@ -101,6 +102,8 @@ export default function ActivityListPage() {
                     <span className="act-medal-ico">{ACTIVITY_TYPE_META[a.type].emoji}</span>
                     {ACTIVITY_TYPE_META[a.type].label}
                   </span>
+                  {a.owed === "vote" && <span className="badge badge-warning">未投</span>}
+                  {a.owed === "submit" && <span className="badge badge-warning">未交</span>}
                   {a.creator && (
                     <span className="who">
                       <Avatar user={a.creator} />

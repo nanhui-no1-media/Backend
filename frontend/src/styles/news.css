@@ -101,6 +101,17 @@ a.news-item:hover h3 { color: var(--brand-700); }
 .author-card .ac-name { font-weight: 700; font-family: var(--font-display); }
 .author-card .ac-desc { font-size: 13px; color: var(--muted); }
 
+.article-toc {
+  border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s-4);
+  background: var(--bg); margin-bottom: var(--s-4);
+}
+.article-toc-title { font-family: var(--font-display); font-size: 13px; font-weight: 700; margin: 0 0 var(--s-2); }
+.article-toc ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.article-toc a { font-size: 13px; color: var(--ink-700); text-decoration: none; }
+.article-toc a:hover { color: var(--brand-700); }
+.article-toc .is-h3 { padding-left: 12px; }
+.article-toc .is-h3 a { font-size: 12.5px; color: var(--muted); }
+
 /* 右栏 */
 .detail-side { position: sticky; top: calc(var(--nav-h) + var(--s-5)); display: flex; flex-direction: column; gap: var(--s-5); }
 .meta-row { display: flex; justify-content: space-between; font-size: 13px; padding: var(--s-2) 0; border-bottom: 1px dashed var(--line); }

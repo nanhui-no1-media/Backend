@@ -3,11 +3,13 @@ from datetime import timedelta
 from django.utils import timezone
 from rest_framework import serializers
 
+from accounts.models import is_verified
 from attachments.serializers import AttachmentSerializer
 from common.rich_text import sanitize_html
 from reviews.visibility import review_status_of
 from tasks.serializers import SimpleUserSerializer  # 复用（与申报/新闻一致）
 
+from .debt import activity_debt_reason
 from .lifecycle import initial_status
 from .models import Activity, Ballot, Exhibit, VoteOption, Submission
 
@@ -111,16 +113,34 @@ class ExhibitSerializer(serializers.ModelSerializer):
 class ActivityListSerializer(serializers.ModelSerializer):
     creator = SimpleUserSerializer(read_only=True)
     review_status = serializers.SerializerMethodField()
+    owed = serializers.SerializerMethodField()
 
     class Meta:
         model = Activity
         fields = [
             "id", "type", "status", "title", "creator",
-            "review_status", "start_at", "end_at", "created_at", "updated_at",
+            "review_status", "owed", "start_at", "end_at", "created_at", "updated_at",
         ]
 
     def get_review_status(self, obj):
         return review_status_of(obj, related="publication_review")
+
+    def get_owed(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return None
+        if not (user.is_superuser or is_verified(user)):
+            return None
+        has_ballot = getattr(obj, "_has_ballot", None)
+        if has_ballot is None:
+            has_ballot = any(b.voter_id == user.pk for b in obj.ballots.all())
+        has_submission = getattr(obj, "_has_submission", None)
+        if has_submission is None:
+            has_submission = any(s.submitter_id == user.pk for s in obj.submissions.all())
+        return activity_debt_reason(
+            obj, has_ballot=bool(has_ballot), has_submission=bool(has_submission),
+        )
 
 
 def _is_reviewer(activity, user):

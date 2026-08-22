@@ -1,5 +1,6 @@
 /* detail.css — 任务/活动详情页共享 cobalt 基元 */
 .detail-container { max-width: 880px; }
+.tutorial-media { max-width: 1120px; padding-bottom: var(--s-4); }
 .detail-body { display: flex; flex-direction: column; gap: var(--s-5); padding: var(--s-8) var(--s-6) var(--s-16); }
 .page-head .detail-container { padding-top: var(--s-10); }
 

@@ -19,6 +19,7 @@ export interface ActivityListItem {
   title: string;
   creator: TaskUser | null;
   review_status?: "pending" | "approved" | "rejected" | "removed" | null;
+  owed?: "vote" | "submit" | null;
   start_at: string | null;
   end_at: string | null;
   created_at: string;

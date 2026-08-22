@@ -66,6 +66,10 @@ export default function ActivityDetailPage() {
   const isDeliberation = a.type === "deliberation";
   const isCollection = a.type === "collection";
   const isExhibition = a.type === "exhibition";
+  const owesVote = (isDeliberation && a.status === "open" && a.my_selections === null)
+    || (isExhibition && a.voting_enabled && a.status === "open" && a.my_selections === null);
+  const owesSubmit = isCollection && a.status === "collecting" && !a.my_submission;
+  const memberDebt = owesVote || owesSubmit;
   const total = a.total_ballots ?? 0;
   // 阶段勋章：类型感知（展示 open=展示中，其余 open=投票中）
   const phase = activityPhase(a.type, a.status);
@@ -226,7 +230,7 @@ export default function ActivityDetailPage() {
             <span className="sep">/</span>
             <span>{a.title}</span>
           </nav>
-          {canManage && a.status === "scheduled" && (
+          {canManage && a.status === "scheduled" && !memberDebt && (
             <button className="btn btn-primary btn-sm" onClick={() => navigate(`/activity/${a.id}/edit`)}>
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
               编辑
@@ -250,8 +254,64 @@ export default function ActivityDetailPage() {
             </span>
           </div>
           <h1 style={{ margin: "0 0 var(--s-4)" }}>{a.title}</h1>
+        </div>
+
+        {owesVote && isDeliberation && (
+          <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
+            <h3 className="section-h">投票</h3>
+            <div className="hint" style={{ marginBottom: 8 }}>
+              可选 {a.max_choices_per_voter} 项（{a.max_choices_per_voter === 1 ? "一人一票" : "一人多票"}）；一经投出不可更改。
+            </div>
+            {a.options.map((o) => {
+              const on = selected.includes(o.id);
+              return (
+                <label key={o.id} className={"vote-opt" + (on ? " is-on" : "")}>
+                  <input
+                    type={a.max_choices_per_voter === 1 ? "radio" : "checkbox"}
+                    name="vote-primary"
+                    checked={on}
+                    onChange={() => toggleOption(o.id)}
+                  />
+                  <span className="vote-opt-text">{o.text}</span>
+                </label>
+              );
+            })}
+            <button className="btn btn-primary btn-sm" onClick={doVote} disabled={busy || selected.length < 1}>投票</button>
+          </div>
+        )}
+
+        {owesSubmit && (
+          <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
+            <h3 className="section-h">提交作品</h3>
+            <div className="hint" style={{ marginBottom: 8 }}>一人一作品，提交即锁定。</div>
+            <input type="file" multiple onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+            {files.length > 0 && <div className="hint">已选 {files.length} 个文件</div>}
+            <div style={{ marginTop: 8 }}>
+              <button className="btn btn-primary btn-sm" onClick={doSubmit} disabled={busy || files.length < 1}>提交作品</button>
+            </div>
+          </div>
+        )}
+
+        {memberDebt && canManage && (
+          <details className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
+            <summary className="section-h" style={{ cursor: "pointer" }}>管理活动</summary>
+            <div style={{ marginTop: "var(--s-3)", display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {a.status === "scheduled" && (
+                <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/activity/${a.id}/edit`)}>编辑</button>
+              )}
+              {(a.status === "open" || a.status === "collecting") && (
+                <button className="btn btn-ghost btn-sm" onClick={doClose} disabled={busy}>
+                  {isDeliberation ? "提前结束投票" : isCollection ? "提前结束收件" : "提前结束展示"}
+                </button>
+              )}
+            </div>
+          </details>
+        )}
+
+        {(a.body || (!memberDebt && canManage && (a.status === "open" || a.status === "collecting"))) && (
+        <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
           {a.body && <div className="prose" dangerouslySetInnerHTML={{ __html: a.body }} />}
-          {canManage && (a.status === "open" || a.status === "collecting") && (
+          {!memberDebt && canManage && (a.status === "open" || a.status === "collecting") && (
             <div style={{ marginTop: "var(--s-4)" }}>
               <button className="btn btn-ghost btn-sm" onClick={doClose} disabled={busy}>
                 {isDeliberation ? "提前结束投票" : isCollection ? "提前结束收件" : "提前结束展示"}
@@ -259,6 +319,7 @@ export default function ActivityDetailPage() {
             </div>
           )}
         </div>
+        )}
 
         {/* 时间线（横向 stepper） */}
         <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
@@ -279,10 +340,10 @@ export default function ActivityDetailPage() {
         </div>
 
         {/* 众议：投票 + 结果（展示的投票集成在展品画廊内） */}
-        {isDeliberation && (
+        {isDeliberation && !owesVote && (
           <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
             <h3 className="section-h">投票</h3>
-            {a.status === "open" && a.my_selections === null ? (
+            {a.status === "open" && a.my_selections === null && !owesVote ? (
               <>
                 <div className="hint" style={{ marginBottom: 8 }}>
                   可选 {a.max_choices_per_voter} 项（{a.max_choices_per_voter === 1 ? "一人一票" : "一人多票"}）；一经投出不可更改。
@@ -366,7 +427,7 @@ export default function ActivityDetailPage() {
               </ul>
             </div>
 
-            {a.status === "collecting" && !a.my_submission && (
+            {a.status === "collecting" && !a.my_submission && !owesSubmit && (
               <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
                 <h3 className="section-h">提交作品</h3>
                 <div className="hint" style={{ marginBottom: 8 }}>一人一作品，提交即锁定。</div>
@@ -436,7 +497,26 @@ export default function ActivityDetailPage() {
             return (
               <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
                 <h3 className="section-h">展品 ({a.exhibits?.length || 0})</h3>
+                {canVote && (
+                  <div className="hint" style={{ marginBottom: 8 }}>
+                    投票：可选 {a.max_choices_per_voter} 个展品（{a.max_choices_per_voter === 1 ? "一人一展品" : "一人多展品"}），一经投出不可更改。赞/踩另算、可随时改。
+                  </div>
+                )}
                 {canManageExhibits && (
+                  canVote ? (
+                    <details style={{ marginBottom: 12 }}>
+                      <summary className="muted" style={{ cursor: "pointer" }}>布展 / 管理</summary>
+                      <div className="alert alert-info" style={{ marginTop: 8 }}>
+                        <span>{a.status === "scheduled" ? "布展中（待开始）——可加 / 改 / 删展品，或从征集导入；开放后仍可加 / 删，但标题锁定。" : "展示中——可继续加 / 导入 / 删展品；已上架展品的标题已锁定。"}</span>
+                        <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <input className="input" style={{ flex: "1 1 160px" }} value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="新展品标题（选填）" />
+                          <input type="file" multiple onChange={(e) => setNewFiles(Array.from(e.target.files || []))} />
+                          <button className="btn btn-primary btn-sm" onClick={doAddExhibit} disabled={busy || newFiles.length < 1}>+ 加展品</button>
+                          <button className="btn btn-ghost btn-sm" onClick={openImport}>从征集导入</button>
+                        </div>
+                      </div>
+                    </details>
+                  ) : (
                   <div className="alert alert-info" style={{ marginBottom: 12 }}>
                     <span>{a.status === "scheduled" ? "布展中（待开始）——可加 / 改 / 删展品，或从征集导入；开放后仍可加 / 删，但标题锁定。" : "展示中——可继续加 / 导入 / 删展品；已上架展品的标题已锁定。"}</span>
                     <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -446,6 +526,7 @@ export default function ActivityDetailPage() {
                       <button className="btn btn-ghost btn-sm" onClick={openImport}>从征集导入</button>
                     </div>
                   </div>
+                  )
                 )}
                 {importOpen && (
                   <div className="card card-pad" style={{ margin: "12px 0", background: "var(--c-surface-2, #f9fafb)" }}>
@@ -483,11 +564,6 @@ export default function ActivityDetailPage() {
                         )}
                       </>
                     )}
-                  </div>
-                )}
-                {canVote && (
-                  <div className="hint" style={{ marginBottom: 8 }}>
-                    投票：可选 {a.max_choices_per_voter} 个展品（{a.max_choices_per_voter === 1 ? "一人一展品" : "一人多展品"}），一经投出不可更改。赞/踩另算、可随时改。
                   </div>
                 )}
                 {a.exhibits && a.exhibits.length > 0 ? (

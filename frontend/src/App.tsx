@@ -22,6 +22,7 @@ const ProposalDetailPage = lazy(() => import("./pages/ProposalDetailPage"));
 const ActivityListPage = lazy(() => import("./pages/ActivityListPage"));
 const ActivityFormPage = lazy(() => import("./pages/ActivityFormPage"));
 const ActivityDetailPage = lazy(() => import("./pages/ActivityDetailPage"));
+const InboxPage = lazy(() => import("./pages/InboxPage"));
 const NewsListPage = lazy(() => import("./pages/NewsListPage"));
 const NewsDetailPage = lazy(() => import("./pages/NewsDetailPage"));
 const NewsFormPage = lazy(() => import("./pages/NewsFormPage"));
@@ -69,6 +70,7 @@ export default function App() {
           <Route path="/activity/new" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
           <Route path="/activity/:id" element={<ProtectedRoute><ActivityDetailPage /></ProtectedRoute>} />
           <Route path="/activity/:id/edit" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
+          <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
           <Route path="/feedback" element={<ProposalListPage />} />
           <Route path="/feedback/:id" element={<ProtectedRoute><ProposalDetailPage /></ProtectedRoute>} />
           <Route path="/news" element={<NewsListPage />} />

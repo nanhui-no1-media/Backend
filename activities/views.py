@@ -23,6 +23,7 @@ from attachments.validation import MAX_FILE_SIZE, classify_file_type, upload_err
 from reviews.lifecycle import open_review
 from reviews.visibility import public_activity_q
 
+from .debt import annotate_activity_debt
 from .lifecycle import (
     CLOSED,
     COLLECTING,
@@ -95,7 +96,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
         )
         public = qs.filter(public_activity_q())
         if self.action == "list":
-            return public
+            return annotate_activity_debt(public, self.request.user)
         user = self.request.user
         if user.is_authenticated:
             if user.has_perm("reviews.moderate"):

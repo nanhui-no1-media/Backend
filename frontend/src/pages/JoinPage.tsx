@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import RichTextEditor from "../components/RichTextEditor";
+import ArticleToc from "../components/ArticleToc";
 import { api } from "../api/client";
 import { recruitmentApi } from "../api/recruitment";
 import { newsApi } from "../api/news";
@@ -62,7 +63,12 @@ export default function JoinPage() {
       <div className="container detail-container">
         <div className="card card-pad">
           {!editing ? (
-            content ? <RichTextEditor key="n" content={content} editable={false} /> : <p className="empty-text">招生公告即将发布。</p>
+            content ? (
+              <>
+                <ArticleToc html={content} />
+                <RichTextEditor key="n" content={content} editable={false} />
+              </>
+            ) : <p className="empty-text">招生公告即将发布。</p>
           ) : (
             <>
               <RichTextEditor

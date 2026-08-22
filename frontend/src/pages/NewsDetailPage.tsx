@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import Avatar from "../components/Avatar";
+import ArticleToc, { htmlWithHeadingIds } from "../components/ArticleToc";
 import { newsApi } from "../api/news";
 import { type NewsDetail } from "../types/news";
 import "../styles/news.css";
@@ -42,6 +43,7 @@ export default function NewsDetailPage() {
   if (!news) return <AppShell><div className="container"><p className="news-empty">新闻不存在或已下线。</p></div></AppShell>;
 
   const related = news.related || [];
+  const prepared = htmlWithHeadingIds(news.content || "");
 
   return (
     <AppShell>
@@ -92,7 +94,7 @@ export default function NewsDetailPage() {
             </div>
 
             {news.content ? (
-              <div className="prose" dangerouslySetInnerHTML={{ __html: news.content }} />
+              <div className="prose" dangerouslySetInnerHTML={{ __html: prepared.html }} />
             ) : (
               <div className="prose"><p className="lead">（暂无正文）</p></div>
             )}
@@ -122,6 +124,7 @@ export default function NewsDetailPage() {
           </article>
 
           <aside className="detail-side">
+            <ArticleToc html={news.content || ""} />
             <div className="side-card">
               <h4><span className="bar" /> 文章信息</h4>
               <div className="meta-row"><span className="k">发布</span><span className="v tnum">{fmtDate(news.published_at || news.created_at)}</span></div>

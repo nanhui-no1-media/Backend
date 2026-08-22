@@ -69,7 +69,7 @@ export default function TutorialDetailPage() {
           </div>
         </div>
       </div>
-      <div className="container detail-container">
+      <div className="container tutorial-media">
         {item.file_type === "video" && item.file_url && !videoFailed ? (
           <video
             controls
@@ -87,6 +87,8 @@ export default function TutorialDetailPage() {
         ) : item.file_url ? (
           <p><a className="btn btn-primary" href={item.file_url} download={item.file_name}>下载文档（{item.file_name}）</a></p>
         ) : null}
+      </div>
+      <div className="container detail-container">
         {item.description && <div className="card card-pad" style={{ marginTop: "var(--s-5)" }}>{item.description}</div>}
         <div style={{ marginTop: "var(--s-4)", display: "flex", gap: 6, flexWrap: "wrap" }}>
           {item.tags.map((t) => <span key={t.id} className="badge badge-ghost">{t.name}</span>)}

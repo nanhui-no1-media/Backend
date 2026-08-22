@@ -71,4 +71,6 @@ export const api = {
 
   getUserContent: (id: number, type: "news" | "proposals" | "tasks", page = 1) =>
     request(`/users/${id}/content/?type=${type}&page=${page}`),
+
+  inbox: () => request("/inbox/"),
 };
