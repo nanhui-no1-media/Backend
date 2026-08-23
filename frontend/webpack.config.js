@@ -1,5 +1,6 @@
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
+const CopyWebpackPlugin = require("copy-webpack-plugin");
 
 module.exports = {
   mode: "development",
@@ -31,6 +32,14 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: "./template.html",
       favicon: "./public/favicon.ico",
+    }),
+    new CopyWebpackPlugin({
+      patterns: [
+        {
+          from: path.resolve(__dirname, "vendor/live2d"),
+          to: "live2d",
+        },
+      ],
     }),
   ],
   optimization: {

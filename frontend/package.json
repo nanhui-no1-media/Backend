@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "webpack serve",
-    "build": "webpack --mode production"
+    "build": "webpack --mode production && node scripts/assert-live2d-dist.js"
   },
   "keywords": [],
   "author": "",
