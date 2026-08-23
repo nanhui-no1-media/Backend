@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect } from "react";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SessionGuard from "./components/SessionGuard";
 import LoginModalProvider from "./components/LoginModalProvider";
+import MascotHost from "./components/mascot/MascotHost";
 import { api } from "./api/client";
 
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
@@ -92,6 +93,7 @@ export default function App() {
       </Suspense>
       </SessionGuard>
       </LoginModalProvider>
+      <MascotHost />
     </HashRouter>
   );
 }

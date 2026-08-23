@@ -92,12 +92,6 @@ export default function HomePage() {
       <div className="container">
         <div className="home-grid">
           <aside className="mascot-rail">
-            <div className="mascot-frame">
-              <div className="mascot-note">
-                <b>看板娘立绘区</b>
-                Live2D 立绘待接入
-              </div>
-            </div>
             <div className="rail-card">
               <h4>
                 <span className="bar" /> 社团概览

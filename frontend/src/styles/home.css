@@ -74,7 +74,6 @@
   .home-grid { grid-template-columns: 1fr; }
   .mascot-rail { position: static; flex-direction: row; flex-wrap: wrap; }
   .mascot-rail > * { flex: 1 1 220px; }
-  .mascot-frame { aspect-ratio: 16/9; }
 }
 @media (max-width: 640px) {
   .activity-grid { grid-template-columns: 1fr; }
