@@ -19,7 +19,7 @@ from rest_framework.response import Response
 from accounts.permissions import IsVerified
 
 from attachments.models import Attachment
-from attachments.validation import MAX_FILE_SIZE, classify_file_type, upload_error
+from attachments.validation import classify_file_type, upload_error
 from reviews.lifecycle import open_review
 from reviews.visibility import public_activity_q
 
@@ -235,7 +235,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
 
         allowed = _parse_extensions(activity.allowed_extensions)
         for f in files:
-            err = upload_error(f)  # 全局禁用扩展名 + 50MB 同步上限
+            err = upload_error(f)  # 全局禁用扩展名 + 同步上传上限
             if err:
                 return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
             if activity.max_file_size and f.size > activity.max_file_size:

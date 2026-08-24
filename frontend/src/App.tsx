@@ -5,6 +5,7 @@ import SessionGuard from "./components/SessionGuard";
 import LoginModalProvider from "./components/LoginModalProvider";
 import MascotHost from "./components/mascot/MascotHost";
 import { api } from "./api/client";
+import { fetchSitePolicy } from "./api/sitePolicy";
 
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
@@ -46,6 +47,7 @@ export default function App() {
   // 无法靠 {% csrf_token %} 下发 cookie，故显式请求该端点，避免匿名 POST 被 403。
   useEffect(() => {
     api.getCsrf().catch(() => {});
+    fetchSitePolicy();
   }, []);
 
   return (

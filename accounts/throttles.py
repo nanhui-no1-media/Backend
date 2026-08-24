@@ -1,5 +1,7 @@
 from rest_framework.throttling import SimpleRateThrottle
 
+from common.policy import get_policy
+
 
 class _IPLimitThrottle(SimpleRateThrottle):
     """按 IP 计数的限流基类（用于函数式视图：手动实例化 + allow_request）。
@@ -14,12 +16,18 @@ class _IPLimitThrottle(SimpleRateThrottle):
 
 
 class RegisterThrottle(_IPLimitThrottle):
-    """自助注册节流：每个 IP 每天 5 次（settings 的 register scope）。"""
+    """自助注册节流：每个 IP 每天 N 次（N 来自 get_policy()）。"""
 
     scope = "register"
 
+    def get_rate(self):
+        return f"{get_policy().register_per_ip_per_day}/day"
+
 
 class ResendVerificationThrottle(_IPLimitThrottle):
-    """重发邮箱验证邮件节流：每个 IP 每小时 5 次（settings 的 resend_verification scope）。"""
+    """重发邮箱验证邮件节流：每个 IP 每小时 N 次（N 来自 get_policy()）。"""
 
     scope = "resend_verification"
+
+    def get_rate(self):
+        return f"{get_policy().resend_verification_per_ip_per_hour}/hour"

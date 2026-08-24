@@ -10,6 +10,7 @@
 import base64
 import shutil
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -20,6 +21,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from accounts.test_helpers import grant_verification
+from common.policy import SitePolicy
 from proposals.models import Proposal
 from tasks.models import Task
 
@@ -261,8 +263,9 @@ class FileValidationTest(_AttachmentTestCase):
             "/attachments/", {"file": f, "task_id": self.task.pk}, format="multipart",
         )
 
-    def test_oversize_rejected(self):  # 故事 #17：把上限降到 1B，4B 文件即超限
-        with mock.patch("attachments.validation.MAX_FILE_SIZE", 1):
+    def test_oversize_rejected(self):  # 把同步上限降到 1B，4B 文件即超限
+        policy = replace(SitePolicy.defaults(), sync_upload_max_bytes=1)
+        with mock.patch("attachments.validation.get_policy", return_value=policy):
             resp = self._post(upload())
         self.assertEqual(resp.status_code, 400)
 
@@ -541,8 +544,10 @@ class TusUploadTest(_AttachmentTestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
-    def test_oversize_rejected_at_create(self):  # >500MB 由 drf-tus 返 413（不传字节）
-        resp = self._create(self.creator, length=600 * 1024 * 1024, filetype="video/mp4")
+    def test_oversize_rejected_at_create(self):  # 超 tus 上限由 drf-tus 返 413（不传字节）
+        policy = replace(SitePolicy.defaults(), tus_media_max_bytes=1024)
+        with mock.patch("attachments.tus.get_policy", return_value=policy):
+            resp = self._create(self.creator, length=2048, filetype="video/mp4")
         self.assertEqual(resp.status_code, 413)
 
     def test_non_media_above_50mb_rejected(self):  # >50MB 必须图/视频

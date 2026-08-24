@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { useSitePolicy } from "../api/sitePolicy";
 import AppShell from "../components/AppShell";
 import PasswordInput from "../components/PasswordInput";
 import { useLoginModal } from "../components/LoginModalProvider";
@@ -22,6 +23,7 @@ export default function RegisterPage() {
   const [done, setDone] = useState(false);
   const navigate = useNavigate();
   const { openLogin } = useLoginModal();
+  const policy = useSitePolicy();
 
   const turnstileRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
@@ -101,6 +103,16 @@ export default function RegisterPage() {
                   <p className="muted" style={{ marginBottom: "var(--s-5)" }}>
                     你现在可以用<strong>{username}</strong>和密码登录。登录后在个人中心「账号验证」
                     完成验证（绑定邮箱或提交身份证明），即可解锁发帖、发消息、建申报等全部功能。
+                  </p>
+                  <button className="btn btn-primary btn-block" type="button" onClick={goLogin}>
+                    去登录
+                  </button>
+                </>
+              ) : !policy.registration_enabled ? (
+                <>
+                  <h2 style={{ marginBottom: "var(--s-4)" }}>注册已关闭</h2>
+                  <p className="muted" style={{ marginBottom: "var(--s-5)" }}>
+                    当前未开放自助注册。已有账号可登录。
                   </p>
                   <button className="btn btn-primary btn-block" type="button" onClick={goLogin}>
                     去登录

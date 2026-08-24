@@ -25,6 +25,8 @@ from rest_framework.exceptions import NotFound
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.request import Request
 
+from common.policy import get_policy
+
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .models import Profile, IdentityProof, UserSession, Verification, is_verified
 from .tokens import email_verification_token
@@ -37,6 +39,13 @@ logger = logging.getLogger(__name__)
 
 LOGIN_PROTECTION_SECONDS = 600  # 登录保护窗口：登录后 10 分钟内他方新会话登录被拒
 CONTENT_LIMIT = 15  # 个人中心每个内容 tab 返回的最近条数
+
+
+def _verification_closed_response():
+    return JsonResponse(
+        {"error": "验证通道已关闭", "reason": "verification_closed"},
+        status=403,
+    )
 
 IDENTITY_CHOICE_KEYS = {key for key, _label in Profile.IDENTITY_CHOICES}
 
@@ -197,6 +206,8 @@ def verification_email_bind_view(request):
       - 已验证同邮箱再绑 → no-op（不降级）。
     绑定时校验邮箱唯一（User.email 或他人 pending identifier）。
     """
+    if not get_policy().verification_enabled:
+        return _verification_closed_response()
     if not ResendVerificationThrottle().allow_request(request, None):
         return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
 
@@ -253,6 +264,8 @@ def verification_manual_submit_view(request):
     留底，审核通过后亦不删）。仅当 manual 当前 none / rejected 可提交（pending 审核中、已通过
     不可重复）。real_name / identity 写入 Profile（人工审核需知真实身份）。
     """
+    if not get_policy().verification_enabled:
+        return _verification_closed_response()
     real_name = (request.POST.get("real_name") or "").strip()
     identity = (request.POST.get("identity") or "").strip()
     proof_files = request.FILES.getlist("proof_files")
@@ -396,6 +409,11 @@ def register_view(request):
     ``User.email`` 保持空（待验邮箱不住 User.email）——验证通过才晋升（见 verify_email_view）。
     real_name / identity 是可选资料（identity 若填须为合法枚举）。
     """
+    if not get_policy().registration_enabled:
+        return JsonResponse(
+            {"error": "当前未开放注册。", "reason": "registration_closed"},
+            status=403,
+        )
     # 限流优先：挡机器刷号（在所有校验之前）。
     if not RegisterThrottle().allow_request(request, None):
         return JsonResponse({"error": "注册请求过于频繁，请稍后再试。"}, status=429)
@@ -446,6 +464,7 @@ def register_view(request):
     if not verify_turnstile(turnstile_token, get_client_ip(request)):
         return JsonResponse({"error": "人机校验失败，请刷新后重试。"}, status=400)
 
+    started_email = False
     try:
         with transaction.atomic():
             # User.email 只装已验证邮箱：注册阶段留空；邮箱验证通过才晋升写入。
@@ -453,21 +472,22 @@ def register_view(request):
                 username=username, email="", password=password, is_active=True
             )
             Profile.objects.create(user=user, real_name=real_name, identity=identity)
-            if email:
+            if email and get_policy().verification_enabled:
                 Verification.objects.create(
                     user=user, channel=Verification.CHANNEL_EMAIL,
                     status=Verification.STATUS_PENDING, identifier=email,
                 )
+                started_email = True
     except Exception:
         logger.exception("注册建号失败: username=%s", username)
         return JsonResponse({"error": "注册失败，请稍后重试。"}, status=500)
 
-    if email:
+    if started_email:
         _send_verification_email(user)
 
     return JsonResponse(
         {
-            "message": "注册成功。" + ("请查收邮件完成邮箱验证。" if email else ""),
+            "message": "注册成功。" + ("请查收邮件完成邮箱验证。" if started_email else ""),
             "user": {"id": user.id, "username": user.username},
         },
         status=201,
@@ -481,6 +501,8 @@ def verify_email_view(request):
     令牌绑 identifier + 通道 status（见 tokens）：改待验邮箱或验证通过后旧令牌失效。
     验证通过：identifier 晋升写入 User.email（绑定邮箱生效，可用邮箱登录 / 重置密码）。
     """
+    if not get_policy().verification_enabled:
+        return _verification_closed_response()
     user = _user_from_uid(request.GET.get("uid", ""))
     token = request.GET.get("token", "")
     if user is None or not email_verification_token.check_token(user, token):
@@ -509,6 +531,8 @@ def resend_verification_view(request):
     不泄密：无论邮箱是否存在 / 是否在验 / 已验证，返回同样提示（防账号探测）。
     只对「存在 pending email 通道、账号启用」的账号真正发信（发往待验 identifier）。
     """
+    if not get_policy().verification_enabled:
+        return _verification_closed_response()
     if not ResendVerificationThrottle().allow_request(request, None):
         return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
 

@@ -11,10 +11,12 @@ from django.test import TestCase
 
 
 class SettingsHygieneTest(TestCase):
-    def test_register_and_resend_throttle_scopes_exist(self):
+    def test_operational_throttle_rates_not_in_settings(self):
+        # Live rates come from get_policy(); settings must not be the source.
         rates = settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]
-        self.assertIn("register", rates)
-        self.assertIn("resend_verification", rates)
+        self.assertNotIn("register", rates)
+        self.assertNotIn("resend_verification", rates)
+        self.assertNotIn("feedback_anon", rates)
 
     def test_private_media_root_is_separate_from_public_media(self):
         # 身份证明等审计留底绝不能落在公开 MEDIA_ROOT 之内（DEBUG 下后者被整目录公开服务）。

@@ -1,7 +1,7 @@
 """集中一处上传校验（原 tasks / proposals 各有一份逐行重复的实现，T3 将删除）。
 
 校验规则：
-- 文件大小不超过 50MB；
+- 文件大小不超过站点策略的同步上限；
 - 禁止上传可执行 / 脚本类扩展名；
 - 按 content-type 把文件分类为 图片 / 视频 / 文档 / 压缩包 / 其他。
 """
@@ -9,7 +9,7 @@ import os
 
 from django.db.models import Count, Sum
 
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB——同步上传通路对所有类型的上限
+from common.policy import format_byte_cap, get_policy
 
 # 反馈附件配额（同步 / tus 通路共用）：每条 ≤9 个 / 总 ≤2GB。
 FEEDBACK_MAX_ATTACHMENTS = 9
@@ -55,8 +55,9 @@ def classify_file_type(content_type):
 
 def upload_error(file):
     """返回上传文件的错误消息（若合法则返回 None）。"""
-    if file.size > MAX_FILE_SIZE:
-        return "文件大小不能超过 50MB"
+    cap = get_policy().sync_upload_max_bytes
+    if file.size > cap:
+        return f"文件大小不能超过 {format_byte_cap(cap)}"
     ext = os.path.splitext(file.name)[1].lower()
     if ext in FORBIDDEN_EXTENSIONS:
         return "禁止上传此类型的文件"

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { useSitePolicy } from "../api/sitePolicy";
 import { humanizeApiError, type ApiError } from "../api/shared";
 import PasswordInput from "./PasswordInput";
 
@@ -34,6 +35,7 @@ export default function LoginModal({
   const [resendEmail, setResendEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const policy = useSitePolicy();
 
   // 登录接口的英文 error 串 → 中文（仅登录专用项；网络等其余错误按类型走 humanizeApiError）。
   const LOGIN_ERROR_ZH: Record<string, string> = {
@@ -164,10 +166,12 @@ export default function LoginModal({
           <button className="btn btn-primary btn-block" type="submit" form="auth-form" disabled={loading}>
             {loading ? "登录中…" : "登录"}
           </button>
-          <p className="hint center">
-            没有账号？{" "}
-            <a href="#" onClick={(e) => { e.preventDefault(); onClose(); navigate("/register"); }}>注册 →</a>
-          </p>
+          {policy.registration_enabled && (
+            <p className="hint center">
+              没有账号？{" "}
+              <a href="#" onClick={(e) => { e.preventDefault(); onClose(); navigate("/register"); }}>注册 →</a>
+            </p>
+          )}
         </div>
       </div>
     </div>

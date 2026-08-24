@@ -230,14 +230,10 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
-    'DEFAULT_THROTTLE_RATES': {
-        # 匿名意见反馈/举报：每个 IP 每天 10 条
-        'feedback_anon': '10/day',
-        # 自助注册：每个 IP 每天 5 次（防机器刷号，配合 Turnstile）
-        'register': '5/day',
-        # 重发邮箱验证邮件：每个 IP 每小时 5 次（防滥用，兼顾丢信重发）
-        'resend_verification': '5/hour',
-    },
+    # Operational throttle rates live in common.SiteSettings (get_policy()),
+    # not here. Empty dict so DRF has a well-formed setting; the three scopes
+    # override get_rate() and do not read this map.
+    'DEFAULT_THROTTLE_RATES': {},
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_FILTER_BACKENDS': [
@@ -247,9 +243,11 @@ REST_FRAMEWORK = {
     ],
 }
 
-# drf-tus（tus 可续传上传）。>50MB 的图/视频走 tus 通路；详见 ADR 0004（#21）。
+# drf-tus（tus 可续传上传）。图/视频走 tus 通路；详见 ADR 0004（#21）。
+# Live cap is common.SiteSettings.tus_media_max_bytes (get_policy()); this
+# value is the library fallback and matches the SiteSettings field default.
 REST_FRAMEWORK_TUS = {
-    "MAX_FILE_SIZE": 500 * 1024 * 1024,  # 500MB——图/视频上限；>50MB 必须图/视频由 viewset 再收紧
+    "MAX_FILE_SIZE": 500 * 1024 * 1024,  # library fallback; viewset reads get_policy()
     "TUS_UPLOAD_DESTINATION": "tus_uploaded",  # drf-tus 落地目录（相对 MEDIA_ROOT）
     "UPLOAD_MODEL": "attachments.TusUpload",  # 自定义模型，补 user 外键
     # UPLOAD_DIR（临时分片）默认 BASE_DIR/tmp/uploads；UPLOAD_EXPIRES 默认 1 天。

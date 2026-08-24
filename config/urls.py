@@ -20,8 +20,11 @@ from django.contrib import admin
 from django.urls import path, include, re_path
 from django.views.generic import TemplateView
 
+from common.views import SitePolicyView
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('site-policy/', SitePolicyView.as_view(), name='site-policy'),
     path('auth/', include('accounts.urls')),
     path('tasks/', include('tasks.urls')),
     path('messaging/', include('messaging.urls')),
@@ -36,7 +39,7 @@ urlpatterns = [
     path('attachments/', include('attachments.urls')),
     path('uploads/', include('attachments.tus_urls')),
     path('', TemplateView.as_view(template_name='index.html'), name='home'),
-    re_path(r'^(?!static/|admin/|auth/|tasks/|media/|messaging/|proposals/|activities/|news/|reviews/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
+    re_path(r'^(?!static/|admin/|auth/|tasks/|media/|messaging/|proposals/|activities/|news/|reviews/|site-policy/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
 ]
 
 if settings.DEBUG:

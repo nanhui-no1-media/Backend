@@ -52,7 +52,7 @@ class Activity(models.Model):
 
     # 征集专属配置（提交时校验）：
     #   allowed_extensions 空=不限（除全局禁用后缀）；逗号分隔，如 ".jpg,.png,.pdf"
-    #   max_file_size null=用全局 50MB 同步上限
+    #   max_file_size null=用站点策略同步上传上限
     #   max_files_per_submission 单个作品的文件数上限
     #   max_submissions null=不限（设了则满额自动 collecting→reviewing）
     allowed_extensions = models.TextField("允许后缀（逗号分隔）", blank=True, default="")

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { activityApi } from "../api/activities";
+import { useSitePolicy } from "../api/sitePolicy";
 import RichTextEditor from "../components/RichTextEditor";
 import AppShell from "../components/AppShell";
 import type { ActivityType, ExhibitionFormData } from "../types/activities";
@@ -32,6 +33,8 @@ export default function ActivityFormPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const editId = id ? Number(id) : null;
+  const policy = useSitePolicy();
+  const syncMb = Math.round(policy.sync_upload_max_bytes / 1024 / 1024);
   const [type, setType] = useState<ActivityType>("deliberation");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -47,7 +50,7 @@ export default function ActivityFormPage() {
 
   // 征集字段
   const [allowedExt, setAllowedExt] = useState(""); // 逗号分隔，空=不限
-  const [maxSize, setMaxSize] = useState<string>(""); // MB，空=用全局 50MB
+  const [maxSize, setMaxSize] = useState<string>(""); // MB，空=用站点同步上限
   const [maxFiles, setMaxFiles] = useState(5);
   const [maxSub, setMaxSub] = useState<string>(""); // 空=不限
   const [reviewEnabled, setReviewEnabled] = useState(true); // #51：复审可选，默认启用
@@ -269,7 +272,7 @@ export default function ActivityFormPage() {
                   <input className="input" value={allowedExt} onChange={(e) => setAllowedExt(e.target.value)} placeholder=".jpg,.png,.pdf" />
                 </div>
                 <div className="field">
-                  <label className="label">单文件大小上限（MB） <span className="hint">（空=50MB）</span></label>
+                  <label className="label">单文件大小上限（MB） <span className="hint">（空={syncMb}MB）</span></label>
                   <input className="input" type="number" min={1} value={maxSize} onChange={(e) => setMaxSize(e.target.value)} placeholder="50" />
                 </div>
               </div>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
+import { useSitePolicy } from "../../api/sitePolicy";
 import "../../styles/profile.css";
 
 // 前后端契约（#36）：通道集 + 通道对象键集，与后端 /auth/verification/ 对齐
@@ -62,11 +63,13 @@ function CardShell({ card, children }: { card: ChannelCard; children?: React.Rea
   );
 }
 
-function EmailCard({ card, onChanged }: { card: ChannelCard; onChanged: () => void }) {
+function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: () => void; closed: boolean }) {
   const [emailInput, setEmailInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+
+  if (closed) return <CardShell card={card} />;
 
   const bind = (email: string) => {
     if (!email) return;
@@ -115,7 +118,7 @@ const IDENTITY_OPTIONS: { value: string; label: string }[] = [
   { value: "teacher", label: "教师" },
 ];
 
-function ManualCard({ card, onChanged }: { card: ChannelCard; onChanged: () => void }) {
+function ManualCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: () => void; closed: boolean }) {
   const [realName, setRealName] = useState("");
   const [identity, setIdentity] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
@@ -123,7 +126,7 @@ function ManualCard({ card, onChanged }: { card: ChannelCard; onChanged: () => v
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
-  const canSubmit = card.status === "none" || card.status === "rejected";
+  const canSubmit = !closed && (card.status === "none" || card.status === "rejected");
   if (!canSubmit) return <CardShell card={card} />;
 
   const submit = () => {
@@ -181,6 +184,7 @@ function ManualCard({ card, onChanged }: { card: ChannelCard; onChanged: () => v
 export default function VerificationPanel() {
   const [data, setData] = useState<VerificationStatus | null>(null);
   const [err, setErr] = useState("");
+  const policy = useSitePolicy();
 
   const load = () => {
     api.verificationStatus()
@@ -214,12 +218,15 @@ export default function VerificationPanel() {
           ? "你的账号已验证（用户）。"
           : "你的账号尚未验证（访客）——完成下列任一通道即成为已验证用户，解锁发帖 / 发消息 / 建申报等。"}
       </p>
+      {!policy.verification_enabled && (
+        <p className="muted verify-overview">验证通道已关闭</p>
+      )}
       <div className="verify-cards">
         {data.channels.map((c) =>
           c.channel === "email" ? (
-            <EmailCard key={c.channel} card={c} onChanged={load} />
+            <EmailCard key={c.channel} card={c} onChanged={load} closed={!policy.verification_enabled} />
           ) : (
-            <ManualCard key={c.channel} card={c} onChanged={load} />
+            <ManualCard key={c.channel} card={c} onChanged={load} closed={!policy.verification_enabled} />
           )
         )}
       </div>

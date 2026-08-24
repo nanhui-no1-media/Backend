@@ -1,13 +1,13 @@
 """tus 可续传上传接入（#19）：drf-tus 的 UploadViewSet 子类 + 完成钩子。
 
-大文件（>50MB 的图/视频，≤500MB）走 tus 通路 ``POST /uploads/files/ …``：
+大文件（超过同步上限的图/视频，≤ tus 上限）走 tus 通路 ``POST /uploads/files/ …``：
 
 - 创建时按 Upload-Metadata 声明父级，校验权限（复用 ``can_upload_to_parent``，含反馈
-  carve-out）+ 尺寸/类型分档（>500MB 拒、非图/视频 >50MB 拒）+ 反馈配额。
+  carve-out）+ 尺寸/类型分档（超 tus 上限拒、非图/视频超同步上限拒）+ 反馈配额。
 - 完成时（finished 信号）把文件搬到 ``attachments/`` 并建统一 ``Attachment``，复核权限
   （父级状态可能已变——反馈审结、任务关闭——复核失败即丢弃上传）。
 
-小文件（≤50MB）仍走同步 ``POST /attachments/``，不经过此处。
+小文件（≤ 同步上限）仍走同步 ``POST /attachments/``，不经过此处。
 """
 import json
 import logging
@@ -23,18 +23,16 @@ from rest_framework_tus import constants as tus_constants
 from rest_framework_tus.signals import finished
 from rest_framework_tus.views import UploadViewSet
 
+from common.policy import format_byte_cap, get_policy
 from news.models import News
 from proposals.models import Proposal
 from tasks.models import Task
 
 from .models import Attachment, TusUpload
 from .permissions import can_upload_to_parent
-from .validation import MAX_FILE_SIZE, classify_file_type, feedback_quota_error
+from .validation import classify_file_type, feedback_quota_error
 
 logger = logging.getLogger(__name__)
-
-# tus 通路图/视频上限 500MB（drf-tus 的 max_file_size 守卫据此返 413）。
-TUS_MAX_MEDIA_SIZE = 500 * 1024 * 1024
 
 
 def sweep_stale_tus_uploads():
@@ -92,7 +90,11 @@ class TusUploadViewSet(UploadViewSet):
     """tus 上传端点：在 drf-tus 的创建流程前加 父级 / 权限 / 尺寸类型 / 配额 校验。"""
 
     permission_classes = [IsAuthenticated]
-    max_file_size = TUS_MAX_MEDIA_SIZE  # >500MB 由 drf-tus 返 413
+
+    @property
+    def max_file_size(self):
+        # Admin edits apply without restart (drf-tus reads getattr(self, 'max_file_size')).
+        return get_policy().tus_media_max_bytes
 
     def create(self, request, *args, **kwargs):
         sweep_stale_tus_uploads()  # 自愈式回收过期/被放弃的上传（drf-tus 自身无清理任务）
@@ -109,10 +111,11 @@ class TusUploadViewSet(UploadViewSet):
 
         upload_length = _request_upload_length(request)
         file_type = classify_file_type((meta.get("filetype") or "").strip())
-        # >50MB 必须是图/视频（其余类型只能走 ≤50MB 的同步通路）；阈值与同步通路同一常量
-        if upload_length > MAX_FILE_SIZE and file_type not in ("image", "video"):
+        sync_cap = get_policy().sync_upload_max_bytes
+        # 超过同步上限必须是图/视频（其余类型只能走同步通路）
+        if upload_length > sync_cap and file_type not in ("image", "video"):
             return Response(
-                {"detail": "超过 50MB 的文件必须是图片或视频"},
+                {"detail": f"超过 {format_byte_cap(sync_cap)} 的文件必须是图片或视频"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         # 反馈配额（与同步通路同一处校验）

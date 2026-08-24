@@ -1,10 +1,12 @@
 from django.conf import settings
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from django.core.mail import send_mail
 from django.utils import timezone
 from django.utils.html import format_html
+
+from common.policy import get_policy
 
 from .models import IdentityProof, Profile, UserSession, Verification, is_verified
 
@@ -33,6 +35,11 @@ def approve_identity(modeladmin, request, queryset):
     验证态单一事实源是 Verification 行（ADR-0006），不再写 Profile 布尔。任一通道 approved
     ⇒ 账号已验证（写门禁 / 徽章 / 面板随之放行）。
     """
+    if not get_policy().verification_enabled:
+        modeladmin.message_user(
+            request, "验证通道已关闭，无法通过身份审核。", level=messages.ERROR,
+        )
+        return
     now = timezone.now()
     count = 0
     for obj in queryset.select_related("user"):
@@ -68,6 +75,11 @@ def reject_identity(modeladmin, request, queryset):
 
     驳回 ≠ 停用账号：账号仍可登录（访客）、可重交证明；仅 manual 通道记驳回态。
     """
+    if not get_policy().verification_enabled:
+        modeladmin.message_user(
+            request, "验证通道已关闭，无法驳回身份审核。", level=messages.ERROR,
+        )
+        return
     count = 0
     for obj in queryset.select_related("user"):
         user = obj.user

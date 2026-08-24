@@ -1,11 +1,9 @@
 import { Upload as TusUpload } from "tus-js-client";
 import { createRequest, getCSRFToken } from "./shared";
+import { getSitePolicy } from "./sitePolicy";
 import { Attachment } from "../types/tasks";
 
 const request = createRequest("/attachments");
-
-// 同步上传通路的单文件上限（与后端 attachments.validation.MAX_FILE_SIZE 一致）；超过则走 tus。
-export const MAX_SYNC_BYTES = 50 * 1024 * 1024;
 
 // 上传必须且只能指定一个父级（task_id 或 proposal_id 或 news_id），用联合类型在编译期固化这条后端约束。
 type UploadParams = { file: File } & (
@@ -14,7 +12,7 @@ type UploadParams = { file: File } & (
   | { newsId: number; taskId?: undefined; proposalId?: undefined }
 );
 
-// 大文件（>50MB 图/视频）走 tus 可续传：POST /uploads/files/ … 完成后由后端 finished 钩子
+// 大文件（超过同步上限的图/视频）走 tus 可续传：POST /uploads/files/ … 完成后由后端 finished 钩子
 // 自动挂成统一 Attachment。parent_type/parent_id 经 Upload-Metadata 声明、创建时即校验权限。
 type UploadLargeParams = {
   file: File;
@@ -52,7 +50,7 @@ export const attachmentApi = {
       upload.start();
     }),
 
-  // 按大小选路：≤MAX_SYNC_BYTES 走同步（返回新建的 Attachment）、>50MB 走 tus 可续传
+  // 按大小选路：≤ sync_upload_max_bytes 走同步（返回新建的 Attachment）、超过走 tus 可续传
   // （完成时由后端 finished 钩子建附件、返回 void，调用方需重新拉取父级以拿到该附件）。
   uploadRouted: (params: {
     parentType: "task" | "proposal" | "news";
@@ -60,7 +58,7 @@ export const attachmentApi = {
     file: File;
     onProgress?: (ratio: number) => void;
   }): Promise<Attachment | void> => {
-    if (params.file.size <= MAX_SYNC_BYTES) {
+    if (params.file.size <= getSitePolicy().sync_upload_max_bytes) {
       return attachmentApi.upload(
         params.parentType === "task"
           ? { taskId: params.parentId, file: params.file }

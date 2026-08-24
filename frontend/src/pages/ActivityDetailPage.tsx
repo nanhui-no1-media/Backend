@@ -14,6 +14,7 @@ import type { ActivityStatus } from "../types/activities";
 import type { Attachment } from "../types/tasks";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
+import { useSitePolicy } from "../api/sitePolicy";
 
 interface CurrentUser {
   id: number;
@@ -24,6 +25,8 @@ interface CurrentUser {
 export default function ActivityDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const policy = useSitePolicy();
+  const syncMb = Math.round(policy.sync_upload_max_bytes / 1024 / 1024);
   const [activity, setActivity] = useState<ActivityDetail | null>(null);
   const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
   const [error, setError] = useState("");
@@ -421,7 +424,7 @@ export default function ActivityDetailPage() {
               <h3 className="section-h">征集规则</h3>
               <ul className="muted">
                 <li>允许后缀：{a.allowed_extensions ? a.allowed_extensions : "不限（除可执行/脚本类）"}</li>
-                <li>单文件大小上限：{a.max_file_size ? `${Math.round(a.max_file_size / 1024 / 1024)} MB` : "50 MB"}</li>
+                <li>单文件大小上限：{a.max_file_size ? `${Math.round(a.max_file_size / 1024 / 1024)} MB` : `${syncMb} MB`}</li>
                 <li>单作品文件数上限：{a.max_files_per_submission}</li>
                 <li>最大征集数量：{a.max_submissions ?? "不限"}{a.max_submissions && a.submissions ? `（已收 ${a.submissions.length}）` : ""}</li>
               </ul>
