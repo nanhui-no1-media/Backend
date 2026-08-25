@@ -1,68 +1,33 @@
-from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
-from django.core.mail import send_mail
-from django.utils import timezone
-from django.utils.html import format_html
+from django.db.models import OuterRef, Subquery
+from django.utils.html import format_html, format_html_join
 
 from common.policy import get_policy
 
-from .models import IdentityProof, Profile, UserSession, Verification, is_verified
-
-
-def _revoke_user_sessions(user):
-    """立即吊销用户既有会话：删 Django Session 行（强制登出）+ 清 UserSession.is_current。
-
-    is_active=False 只挡新登录；不吊销既有会话的话，被停用账号仍可用当前会话直到过期。
-    """
-    from django.contrib.sessions.models import Session
-
-    keys = list(UserSession.objects.filter(user=user).values_list("session_key", flat=True))
-    UserSession.objects.filter(user=user).update(is_current=False)
-    if keys:
-        Session.objects.filter(session_key__in=keys).delete()
+from .identity_review import approve_manual, disable_user, reject_manual
+from .models import IdentityProof, Profile, Verification, is_verified
 
 
 # ---- 审核动作（#31 / ADR-0006）----
 # 同时挂在 ProfileAdmin 与 IdentityProofAdmin：queryset 元素都有 .user，按 user 操作其
 # manual 验证通道。仅持 accounts.can_review_identity 者可用（get_actions 收口 + 动作内二次校验）。
+# 业务路径在 identity_review（与 /auth/identity-reviews/ API 共用）。
 
 
 def approve_identity(modeladmin, request, queryset):
-    """通过身份审核：manual 验证通道置 approved（+ verified_at / verified_by），并发邮件。
-
-    验证态单一事实源是 Verification 行（ADR-0006），不再写 Profile 布尔。任一通道 approved
-    ⇒ 账号已验证（写门禁 / 徽章 / 面板随之放行）。
-    """
+    """通过身份审核：manual 验证通道置 approved（+ verified_at / verified_by），并发邮件。"""
     if not get_policy().verification_enabled:
         modeladmin.message_user(
             request, "验证通道已关闭，无法通过身份审核。", level=messages.ERROR,
         )
         return
-    now = timezone.now()
     count = 0
     for obj in queryset.select_related("user"):
-        user = obj.user
         if not request.user.has_perm("accounts.can_review_identity"):
             continue  # 防御：get_actions 已收口，此处双保险
-        verification, _ = Verification.objects.get_or_create(
-            user=user, channel=Verification.CHANNEL_MANUAL,
-            defaults={"status": Verification.STATUS_APPROVED, "verified_at": now,
-                      "verified_by": request.user},
-        )
-        if verification.status != Verification.STATUS_APPROVED:
-            verification.status = Verification.STATUS_APPROVED
-            verification.verified_at = now
-            verification.verified_by = request.user
-            verification.save(update_fields=["status", "verified_at", "verified_by"])
-        send_mail(
-            subject="身份审核已通过 - 南汇一中传媒社",
-            message="你的身份证明已通过审核，现在可以使用全部功能（发帖 / 发消息 / 建申报等）。",
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=[user.email],
-            fail_silently=True,
-        )
+        approve_manual(obj.user, reviewer=request.user)
         count += 1
     modeladmin.message_user(request, f"已通过 {count} 个账号的身份审核。")
 
@@ -71,10 +36,7 @@ approve_identity.short_description = "通过身份审核"
 
 
 def reject_identity(modeladmin, request, queryset):
-    """驳回身份审核：manual 通道置 rejected，并发邮件提示可在面板重交（#38）。
-
-    驳回 ≠ 停用账号：账号仍可登录（访客）、可重交证明；仅 manual 通道记驳回态。
-    """
+    """驳回身份审核：manual 通道置 rejected，并发邮件提示可在面板重交（#38）。"""
     if not get_policy().verification_enabled:
         modeladmin.message_user(
             request, "验证通道已关闭，无法驳回身份审核。", level=messages.ERROR,
@@ -82,25 +44,9 @@ def reject_identity(modeladmin, request, queryset):
         return
     count = 0
     for obj in queryset.select_related("user"):
-        user = obj.user
         if not request.user.has_perm("accounts.can_review_identity"):
             continue
-        verification, _ = Verification.objects.get_or_create(
-            user=user, channel=Verification.CHANNEL_MANUAL,
-            defaults={"status": Verification.STATUS_REJECTED},
-        )
-        if verification.status != Verification.STATUS_REJECTED:
-            verification.status = Verification.STATUS_REJECTED
-            verification.verified_at = None
-            verification.verified_by = None
-            verification.save(update_fields=["status", "verified_at", "verified_by"])
-        send_mail(
-            subject="身份审核已驳回 - 南汇一中传媒社",
-            message="你的身份证明未通过审核。请在「账号验证」面板重新提交更清晰的证明材料。",
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=[user.email],
-            fail_silently=True,
-        )
+        reject_manual(obj.user, reviewer=request.user)
         count += 1
     modeladmin.message_user(request, f"已驳回 {count} 个账号的身份审核。")
 
@@ -109,26 +55,12 @@ reject_identity.short_description = "驳回身份审核"
 
 
 def disable_account(modeladmin, request, queryset):
-    """停用账号：置 is_active=False，并发邮件通知当事人联系信息组。
-
-    账号级动作，与验证通道无关——被停用账号既不能登录、既有会话也被立即吊销。
-    """
+    """停用账号：置 is_active=False，并发邮件通知当事人联系信息组。"""
     count = 0
     for obj in queryset.select_related("user"):
-        user = obj.user
         if not request.user.has_perm("accounts.can_review_identity"):
             continue
-        if user.is_active:
-            user.is_active = False
-            user.save(update_fields=["is_active"])
-            _revoke_user_sessions(user)  # 立即吊销既有会话，防被停用账号继续访问
-        send_mail(
-            subject="账号已被停用 - 南汇一中传媒社",
-            message="你的账号已被停用。如有疑问，请联系信息组。",
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=[user.email],
-            fail_silently=True,
-        )
+        disable_user(obj.user)
         count += 1
     modeladmin.message_user(request, f"已停用 {count} 个账号。")
 
@@ -172,6 +104,26 @@ class VerifiedFilter(admin.SimpleListFilter):
         return qs
 
 
+class ManualChannelStatusFilter(admin.SimpleListFilter):
+    """按该用户人工通道 Verification 状态过滤身份证明行。"""
+
+    title = "人工通道状态"
+    parameter_name = "manual_status"
+
+    def lookups(self, request, model_admin):
+        return Verification.STATUSES
+
+    def queryset(self, request, qs):
+        value = self.value()
+        if not value:
+            return qs
+        return qs.filter(
+            user_id__in=Verification.objects.filter(
+                channel=Verification.CHANNEL_MANUAL, status=value,
+            ).values("user_id")
+        )
+
+
 class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
     list_display = ("user", "real_name", "identity", "verified")
     list_filter = (VerifiedFilter, "identity")
@@ -186,11 +138,20 @@ class ProfileAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
 class IdentityProofAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
     """身份证明材料（审计留底）：只读浏览 + 审核动作；图经鉴权下载视图服务（不经公开 MEDIA_URL）。"""
 
-    list_display = ("id", "user", "uploaded_at", "proof_thumb")
+    list_display = ("id", "user", "uploaded_at", "manual_channel_status", "proof_thumb")
     readonly_fields = ("user", "uploaded_at", "proof_image")
     search_fields = ("user__username", "user__email")
-    list_filter = ("uploaded_at",)
+    list_filter = (ManualChannelStatusFilter, "uploaded_at")
     actions = list(_IDENTITY_ACTIONS)
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        manual = Verification.objects.filter(
+            user_id=OuterRef("user_id"),
+            channel=Verification.CHANNEL_MANUAL,
+        )
+        return qs.annotate(manual_status=Subquery(manual.values("status")[:1]))
+
     # 永久留底：不允许增 / 改 / 删
     def has_add_permission(self, request):
         return False
@@ -208,17 +169,38 @@ class IdentityProofAdmin(_IdentityReviewActionsMixin, admin.ModelAdmin):
     def has_view_permission(self, request, obj=None):
         return request.user.has_perm("accounts.can_review_identity")
 
+    @admin.display(description="人工通道状态", ordering="manual_status")
+    def manual_channel_status(self, obj):
+        status = getattr(obj, "manual_status", None)
+        if not status:
+            return "—"
+        return dict(Verification.STATUSES).get(status, status)
+
     @admin.display(description="缩略图")
     def proof_thumb(self, obj):
         if not obj.pk:
             return "-"
-        return format_html('<img src="/auth/identity-proof/{}/" style="max-height:72px;border-radius:4px" />', obj.pk)
+        url = f"/auth/identity-proof/{obj.pk}/"
+        return format_html(
+            '<a href="{}" target="_blank" rel="noopener">'
+            '<img src="{}" style="max-height:240px;border-radius:4px" />'
+            "</a>",
+            url,
+            url,
+        )
 
     @admin.display(description="证明材料")
     def proof_image(self, obj):
         if not obj.pk:
             return "-"
-        return format_html('<img src="/auth/identity-proof/{}/" style="max-width:600px;border-radius:6px" />', obj.pk)
+        proofs = IdentityProof.objects.filter(user_id=obj.user_id).order_by("-uploaded_at")
+        return format_html_join(
+            "",
+            '<img src="/auth/identity-proof/{}/" alt="身份证明" '
+            'style="max-width:100%;max-height:72vh;display:block;'
+            'margin:0 auto 16px;border-radius:6px" />',
+            ((p.pk,) for p in proofs),
+        )
 
 
 class ProfileInline(admin.StackedInline):

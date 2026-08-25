@@ -7,9 +7,11 @@ Seams（HTTP 公共接口，不测内部结构）：
 """
 
 from django.contrib.auth.models import Permission, User
+from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from common.models import SiteSettings
 from reviews.models import Review
 
 
@@ -62,6 +64,34 @@ class NewsSubmitEntersPendingTest(TestCase):
 
         detail = public.get(f"/news/news/{news_id}/")
         self.assertEqual(detail.status_code, 404)
+
+
+class ContentReviewDisabledSkipsQueueTest(TestCase):
+    """content_review_enabled=False → 新建直接通过，无需 force_publish。"""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        obj, _ = SiteSettings.objects.get_or_create(pk=1)
+        obj.content_review_enabled = False
+        obj.save()
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
+    def test_create_without_force_publish_is_approved(self):
+        client = APIClient()
+        client.force_authenticate(_author())
+        resp = client.post("/news/news/", {"title": "免审稿"}, format="json")
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["review_status"], "approved")
+        news_id = resp.data["id"]
+
+        public = APIClient()
+        listing = public.get("/news/news/")
+        self.assertIn(news_id, _ids(listing))
+        self.assertEqual(public.get(f"/news/news/{news_id}/").status_code, 200)
 
 
 class ForcePublishSkipsReviewTest(TestCase):

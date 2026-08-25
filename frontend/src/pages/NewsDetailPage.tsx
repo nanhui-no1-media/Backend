@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
-import AppShell from "../components/AppShell";
 import Avatar from "../components/Avatar";
 import ArticleToc, { htmlWithHeadingIds } from "../components/ArticleToc";
+import PageChrome from "../components/PageChrome";
 import { newsApi } from "../api/news";
 import { type NewsDetail } from "../types/news";
+import { useEmbedMode } from "../embed";
 import "../styles/news.css";
 import "../styles/form.css";
 
@@ -15,9 +16,18 @@ const fmtDate = (d: string | null) => {
   return `${dt.getFullYear()}.${p(dt.getMonth() + 1)}.${p(dt.getDate())}`;
 };
 
-export default function NewsDetailPage() {
-  const { id } = useParams<{ id: string }>();
+export default function NewsDetailPage({
+  embedded,
+  newsId,
+}: {
+  embedded?: boolean;
+  newsId?: number;
+} = {}) {
+  const params = useParams<{ id: string }>();
+  const id = newsId != null ? String(newsId) : params.id;
   const navigate = useNavigate();
+  const urlEmbed = useEmbedMode();
+  const embed = Boolean(embedded || urlEmbed);
   const [news, setNews] = useState<NewsDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -38,18 +48,19 @@ export default function NewsDetailPage() {
     window.setTimeout(() => setCopied(false), 1500);
   };
 
-  if (loading) return <AppShell><div className="container"><p className="news-empty">加载中…</p></div></AppShell>;
-  if (error && !news) return <AppShell><div className="container"><p className="news-empty">{error}</p></div></AppShell>;
-  if (!news) return <AppShell><div className="container"><p className="news-empty">新闻不存在或已下线。</p></div></AppShell>;
+  if (loading) return <PageChrome embedded={embed}><div className="container"><p className="news-empty">加载中…</p></div></PageChrome>;
+  if (error && !news) return <PageChrome embedded={embed}><div className="container"><p className="news-empty">{error}</p></div></PageChrome>;
+  if (!news) return <PageChrome embedded={embed}><div className="container"><p className="news-empty">新闻不存在或已下线。</p></div></PageChrome>;
 
   const related = news.related || [];
   const prepared = htmlWithHeadingIds(news.content || "");
 
   return (
-    <AppShell>
+    <PageChrome embedded={embed}>
       <div className="container">
         <div className="detail-layout">
           <article className="article">
+            {!embed && (
             <nav className="breadcrumb" style={{ marginTop: "var(--s-8)" }}>
               <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
               <span className="sep">/</span>
@@ -57,14 +68,15 @@ export default function NewsDetailPage() {
               <span className="sep">/</span>
               <span>{news.title}</span>
             </nav>
+            )}
 
-            {news.review_status === "pending" && (
+            {!embed && news.review_status === "pending" && (
               <div className="form-notice" style={{ margin: "12px 0" }}>此稿待审，仅你与审核员可见，尚未对公众公开。</div>
             )}
-            {news.review_status === "rejected" && (
+            {!embed && news.review_status === "rejected" && (
               <div className="alert alert-warning" style={{ margin: "12px 0" }}>此稿已驳回，不对公众展示。</div>
             )}
-            {news.review_status === "removed" && (
+            {!embed && news.review_status === "removed" && (
               <div className="alert alert-warning" style={{ margin: "12px 0" }}>此稿已下架，不对公众展示。</div>
             )}
             <h1>{news.title}</h1>
@@ -105,6 +117,7 @@ export default function NewsDetailPage() {
               </div>
             )}
 
+            {!embed && (
             <div className="article-actions">
               <button className="btn btn-secondary" onClick={() => navigate("/news")}>
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M11 6l-6 6 6 6" /></svg> 返回列表
@@ -113,6 +126,7 @@ export default function NewsDetailPage() {
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a4 4 0 0 0 5.7.4l3-3a4 4 0 0 0-5.7-5.7l-1.4 1.4" /><path d="M14 11a4 4 0 0 0-5.7-.4l-3 3a4 4 0 0 0 5.7 5.7l1.4-1.4" /></svg> {copied ? "已复制" : "复制链接"}
               </button>
             </div>
+            )}
 
             <div className="author-card">
               <Link to={`/u/${news.author.id}`}><Avatar user={news.author} size="md" /></Link>
@@ -131,7 +145,7 @@ export default function NewsDetailPage() {
               <div className="meta-row"><span className="k">来源</span><span className="v">传媒社</span></div>
               <div className="meta-row"><span className="k">阅读</span><span className="v">{news.views}</span></div>
             </div>
-            {related.length > 0 && (
+            {!embed && related.length > 0 && (
               <div className="side-card">
                 <h4><span className="bar" /> 相关阅读</h4>
                 {related.map((r) => (
@@ -146,7 +160,7 @@ export default function NewsDetailPage() {
           </aside>
         </div>
 
-        {related.length > 0 && (
+        {!embed && related.length > 0 && (
           <section style={{ paddingBottom: "var(--s-16)" }}>
             <div className="section-head">
               <div>
@@ -175,6 +189,6 @@ export default function NewsDetailPage() {
           </section>
         )}
       </div>
-    </AppShell>
+    </PageChrome>
   );
 }

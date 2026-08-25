@@ -1,9 +1,11 @@
 from django.contrib.auth.models import Permission, User
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.test import APIClient
 
 from accounts.test_helpers import grant_verification
+from common.models import SiteSettings
 from reviews.models import Review
 from tutorials.models import Tutorial, TutorialTag
 
@@ -136,6 +138,32 @@ class TutorialReviewVisibilityTest(TestCase):
         rows = client.get("/reviews/reviews/?status=pending").data["results"]
         self.assertEqual(rows[0]["target_type"], "tutorial")
         self.assertEqual(rows[0]["title"], "待审教程")
+
+
+class TutorialContentReviewDisabledTest(TestCase):
+    """content_review_enabled=False → 新建教程直接通过。"""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        obj, _ = SiteSettings.objects.get_or_create(pk=1)
+        obj.content_review_enabled = False
+        obj.save()
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
+    def test_create_without_force_publish_is_approved(self):
+        client = APIClient()
+        client.force_authenticate(_member("skip"))
+        resp = client.post(
+            "/tutorials/tutorials/",
+            {"title": "免审教程", "file": _mp4()},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["review_status"], "approved")
 
 
 class TutorialFavoriteAndViewsTest(TestCase):

@@ -3,6 +3,7 @@ from django.db import models
 
 from .policy import (
     DEFAULT_AUTO_UPDATE_ENABLED,
+    DEFAULT_CONTENT_REVIEW_ENABLED,
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
     DEFAULT_REGISTRATION_ENABLED,
@@ -30,6 +31,11 @@ class SiteSettings(models.Model):
         "验证通道开启",
         default=DEFAULT_VERIFICATION_ENABLED,
         help_text="关闭后不可新开或完成任何验证通道；已通过者仍算已验证。",
+    )
+    content_review_enabled = models.BooleanField(
+        "开启内容审核",
+        default=DEFAULT_CONTENT_REVIEW_ENABLED,
+        help_text="关闭后新建新闻、活动、教程直接通过，不进待审队列；已有待审条目不会批量通过。",
     )
     registration_enabled = models.BooleanField(
         "开放自助注册",

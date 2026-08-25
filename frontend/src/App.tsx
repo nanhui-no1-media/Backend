@@ -4,6 +4,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import SessionGuard from "./components/SessionGuard";
 import LoginModalProvider from "./components/LoginModalProvider";
 import MascotHost from "./components/mascot/MascotHost";
+import { useEmbedMode } from "./embed";
 import { api } from "./api/client";
 import { fetchSitePolicy } from "./api/sitePolicy";
 
@@ -40,6 +41,12 @@ const JoinEditorPage = lazy(() => import("./pages/JoinEditorPage"));
 
 function Loading() {
   return <div style={{ textAlign: "center", padding: "80px 0", color: "#6b7280" }}>加载中...</div>;
+}
+
+function MaybeMascot() {
+  const embed = useEmbedMode();
+  if (embed) return null;
+  return <MascotHost />;
 }
 
 export default function App() {
@@ -95,7 +102,7 @@ export default function App() {
       </Suspense>
       </SessionGuard>
       </LoginModalProvider>
-      <MascotHost />
+      <MaybeMascot />
     </HashRouter>
   );
 }

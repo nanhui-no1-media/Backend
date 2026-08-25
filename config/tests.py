@@ -31,7 +31,7 @@ class SettingsHygieneTest(TestCase):
 
         self.assertEqual(
             cfg._email_backend_for(""),
-            "django.core.mail.backends.console.ConsoleEmailBackend",
+            "django.core.mail.backends.console.EmailBackend",
         )
         self.assertEqual(
             cfg._email_backend_for("someone@163.com"),

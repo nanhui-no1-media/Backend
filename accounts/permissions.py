@@ -21,3 +21,13 @@ class IsVerified(permissions.BasePermission):
         if not user or not user.is_authenticated:
             return False
         return user.is_superuser or is_verified(user)
+
+
+class CanReviewIdentity(permissions.BasePermission):
+    """身份审核队列读写：持 accounts.can_review_identity。"""
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user and user.is_authenticated and user.has_perm("accounts.can_review_identity")
+        )

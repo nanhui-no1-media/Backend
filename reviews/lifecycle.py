@@ -1,6 +1,8 @@
 """审核状态机（ADR-0003：状态转移不是访问控制，与 permission_classes 分离）。"""
 from django.utils import timezone
 
+from common.policy import get_policy
+
 from .models import Review
 
 APPROVE = "approve"
@@ -19,14 +21,15 @@ class TransitionDenied(Exception):
 
 
 def open_review(*, news=None, activity=None, tutorial=None, actor, force_publish=None):
-    """为新对象打开一条审核。免审发布者直接通过，否则待审。
+    """为新对象打开一条审核。免审发布者或内容审核关闭时直接通过，否则待审。
 
     是否免审由 ``reviews.force_publish`` 判定（调用方不必再查权限）。
+    站点策略 ``content_review_enabled`` 关闭时等同免审；已有待审条目不受影响。
     """
     if force_publish is None:
         force_publish = bool(actor and actor.has_perm("reviews.force_publish"))
     kwargs = {"news": news, "activity": activity, "tutorial": tutorial}
-    if force_publish:
+    if force_publish or not get_policy().content_review_enabled:
         return Review.objects.create(
             **kwargs,
             status=Review.STATUS_APPROVED,

@@ -38,6 +38,7 @@ class SitePolicyDefaultsTest(TestCase):
         self.assertFalse(SiteSettings.objects.exists())
         p = get_policy()
         self.assertTrue(p.verification_enabled)
+        self.assertTrue(p.content_review_enabled)
         self.assertTrue(p.registration_enabled)
         self.assertEqual(p.register_per_ip_per_day, DEFAULT_REGISTER_PER_IP_PER_DAY)
         self.assertEqual(
@@ -92,6 +93,12 @@ class SitePolicyDefaultsTest(TestCase):
         with self.assertRaises(ValidationError):
             obj.full_clean()
 
+    def test_admin_fieldset_content_review(self):
+        titles = [fs[0] for fs in SiteSettingsAdmin.fieldsets]
+        self.assertIn("审核", titles)
+        review = next(fs for fs in SiteSettingsAdmin.fieldsets if fs[0] == "审核")
+        self.assertEqual(review[1]["fields"], ("content_review_enabled",))
+
     def test_admin_fieldset_auto_update(self):
         titles = [fs[0] for fs in SiteSettingsAdmin.fieldsets]
         self.assertIn("自动更新", titles)
@@ -125,6 +132,7 @@ class SitePolicyPublicGetTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertEqual(data["verification_enabled"], True)
+        self.assertEqual(data["content_review_enabled"], True)
         self.assertEqual(data["registration_enabled"], True)
         self.assertEqual(data["register_per_ip_per_day"], 5)
         self.assertEqual(data["resend_verification_per_ip_per_hour"], 5)
@@ -143,6 +151,7 @@ class SitePolicyPublicGetTest(TestCase):
     def test_get_reflects_saved_row(self):
         obj, _ = SiteSettings.objects.get_or_create(pk=1)
         obj.verification_enabled = False
+        obj.content_review_enabled = False
         obj.sync_upload_max_bytes = 1024
         obj.auto_update_enabled = False
         obj.update_poll_interval_seconds = 60
@@ -155,6 +164,7 @@ class SitePolicyPublicGetTest(TestCase):
         obj.save()
         data = APIClient().get("/site-policy/").json()
         self.assertFalse(data["verification_enabled"])
+        self.assertFalse(data["content_review_enabled"])
         self.assertEqual(data["sync_upload_max_bytes"], 1024)
         self.assertFalse(data["auto_update_enabled"])
         self.assertEqual(data["update_poll_interval_seconds"], 60)

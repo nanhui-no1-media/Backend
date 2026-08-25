@@ -19,7 +19,7 @@ const fmtDate = (d: string | null) => {
   return `${dt.getFullYear()}.${p(dt.getMonth() + 1)}.${p(dt.getDate())}`;
 };
 
-interface Me { can_manage_news?: boolean; can_review_content?: boolean }
+interface Me { can_manage_news?: boolean; can_review_content?: boolean; can_review_identity?: boolean }
 
 export default function NewsListPage() {
   const navigate = useNavigate();
@@ -34,6 +34,7 @@ export default function NewsListPage() {
     api.me().then((d: any) => setMe({
       can_manage_news: d.user?.permissions?.can_manage_news,
       can_review_content: d.user?.permissions?.can_review_content,
+      can_review_identity: d.user?.permissions?.can_review_identity,
     })).catch(() => {});
   }, []);
 
@@ -76,7 +77,7 @@ export default function NewsListPage() {
               <p className="section-sub">社团公告、回顾与通知。</p>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {me?.can_review_content && (
+            {(me?.can_review_content || me?.can_review_identity) && (
               <button className="btn btn-ghost" onClick={() => navigate("/reviews")}>审核队列</button>
             )}
             {me?.can_manage_news && (

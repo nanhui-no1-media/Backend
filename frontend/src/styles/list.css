@@ -87,3 +87,49 @@ a.prop-card { color: inherit; }
 .vote .vote-num { gap: var(--s-3); font-size: 12px; }
 
 .prop-empty { padding: var(--s-12) 0; text-align: center; color: var(--faint); }
+
+/* 审核台：当前条目主面板 + 身份证明大图 */
+.desk-pane {
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  background: var(--bg); padding: var(--s-6); margin-bottom: var(--s-8);
+}
+.desk-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-bottom: var(--s-3); }
+.desk-title { font-family: var(--font-display); font-weight: 700; font-size: clamp(22px, 3vw, 30px); line-height: 1.25; }
+.desk-sub { margin-top: var(--s-2); color: var(--muted); font-size: 13.5px; display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
+.desk-sub .sep { opacity: .5; }
+.desk-comment { font-size: 13px; color: var(--muted); }
+.desk-cover { margin: var(--s-5) 0; border-radius: var(--r-md); overflow: hidden; background: var(--bg-soft); }
+.desk-cover img { width: 100%; max-height: 360px; object-fit: cover; display: block; }
+.desk-proofs { display: grid; gap: var(--s-4); margin-top: var(--s-5); }
+.desk-proof {
+  display: block; width: 100%; padding: 0; border: 1px solid var(--line);
+  border-radius: var(--r-md); overflow: hidden; background: var(--bg-soft); cursor: zoom-in;
+}
+.desk-proof img { width: 100%; max-height: 560px; object-fit: contain; margin: 0 auto; background: var(--bg-soft); }
+.desk-actions {
+  display: flex; flex-wrap: wrap; gap: var(--s-2);
+  margin-top: var(--s-6); padding-top: var(--s-5); border-top: 1px solid var(--line);
+}
+.desk-toolbar {
+  position: sticky; top: var(--nav-h); z-index: 4;
+  margin: calc(-1 * var(--s-6)); margin-bottom: var(--s-5);
+  padding: var(--s-4) var(--s-6);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+.desk-toolbar .desk-actions {
+  margin-top: var(--s-3); padding-top: 0; border-top: none;
+}
+.desk-toolbar .desk-meta { margin-bottom: 0; }
+.desk-target .container {
+  width: 100%; max-width: none; padding-left: 0; padding-right: 0;
+}
+.desk-target .page-head { padding-top: 0; margin-bottom: var(--s-4); }
+.desk-lightbox {
+  position: fixed; inset: 0; z-index: 210;
+  background: oklch(0.27 0.03 255 / .82);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--s-4); cursor: zoom-out;
+}
+.desk-lightbox img { max-width: 96vw; max-height: 94vh; object-fit: contain; border-radius: var(--r-sm); cursor: default; }

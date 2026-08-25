@@ -13,8 +13,9 @@ import {
 import type { ActivityStatus } from "../types/activities";
 import type { Attachment } from "../types/tasks";
 import Avatar from "../components/Avatar";
-import AppShell from "../components/AppShell";
+import PageChrome from "../components/PageChrome";
 import { useSitePolicy } from "../api/sitePolicy";
+import { useEmbedMode } from "../embed";
 
 interface CurrentUser {
   id: number;
@@ -22,9 +23,18 @@ interface CurrentUser {
   can_change_activity?: boolean;
 }
 
-export default function ActivityDetailPage() {
-  const { id } = useParams<{ id: string }>();
+export default function ActivityDetailPage({
+  embedded,
+  activityId,
+}: {
+  embedded?: boolean;
+  activityId?: number;
+} = {}) {
+  const params = useParams<{ id: string }>();
+  const id = activityId != null ? String(activityId) : params.id;
   const navigate = useNavigate();
+  const urlEmbed = useEmbedMode();
+  const embed = Boolean(embedded || urlEmbed);
   const policy = useSitePolicy();
   const syncMb = Math.round(policy.sync_upload_max_bytes / 1024 / 1024);
   const [activity, setActivity] = useState<ActivityDetail | null>(null);
@@ -59,8 +69,8 @@ export default function ActivityDetailPage() {
   };
   useEffect(load, [id]);
 
-  if (error) return <AppShell><div className="container" style={{ padding: "var(--s-16)" }}><div className="alert alert-danger"><span>{error}</span></div></div></AppShell>;
-  if (!activity) return <AppShell><div className="container" style={{ padding: "var(--s-16)" }}><p className="muted">加载中…</p></div></AppShell>;
+  if (error) return <PageChrome embedded={embed}><div className="container" style={{ padding: "var(--s-16)" }}><div className="alert alert-danger"><span>{error}</span></div></div></PageChrome>;
+  if (!activity) return <PageChrome embedded={embed}><div className="container" style={{ padding: "var(--s-16)" }}><p className="muted">加载中…</p></div></PageChrome>;
 
   const a = activity;
   const isOwner = !!user && a.creator?.id === user.id;
@@ -225,7 +235,8 @@ export default function ActivityDetailPage() {
   };
 
   return (
-    <AppShell>
+    <PageChrome embedded={embed}>
+      {!embed && (
       <div className="page-head">
         <div className="container act-head-row">
           <nav className="breadcrumb">
@@ -241,8 +252,9 @@ export default function ActivityDetailPage() {
           )}
         </div>
       </div>
+      )}
 
-      <div className="container" style={{ paddingTop: "var(--s-8)", paddingBottom: "var(--s-16)" }}>
+      <div className="container" style={{ paddingTop: embed ? 0 : "var(--s-8)", paddingBottom: embed ? 0 : "var(--s-16)" }}>
         {error && <div className="alert alert-danger" style={{ margin: "var(--s-4) 0" }}><span>{error}</span></div>}
 
         <div className="card card-pad">
@@ -667,6 +679,6 @@ export default function ActivityDetailPage() {
           </div>
         )}
       </div>
-    </AppShell>
+    </PageChrome>
   );
 }

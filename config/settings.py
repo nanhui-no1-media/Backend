@@ -47,7 +47,7 @@ def _email_backend_for(host_user):
     """
     if host_user:
         return "django.core.mail.backends.smtp.EmailBackend"
-    return "django.core.mail.backends.console.ConsoleEmailBackend"
+    return "django.core.mail.backends.console.EmailBackend"
 
 
 def _parse_allowed_hosts(raw):
@@ -203,8 +203,14 @@ STATICFILES_DIRS = [
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+# Django default is DENY, which makes Chrome render same-origin admin preview
+# iframes as "127.0.0.1 refused to connect". SAMEORIGIN still blocks third-party
+# clickjacking; it only allows this site to embed its own pages (审核对象界面).
+X_FRAME_OPTIONS = "SAMEORIGIN"
 
 # ---- 邮件 / SMTP ----
 # 163 邮箱 SMTP：配了 EMAIL_HOST_USER（+ EMAIL_HOST_PASSWORD 授权码）即切到 SMTP，

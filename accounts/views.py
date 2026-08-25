@@ -623,6 +623,7 @@ def _capabilities(user):
         "can_edit_about": user.has_perm("about.change_aboutpage"),
         "can_manage_exam": user.has_perm("exam_board.add_examdata"),
         "can_review_content": user.has_perm("reviews.moderate"),
+        "can_review_identity": user.has_perm("accounts.can_review_identity"),
         "can_force_publish": user.has_perm("reviews.force_publish"),
     }
 

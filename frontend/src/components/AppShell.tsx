@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useSitePolicy } from "../api/sitePolicy";
+import { useEmbedMode } from "../embed";
 import { useLoginModal } from "./LoginModalProvider";
 import "./AppShell.css";
 
@@ -9,7 +10,7 @@ interface AppShellUser {
   id: number;
   username: string;
   email: string;
-  permissions?: { can_review_content?: boolean };
+  permissions?: { can_review_content?: boolean; can_review_identity?: boolean };
 }
 interface AppShellProfile {
   nickname?: string;
@@ -56,6 +57,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const userWrap = useRef<HTMLDivElement>(null);
   const { openLogin, authNonce, notifyAuthChange } = useLoginModal();
   const policy = useSitePolicy();
+  const embed = useEmbedMode();
 
   useEffect(() => {
     api.me()
@@ -117,6 +119,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const name = profile.nickname || user?.username || "";
   const initial = (user?.username || "?").charAt(0).toUpperCase();
 
+  if (embed) {
+    return <div className="cs appshell">{children}</div>;
+  }
+
   return (
     <div className="cs appshell">
       <header className={"topnav" + (drawerOpen ? " is-open" : "")}>
@@ -169,7 +175,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                         {m.label}
                       </button>
                     ))}
-                    {user?.permissions?.can_review_content && (
+                    {(user?.permissions?.can_review_content || user?.permissions?.can_review_identity) && (
                       <button className="user-menu-item" type="button" onClick={() => go("/reviews")}>
                         审核队列
                       </button>
@@ -204,7 +210,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <button className="sheet-item" type="button" onClick={() => go("/tasks")}>任务管理</button>
               <button className="sheet-item" type="button" onClick={() => go("/activity")}>活动</button>
               <button className="sheet-item" type="button" onClick={() => go("/feedback")}>意见反馈</button>
-              {user.permissions?.can_review_content && (
+              {(user.permissions?.can_review_content || user.permissions?.can_review_identity) && (
                 <button className="sheet-item" type="button" onClick={() => go("/reviews")}>审核队列</button>
               )}
               <button className="sheet-item" type="button" onClick={logout}>退出登录</button>

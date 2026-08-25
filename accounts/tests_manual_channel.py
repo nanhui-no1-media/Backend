@@ -1,6 +1,7 @@
-"""人工审批通道端到端（#38）：提交身份证明 / admin 通过·驳回·停用 / 驳回后重交 / 权限门禁。
+"""人工审批通道端到端（#38）：提交身份证明 / 通过·驳回·停用 / 驳回后重交 / 权限门禁。
 
-提交走 HTTP（面板动作）；通过 / 驳回 / 停用是 Django admin 动作（review stays in admin）。
+提交走 HTTP（面板动作）；通过 / 驳回 / 停用走 identity_review 服务（admin 批量动作与
+``/auth/identity-reviews/`` API 共用）。本文件测提交 + admin 动作；API 见 tests_identity_review。
 证明材料（IdentityProof）永久留底、累加，审核通过后亦不删（审计）。
 """
 from django.contrib import admin

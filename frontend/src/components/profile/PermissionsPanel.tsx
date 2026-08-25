@@ -15,6 +15,7 @@ const CAP_LABELS: Record<string, string> = {
   can_edit_about: "编辑关于",
   can_manage_exam: "管理考试看板",
   can_review_content: "审核内容",
+  can_review_identity: "审核身份",
   can_force_publish: "免审发布",
 };
 
@@ -100,6 +101,14 @@ const CAP_ICONS: Record<string, ReactNode> = {
     <Svg>
       <path d="M9 11l3 3L22 4" />
       <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </Svg>
+  ),
+  can_review_identity: (
+    <Svg>
+      <rect x={3} y={5} width={18} height={14} rx={2} />
+      <circle cx={9} cy={12} r={2.2} />
+      <path d="M14 10h5" />
+      <path d="M14 14h4" />
     </Svg>
   ),
   can_force_publish: (

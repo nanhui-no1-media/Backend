@@ -1,13 +1,23 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import AppShell from "../components/AppShell";
+import PageChrome from "../components/PageChrome";
 import { api } from "../api/client";
 import { tutorialApi, type TutorialItem } from "../api/tutorials";
+import { useEmbedMode } from "../embed";
 import "../styles/detail.css";
 
-export default function TutorialDetailPage() {
-  const { id } = useParams<{ id: string }>();
+export default function TutorialDetailPage({
+  embedded,
+  tutorialId,
+}: {
+  embedded?: boolean;
+  tutorialId?: number;
+} = {}) {
+  const params = useParams<{ id: string }>();
+  const id = tutorialId != null ? String(tutorialId) : params.id;
   const navigate = useNavigate();
+  const urlEmbed = useEmbedMode();
+  const embed = Boolean(embedded || urlEmbed);
   const [item, setItem] = useState<TutorialItem | null>(null);
   const [error, setError] = useState("");
   const [authed, setAuthed] = useState(false);
@@ -36,16 +46,17 @@ export default function TutorialDetailPage() {
   };
 
   if (error && !item) {
-    return <AppShell><div className="container detail-container"><div className="alert alert-danger">{error}</div></div></AppShell>;
+    return <PageChrome embedded={embed}><div className="container detail-container"><div className="alert alert-danger">{error}</div></div></PageChrome>;
   }
   if (!item) {
-    return <AppShell><div className="container detail-container"><p className="empty-text">加载中…</p></div></AppShell>;
+    return <PageChrome embedded={embed}><div className="container detail-container"><p className="empty-text">加载中…</p></div></PageChrome>;
   }
 
   return (
-    <AppShell>
+    <PageChrome embedded={embed}>
       <div className="page-head">
         <div className="container detail-container">
+          {!embed && (
           <nav className="breadcrumb">
             <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
             <span className="sep">/</span>
@@ -53,6 +64,7 @@ export default function TutorialDetailPage() {
             <span className="sep">/</span>
             <span>{item.title}</span>
           </nav>
+          )}
           <div className="detail-head-row">
             <div>
               <h1 className="detail-title">{item.title}</h1>
@@ -94,6 +106,6 @@ export default function TutorialDetailPage() {
           {item.tags.map((t) => <span key={t.id} className="badge badge-ghost">{t.name}</span>)}
         </div>
       </div>
-    </AppShell>
+    </PageChrome>
   );
 }

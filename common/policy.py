@@ -15,6 +15,7 @@ CACHE_KEY = "common.site_policy"
 
 # Defaults equal today's previously hardcoded values (behavior-neutral deploy).
 DEFAULT_VERIFICATION_ENABLED = True
+DEFAULT_CONTENT_REVIEW_ENABLED = True
 DEFAULT_REGISTRATION_ENABLED = True
 DEFAULT_REGISTER_PER_IP_PER_DAY = 5
 DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR = 5
@@ -34,6 +35,7 @@ DEFAULT_UPDATE_DB_BACKUP_KEEP = 5
 @dataclass(frozen=True)
 class SitePolicy:
     verification_enabled: bool
+    content_review_enabled: bool
     registration_enabled: bool
     register_per_ip_per_day: int
     resend_verification_per_ip_per_hour: int
@@ -53,6 +55,7 @@ class SitePolicy:
     def defaults(cls) -> SitePolicy:
         return cls(
             verification_enabled=DEFAULT_VERIFICATION_ENABLED,
+            content_review_enabled=DEFAULT_CONTENT_REVIEW_ENABLED,
             registration_enabled=DEFAULT_REGISTRATION_ENABLED,
             register_per_ip_per_day=DEFAULT_REGISTER_PER_IP_PER_DAY,
             resend_verification_per_ip_per_hour=DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
@@ -84,6 +87,7 @@ def _snapshot(row) -> SitePolicy:
         return SitePolicy.defaults()
     return SitePolicy(
         verification_enabled=row.verification_enabled,
+        content_review_enabled=row.content_review_enabled,
         registration_enabled=row.registration_enabled,
         register_per_ip_per_day=row.register_per_ip_per_day,
         resend_verification_per_ip_per_hour=row.resend_verification_per_ip_per_hour,

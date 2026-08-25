@@ -1,6 +1,12 @@
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+
 from . import views
+from .identity_review import IdentityReviewViewSet
 from .inbox import InboxView
+
+router = DefaultRouter()
+router.register(r"identity-reviews", IdentityReviewViewSet, basename="identity-review")
 
 urlpatterns = [
     path("inbox/", InboxView.as_view(), name="inbox"),
@@ -24,4 +30,5 @@ urlpatterns = [
     path("users/", views.users_view, name="users"),
     path("users/<int:id>/profile/", views.user_profile_view, name="user_profile"),
     path("users/<int:id>/content/", views.user_content_view, name="user_content"),
+    path("", include(router.urls)),
 ]

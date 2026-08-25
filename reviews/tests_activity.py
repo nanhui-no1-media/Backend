@@ -8,11 +8,13 @@ Seams（HTTP 公共接口）：
 from datetime import timedelta
 
 from django.contrib.auth.models import Permission, User
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.test_helpers import grant_verification
+from common.models import SiteSettings
 from reviews.models import Review
 
 
@@ -74,6 +76,26 @@ class ActivitySubmitEntersPendingTest(TestCase):
         self.assertEqual(listing.status_code, 200)
         self.assertNotIn(activity_id, _ids(listing))
         self.assertEqual(other.get(f"/activities/activities/{activity_id}/").status_code, 404)
+
+
+class ActivityContentReviewDisabledTest(TestCase):
+    """content_review_enabled=False → 新建活动直接通过。"""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        obj, _ = SiteSettings.objects.get_or_create(pk=1)
+        obj.content_review_enabled = False
+        obj.save()
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
+    def test_create_without_force_publish_is_approved(self):
+        resp = _create(APIClient(), _author(), title="免审活动")
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["review_status"], "approved")
 
 
 class ActivityForcePublishSkipsReviewTest(TestCase):

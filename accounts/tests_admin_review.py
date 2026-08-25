@@ -10,7 +10,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from accounts.models import IdentityProof, Profile, UserSession, Verification, is_verified
-from accounts.admin import ProfileAdmin, approve_identity, disable_account
+from accounts.admin import IdentityProofAdmin, ProfileAdmin, approve_identity, disable_account
 
 PNG_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
@@ -117,3 +117,47 @@ class AdminReviewActionsTest(TestCase):
         actions = self.ma.get_actions(self._req(self.reviewer))
         self.assertIn("approve_identity", actions)
         self.assertIn("disable_account", actions)
+
+
+class IdentityProofAdminListTest(TestCase):
+    """审核通过后证明列表能看出人工通道状态；缩略图可点开大图。"""
+
+    def setUp(self):
+        self.reviewer = grant_review(User.objects.create_user(username="rev", password="p"))
+        self.target = User.objects.create_user(username="tgt", password="p", email="t@e.com")
+        Profile.objects.create(user=self.target)
+        self.proof = IdentityProof.objects.create(
+            user=self.target, file=SimpleUploadedFile("p.png", PNG_BYTES, content_type="image/png")
+        )
+        Verification.objects.create(
+            user=self.target, channel=Verification.CHANNEL_MANUAL,
+            status=Verification.STATUS_PENDING,
+        )
+        self.factory = RequestFactory()
+        self.profile_admin = ProfileAdmin(Profile, admin.site)
+        self.profile_admin.message_user = lambda *a, **k: None
+        self.proof_admin = IdentityProofAdmin(IdentityProof, admin.site)
+
+    def _req(self, user):
+        req = self.factory.post("/")
+        req.user = user
+        return req
+
+    def test_list_shows_manual_status_after_approve(self):
+        req = self.factory.get("/")
+        req.user = self.reviewer
+        obj = self.proof_admin.get_queryset(req).get(pk=self.proof.pk)
+        self.assertEqual(self.proof_admin.manual_channel_status(obj), "待验证")
+
+        approve_identity(
+            self.profile_admin, self._req(self.reviewer),
+            Profile.objects.filter(pk=self.target.profile.pk),
+        )
+        obj = self.proof_admin.get_queryset(req).get(pk=self.proof.pk)
+        self.assertEqual(self.proof_admin.manual_channel_status(obj), "已通过")
+
+    def test_thumb_is_larger_and_links_to_proof_image(self):
+        html = str(self.proof_admin.proof_thumb(self.proof))
+        self.assertIn("240px", html)
+        self.assertIn(f"/auth/identity-proof/{self.proof.pk}/", html)
+        self.assertIn("<a ", html)

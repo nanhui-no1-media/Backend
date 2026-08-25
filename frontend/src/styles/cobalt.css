@@ -105,6 +105,11 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 
 /* ---------- ④ 布局骨架 ---------- */
 .container { width: 100%; max-width: var(--container); margin: 0 auto; padding: 0 var(--s-6); }
+/* Admin / desk embed: use the iframe width instead of the public-page column. */
+.embed-root .container,
+.embed-root .detail-container { max-width: none; }
+.embed-root .article { max-width: none; }
+.embed-root .tutorial-media { max-width: none; }
 .section { padding: var(--s-16) 0; }
 .section--tight { padding: var(--s-12) 0; }
 .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s-4); margin-bottom: var(--s-8); }

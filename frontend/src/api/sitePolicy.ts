@@ -5,6 +5,7 @@ const request = createRequest("");
 
 export interface SitePolicy {
   verification_enabled: boolean;
+  content_review_enabled: boolean;
   registration_enabled: boolean;
   register_per_ip_per_day: number;
   resend_verification_per_ip_per_hour: number;
@@ -23,6 +24,7 @@ export interface SitePolicy {
 
 const DEFAULTS: SitePolicy = {
   verification_enabled: true,
+  content_review_enabled: true,
   registration_enabled: true,
   register_per_ip_per_day: 5,
   resend_verification_per_ip_per_hour: 5,
