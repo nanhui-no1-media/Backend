@@ -79,6 +79,33 @@ function modelUrl(entry: string): string {
   return `${LIVE2D_BASE}${entry}`;
 }
 
+/** Cubism sample tapEvent reads these arrays; most demo packs omit them and throw on click. */
+const FALLBACK_HIT_AREAS_CUSTOM = {
+  head_x: [-0.35, 0.6],
+  head_y: [0.19, -0.2],
+  body_x: [-0.3, -0.25],
+  body_y: [0.3, -0.9],
+};
+
+export function fillHitAreasCustom(data: unknown): unknown {
+  if (!data || typeof data !== "object") return data;
+  const rec = data as Record<string, unknown>;
+  if (typeof rec.model !== "string" || !Array.isArray(rec.textures)) return data;
+  if (rec.hit_areas_custom != null) return data;
+  rec.hit_areas_custom = { ...FALLBACK_HIT_AREAS_CUSTOM };
+  return data;
+}
+
+function installHitAreasFallback(): () => void {
+  const original = JSON.parse.bind(JSON);
+  const wrapped = ((text: string, reviver?: (this: unknown, key: string, value: unknown) => unknown) =>
+    fillHitAreasCustom(original(text, reviver as never))) as typeof JSON.parse;
+  JSON.parse = wrapped;
+  return () => {
+    if (JSON.parse === wrapped) JSON.parse = original;
+  };
+}
+
 function removeStockNodes(): void {
   document.getElementById("waifu")?.remove();
   document.getElementById("waifu-toggle")?.remove();
@@ -116,6 +143,8 @@ export async function mountMascotWidget(
   if (typeof window.initWidget !== "function" || typeof window.loadlive2d !== "function") {
     throw new Error("Live2D widget globals missing after script injection");
   }
+
+  const restoreJsonParse = installHitAreasFallback();
 
   removeStockNodes();
   localStorage.removeItem(WAIFU_DISPLAY_KEY);
@@ -171,6 +200,7 @@ export async function mountMascotWidget(
       unmounted = true;
       document.removeEventListener("click", onToolClick, true);
       window.loadlive2d = origLoadlive2d;
+      restoreJsonParse();
       removeStockNodes();
       placeTipsSentinel();
       localStorage.removeItem(WAIFU_DISPLAY_KEY);

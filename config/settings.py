@@ -14,6 +14,7 @@ import os
 import sys
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # 是否在跑测试（manage.py test / Django test runner）。仅据此切换「测试期才该变」的
@@ -54,18 +55,31 @@ def _parse_allowed_hosts(raw):
     return [h.strip() for h in raw.split(",") if h.strip()] if raw else []
 
 
+# .env.example 写 `SECRET_KEY=`（空字符串）。os.environ.get 把「键存在但为空」当成已设置，
+# 不会走默认值，Django 随后在 MessageMiddleware 签 cookie 时炸 ImproperlyConfigured。
+_DEV_SECRET_KEY = "django-insecure-8725+3f=oec+rp*g+(dq_86xa$87!1)40k9)r@zc&oyc8&db%+"
+
+
+def _secret_key(raw, *, debug):
+    """空 / 未设：debug 回退公开占位；生产（DEBUG=0）要求显式填写。"""
+    key = (raw or "").strip()
+    if key:
+        return key
+    if debug:
+        return _DEV_SECRET_KEY
+    raise ImproperlyConfigured(
+        "SECRET_KEY is empty. Copy .env.example to .env and set a random value "
+        "(python -c \"import secrets;print(secrets.token_urlsafe())\")."
+    )
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # 密钥 / 调试 / 允许主机全部走环境变量（模板见 .env.example）。下列默认值仅保本地开箱即用；
 # 生产务必通过 .env / 进程环境覆盖（尤其 SECRET_KEY，默认值是公开占位、不安全）。
-SECRET_KEY = os.environ.get(
-    "SECRET_KEY",
-    "django-insecure-8725+3f=oec+rp*g+(dq_86xa$87!1)40k9)r@zc&oyc8&db%+",
-)
-
-# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DJANGO_DEBUG", "1").lower() in ("1", "true", "yes", "on")
+SECRET_KEY = _secret_key(os.environ.get("SECRET_KEY"), debug=DEBUG)
 
 ALLOWED_HOSTS = _parse_allowed_hosts(os.environ.get("ALLOWED_HOSTS", ""))
 

@@ -51,6 +51,20 @@ class SettingsHygieneTest(TestCase):
         self.assertTrue(settings.SECRET_KEY)
         self.assertTrue(settings.SECRET_KEY.startswith("django-insecure-"))
 
+    def test_secret_key_helper_empty_string_falls_back_in_debug(self):
+        # .env.example 的 `SECRET_KEY=` 会把空串写进 environ；必须当未设置处理。
+        from django.core.exceptions import ImproperlyConfigured
+
+        from config import settings as cfg
+
+        self.assertEqual(cfg._secret_key("", debug=True), cfg._DEV_SECRET_KEY)
+        self.assertEqual(cfg._secret_key(None, debug=True), cfg._DEV_SECRET_KEY)
+        self.assertEqual(cfg._secret_key("  real-key  ", debug=True), "real-key")
+        with self.assertRaises(ImproperlyConfigured):
+            cfg._secret_key("", debug=False)
+        with self.assertRaises(ImproperlyConfigured):
+            cfg._secret_key("   ", debug=False)
+
     def test_env_example_committed_with_required_keys(self):
         # .env.example 必须入库且覆盖全部需保密/可配置项。
         example = Path(settings.BASE_DIR) / ".env.example"

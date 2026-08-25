@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 import RichTextEditor from "../components/RichTextEditor";
@@ -15,6 +15,13 @@ function isDocx(name: string, url: string | null) {
   return s.includes(".docx");
 }
 
+const OPEN_DWELL_MS = 280;
+const CLOSE_LINGER_MS = 520;
+
+function finePointer() {
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
 export default function AboutPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState<AboutPageData | null>(null);
@@ -27,8 +34,34 @@ export default function AboutPage() {
   const [draftPanorama, setDraftPanorama] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = () => aboutApi.get().then(setPage);
+
+  const clearHoverTimer = () => {
+    if (hoverTimer.current) {
+      clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+  };
+
+  const onBlockEnter = (key: string) => {
+    if (!finePointer()) return;
+    clearHoverTimer();
+    hoverTimer.current = setTimeout(() => setHoveredKey(key), OPEN_DWELL_MS);
+  };
+
+  const onBlockLeave = (key: string) => {
+    if (!finePointer()) return;
+    clearHoverTimer();
+    hoverTimer.current = setTimeout(() => {
+      setHoveredKey((current) => (current === key ? null : current));
+    }, CLOSE_LINGER_MS);
+  };
+
+  useEffect(() => () => clearHoverTimer(), []);
 
   useEffect(() => {
     document.title = "关于我们 · 南汇一中传媒社";
@@ -36,6 +69,8 @@ export default function AboutPage() {
     api.me()
       .then((d: any) => setCanEdit(!!d.user?.permissions?.can_edit_about))
       .catch(() => setCanEdit(false));
+    const hash = window.location.hash;
+    if (hash.startsWith("#block-")) setPinnedKey(hash.slice("#block-".length));
   }, []);
 
   const startEdit = (block: AboutBlock) => {
@@ -44,6 +79,12 @@ export default function AboutPage() {
     setDraftPanorama(block.panorama_url || "");
     setSaveError("");
     setEditingKey(block.key);
+    setPinnedKey(block.key);
+  };
+
+  const showBlock = (key: string) => {
+    setPinnedKey(key);
+    document.getElementById(`block-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const handleSave = async (block: AboutBlock) => {
@@ -110,7 +151,7 @@ export default function AboutPage() {
           {blocks.map((b) => (
             <a key={b.key} href={`#block-${b.key}`} onClick={(e) => {
               e.preventDefault();
-              document.getElementById(`block-${b.key}`)?.scrollIntoView({ behavior: "smooth" });
+              showBlock(b.key);
             }}>{b.title}</a>
           ))}
         </nav>
@@ -118,77 +159,101 @@ export default function AboutPage() {
         <div className="about-blocks">
           {blocks.map((block) => {
             const editing = editingKey === block.key;
+            const pinned = pinnedKey === block.key;
+            const hovering = hoveredKey === block.key;
             return (
-              <section key={block.key} id={`block-${block.key}`} className="card card-pad detail-section">
-                <div className="detail-head-row">
-                  <h2 className="section-h" style={{ margin: 0 }}>{block.title}</h2>
+              <section
+                key={block.key}
+                id={`block-${block.key}`}
+                className={"card about-block" + (pinned ? " is-open" : "") + (editing ? " is-editing" : "") + (hovering ? " is-hover" : "")}
+                onMouseEnter={() => onBlockEnter(block.key)}
+                onMouseLeave={() => onBlockLeave(block.key)}
+              >
+                <div className="about-block-head">
+                  <h2 className="about-block-title">
+                    <button
+                      type="button"
+                      className="about-block-toggle"
+                      aria-expanded={pinned || editing || hovering}
+                      onClick={() => setPinnedKey(pinned ? null : block.key)}
+                    >
+                      <span className="section-h">{block.title}</span>
+                      <span className="about-block-hint about-block-hint--hover">悬停展开</span>
+                      <span className="about-block-hint about-block-hint--touch">点击展开</span>
+                      <svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+                    </button>
+                  </h2>
                   {canEdit && !editing && (
                     <button className="btn btn-ghost btn-sm" onClick={() => startEdit(block)}>编辑</button>
                   )}
                 </div>
 
-                {!editing ? (
-                  <>
-                    {block.content ? (
+                <div className="about-block-body">
+                  <div className="about-block-inner detail-section">
+                    {!editing ? (
                       <>
-                        <ArticleToc html={block.content} />
-                        <RichTextEditor key={`read-${block.key}`} content={block.content} editable={false} />
+                        {block.content ? (
+                          <>
+                            <ArticleToc html={block.content} />
+                            <RichTextEditor key={`read-${block.key}`} content={block.content} editable={false} />
+                          </>
+                        ) : (
+                          <p className="empty-text">{canEdit ? "尚未填写内容，点击「编辑」开始。" : "内容即将上线。"}</p>
+                        )}
+                        {block.key === "campus-overview" && block.panorama_url && (
+                          <p style={{ marginTop: "var(--s-4)" }}>
+                            <a className="btn btn-primary" href={block.panorama_url} target="_blank" rel="noopener noreferrer">
+                              校园全景图
+                            </a>
+                          </p>
+                        )}
+                        {block.document_url && (
+                          <div className="about-doc" style={{ marginTop: "var(--s-4)" }}>
+                            {isDocx(block.document_name, block.document_url) ? (
+                              <DocxPreview url={block.document_url} />
+                            ) : (
+                              <iframe className="about-pdf" title={block.document_name} src={block.document_url} />
+                            )}
+                            <p className="detail-sub">
+                              <a href={block.document_url} download={block.document_name}>下载原件（{block.document_name}）</a>
+                            </p>
+                          </div>
+                        )}
                       </>
                     ) : (
-                      <p className="empty-text">{canEdit ? "尚未填写内容，点击「编辑」开始。" : "内容即将上线。"}</p>
-                    )}
-                    {block.key === "campus-overview" && block.panorama_url && (
-                      <p style={{ marginTop: "var(--s-4)" }}>
-                        <a className="btn btn-primary" href={block.panorama_url} target="_blank" rel="noopener noreferrer">
-                          校园全景图
-                        </a>
-                      </p>
-                    )}
-                    {block.document_url && (
-                      <div className="about-doc" style={{ marginTop: "var(--s-4)" }}>
-                        {isDocx(block.document_name, block.document_url) ? (
-                          <DocxPreview url={block.document_url} />
-                        ) : (
-                          <iframe className="about-pdf" title={block.document_name} src={block.document_url} />
-                        )}
-                        <p className="detail-sub">
-                          <a href={block.document_url} download={block.document_name}>下载原件（{block.document_name}）</a>
-                        </p>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <h3 className="section-h">标题</h3>
-                    <input className="input" value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} style={{ width: "100%" }} />
-                    <h3 className="section-h" style={{ marginTop: "var(--s-5)" }}>正文</h3>
-                    <RichTextEditor
-                      key={`edit-${block.key}`}
-                      content={draftContent}
-                      onChange={setDraftContent}
-                      imageUpload={(f: File) => newsApi.uploadImage(f).then((d) => d.url)}
-                      iframeEmbed
-                      minHeight={320}
-                    />
-                    {block.key === "campus-overview" && (
                       <>
-                        <h3 className="section-h" style={{ marginTop: "var(--s-5)" }}>校园全景图外链</h3>
-                        <input className="input" value={draftPanorama} onChange={(e) => setDraftPanorama(e.target.value)} placeholder="https://…" style={{ width: "100%" }} />
+                        <h3 className="section-h">标题</h3>
+                        <input className="input" value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} style={{ width: "100%" }} />
+                        <h3 className="section-h" style={{ marginTop: "var(--s-5)" }}>正文</h3>
+                        <RichTextEditor
+                          key={`edit-${block.key}`}
+                          content={draftContent}
+                          onChange={setDraftContent}
+                          imageUpload={(f: File) => newsApi.uploadImage(f).then((d) => d.url)}
+                          iframeEmbed
+                          minHeight={320}
+                        />
+                        {block.key === "campus-overview" && (
+                          <>
+                            <h3 className="section-h" style={{ marginTop: "var(--s-5)" }}>校园全景图外链</h3>
+                            <input className="input" value={draftPanorama} onChange={(e) => setDraftPanorama(e.target.value)} placeholder="https://…" style={{ width: "100%" }} />
+                          </>
+                        )}
+                        <h3 className="section-h" style={{ marginTop: "var(--s-5)" }}>文档保真导入（PDF / .docx）</h3>
+                        <input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                               onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDoc(block, f); }} />
+                        {block.document_url && (
+                          <button className="btn btn-ghost btn-sm" type="button" onClick={() => clearDoc(block)}>移除文档</button>
+                        )}
+                        {saveError && <div className="alert alert-danger" style={{ marginTop: "var(--s-3)" }}>{saveError}</div>}
+                        <div className="detail-row" style={{ marginTop: "var(--s-4)" }}>
+                          <button className="btn btn-primary" onClick={() => handleSave(block)} disabled={saving}>{saving ? "保存中…" : "保存"}</button>
+                          <button className="btn btn-ghost" onClick={() => setEditingKey(null)} disabled={saving}>取消</button>
+                        </div>
                       </>
                     )}
-                    <h3 className="section-h" style={{ marginTop: "var(--s-5)" }}>文档保真导入（PDF / .docx）</h3>
-                    <input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                           onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDoc(block, f); }} />
-                    {block.document_url && (
-                      <button className="btn btn-ghost btn-sm" type="button" onClick={() => clearDoc(block)}>移除文档</button>
-                    )}
-                    {saveError && <div className="alert alert-danger" style={{ marginTop: "var(--s-3)" }}>{saveError}</div>}
-                    <div className="detail-row" style={{ marginTop: "var(--s-4)" }}>
-                      <button className="btn btn-primary" onClick={() => handleSave(block)} disabled={saving}>{saving ? "保存中…" : "保存"}</button>
-                      <button className="btn btn-ghost" onClick={() => setEditingKey(null)} disabled={saving}>取消</button>
-                    </div>
-                  </>
-                )}
+                  </div>
+                </div>
               </section>
             );
           })}
