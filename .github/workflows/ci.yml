@@ -76,12 +76,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           SHA="${GITHUB_SHA}"
+          # GitHub rejects tags that are 40/64 hex (look like commit SHAs).
+          TAG="club-${SHA}"
           ASSETS=("club-${SHA}.tar.gz" "club-${SHA}.tar.gz.sha256")
-          if gh release view "$SHA" >/dev/null 2>&1; then
-            gh release upload "$SHA" "${ASSETS[@]}" --clobber
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
-            gh release create "$SHA" "${ASSETS[@]}" \
+            gh release create "$TAG" "${ASSETS[@]}" \
               --target "$SHA" \
-              --title "club-${SHA}" \
+              --title "$TAG" \
               --notes "Runtime tree (Django apps + frontend/dist) for ${SHA}."
           fi

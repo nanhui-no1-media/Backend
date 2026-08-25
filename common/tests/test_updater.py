@@ -40,6 +40,7 @@ from common.updater import (
     pending_archive,
     poll_tick,
     prune_keep_newest,
+    release_tag,
     retry_delay,
     restore_sqlite,
     sync_tree,
@@ -413,10 +414,15 @@ class UnpackExcludeRollbackTest(SimpleTestCase):
 
 
 class GithubParseAndRetryTest(SimpleTestCase):
+    def test_release_tag_is_not_bare_hex(self):
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        self.assertEqual(release_tag(sha), f"club-{sha}")
+        self.assertEqual(release_tag(f"club-{sha}"), f"club-{sha}")
+
     def test_parse_release_assets(self):
         sha = "0123456789abcdef0123456789abcdef01234567"
         payload = {
-            "tag_name": sha,
+            "tag_name": f"club-{sha}",
             "assets": [
                 {
                     "name": f"club-{sha}.tar.gz",

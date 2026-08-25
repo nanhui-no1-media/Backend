@@ -54,6 +54,8 @@ GITHUB_API_VERSION = "2022-11-28"
 
 ARCHIVE_RE = re.compile(r"^club-([0-9a-f]{7,40})\.tar\.gz$", re.IGNORECASE)
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+# GitHub forbids tags that are exactly 40/64 hex; assets stay club-{sha}.tar.gz.
+RELEASE_TAG_PREFIX = "club-"
 
 # Live-tree names that must never be replaced or deleted by a release unpack.
 # ``.git`` is extra to the plan's list: deploy.sh still clones once.
@@ -264,6 +266,14 @@ def read_applied_sha(paths: UpdaterPaths) -> str | None:
 def write_applied_sha(paths: UpdaterPaths, sha: str) -> None:
     paths.run_dir.mkdir(parents=True, exist_ok=True)
     paths.applied_file.write_text(sha.strip() + "\n", encoding="utf-8")
+
+
+def release_tag(sha: str) -> str:
+    """GitHub Release tag for a commit SHA (must not be bare 40-hex)."""
+    text = sha.strip()
+    if text.startswith(RELEASE_TAG_PREFIX):
+        return text
+    return f"{RELEASE_TAG_PREFIX}{text}"
 
 
 def complete_archives(releases_dir: Path) -> list[Path]:
@@ -629,7 +639,7 @@ def fetch_release(
 ) -> RemoteRelease | None:
     fetch = get_json or github_json
     if tag:
-        url = f"{GITHUB_API}/repos/{repo}/releases/tags/{tag}"
+        url = f"{GITHUB_API}/repos/{repo}/releases/tags/{release_tag(tag)}"
     else:
         url = f"{GITHUB_API}/repos/{repo}/releases/latest"
     try:

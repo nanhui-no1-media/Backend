@@ -256,7 +256,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### 10. 后续更新（GitHub Release + 守护进程）
 
-push 到 `main` 后，CI 并行跑后端测试与前端生产构建，二者都绿才打一份以 commit SHA 为 tag 的 GitHub Release。生产机上的更新进程由 **`start.sh` 随 `club` 拉起**：`club` 在跑则全天按站点策略轮询、把完整包预下载到 `backups/releases/`；**只在应用窗口内**抬维护、解包、切流量。`club` 停则更新停。更新路径**没有 git、没有 npm**。
+push 到 `main` 后，CI 并行跑后端测试与前端生产构建，二者都绿才打一份 GitHub Release（tag 为 `club-{commit SHA}`，因 GitHub 禁止纯 40 位十六进制 tag）。生产机上的更新进程由 **`start.sh` 随 `club` 拉起**：`club` 在跑则全天按站点策略轮询、把完整包预下载到 `backups/releases/`；**只在应用窗口内**抬维护、解包、切流量。`club` 停则更新停。更新路径**没有 git、没有 npm**。
 
 首次部署仍是 `deploy.sh`（git clone 一次 + 机上 `npm run build`）；之后 `start.sh` 在这份已知可用的树上拉起 updater。日常更新**不需要 Node**。
 
@@ -268,7 +268,7 @@ push 到 `main` 后，CI 并行跑后端测试与前端生产构建，二者都�
 |-----|------|--------|
 | `backend` | push / PR | `uv sync --frozen` → `uv run python manage.py test` |
 | `frontend` | push / PR | Node 22：`npm ci && npm run build`，上传 `frontend/dist` 为 artifact |
-| `release` | **仅** `main` 的 push，且 `needs: [backend, frontend]` | 把 dist 放回树内，`scripts/pack-release.sh` 打包，以 **commit SHA** 为 tag 建 Release |
+| `release` | **仅** `main` 的 push，且 `needs: [backend, frontend]` | 把 dist 放回树内，`scripts/pack-release.sh` 打包，以 **`club-{commit SHA}`** 为 tag 建 Release |
 
 附件（一份包，避免前后端各半错配）：
 
