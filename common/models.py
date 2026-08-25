@@ -1,15 +1,26 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from .policy import (
+    DEFAULT_AUTO_UPDATE_ENABLED,
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
     DEFAULT_REGISTRATION_ENABLED,
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
     DEFAULT_SYNC_UPLOAD_MAX_BYTES,
     DEFAULT_TUS_MEDIA_MAX_BYTES,
+    DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END,
+    DEFAULT_UPDATE_DB_BACKUP_KEEP,
+    DEFAULT_UPDATE_POLL_INTERVAL_SECONDS,
+    DEFAULT_UPDATE_RELEASE_KEEP,
+    DEFAULT_UPDATE_TIMEZONE,
+    DEFAULT_UPDATE_WINDOW_END_HOUR,
+    DEFAULT_UPDATE_WINDOW_START_HOUR,
     DEFAULT_VERIFICATION_ENABLED,
     invalidate_policy_cache,
 )
+
+_HOUR_VALIDATORS = [MinValueValidator(0), MaxValueValidator(23)]
 
 
 class SiteSettings(models.Model):
@@ -45,6 +56,45 @@ class SiteSettings(models.Model):
     tus_media_max_bytes = models.PositiveBigIntegerField(
         "tus 图/视频上限（字节）",
         default=DEFAULT_TUS_MEDIA_MAX_BYTES,
+    )
+    auto_update_enabled = models.BooleanField(
+        "开启自动更新",
+        default=DEFAULT_AUTO_UPDATE_ENABLED,
+        help_text="关闭后守护进程跳过下载与应用。",
+    )
+    update_poll_interval_seconds = models.PositiveIntegerField(
+        "轮询间隔（秒）",
+        default=DEFAULT_UPDATE_POLL_INTERVAL_SECONDS,
+    )
+    update_timezone = models.CharField(
+        "更新时区",
+        max_length=63,
+        default=DEFAULT_UPDATE_TIMEZONE,
+        help_text="IANA 时区名；不用 Django TIME_ZONE。",
+    )
+    update_window_start_hour = models.PositiveSmallIntegerField(
+        "窗口开始时刻（时）",
+        default=DEFAULT_UPDATE_WINDOW_START_HOUR,
+        validators=_HOUR_VALIDATORS,
+        help_text="应用窗口为 [开始, 结束) 的整点小时，时区见「更新时区」。",
+    )
+    update_window_end_hour = models.PositiveSmallIntegerField(
+        "窗口结束时刻（时）",
+        default=DEFAULT_UPDATE_WINDOW_END_HOUR,
+        validators=_HOUR_VALIDATORS,
+    )
+    update_apply_cutoff_minutes_before_end = models.PositiveIntegerField(
+        "窗口结束前截止分钟",
+        default=DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END,
+        help_text="窗口结束前 N 分钟起不再开始应用更新。",
+    )
+    update_release_keep = models.PositiveIntegerField(
+        "保留发行包份数",
+        default=DEFAULT_UPDATE_RELEASE_KEEP,
+    )
+    update_db_backup_keep = models.PositiveIntegerField(
+        "保留数据库快照份数",
+        default=DEFAULT_UPDATE_DB_BACKUP_KEEP,
     )
 
     class Meta:

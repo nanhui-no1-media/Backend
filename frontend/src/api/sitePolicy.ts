@@ -11,6 +11,14 @@ export interface SitePolicy {
   feedback_anon_per_ip_per_day: number;
   sync_upload_max_bytes: number;
   tus_media_max_bytes: number;
+  auto_update_enabled: boolean;
+  update_poll_interval_seconds: number;
+  update_timezone: string;
+  update_window_start_hour: number;
+  update_window_end_hour: number;
+  update_apply_cutoff_minutes_before_end: number;
+  update_release_keep: number;
+  update_db_backup_keep: number;
 }
 
 const DEFAULTS: SitePolicy = {
@@ -21,6 +29,14 @@ const DEFAULTS: SitePolicy = {
   feedback_anon_per_ip_per_day: 10,
   sync_upload_max_bytes: 50 * 1024 * 1024,
   tus_media_max_bytes: 500 * 1024 * 1024,
+  auto_update_enabled: true,
+  update_poll_interval_seconds: 900,
+  update_timezone: "Asia/Shanghai",
+  update_window_start_hour: 1,
+  update_window_end_hour: 3,
+  update_apply_cutoff_minutes_before_end: 30,
+  update_release_keep: 3,
+  update_db_backup_keep: 5,
 };
 
 let snapshot: SitePolicy = DEFAULTS;

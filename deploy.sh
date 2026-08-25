@@ -4,9 +4,10 @@
 # 以 root 运行：装系统依赖、以「仓库属主」为服务用户（不再另建 deploy）、
 # uv sync、前端构建、写 .env、migrate + collectstatic、写 systemd unit（club.service）
 # + nginx 站点 + sudoers（放行该用户免密 systemctl club）、enable 并启动。
+# 更新守护进程由 start.sh 与 Gunicorn 一同拉起，不另写 *-updater.service。
 #
-# 服务用户 = 仓库属主 = 跑 update.sh 的那个人，三者合一——杜绝 deploy/ubuntu 双用户错位
-# （仓库是谁 clone 的，服务就以谁跑；可显式 APP_USER=xxx 覆盖）。
+# 服务用户 = 仓库属主（谁 clone 的就是谁跑服务）——杜绝 deploy/ubuntu 双用户错位
+# （可显式 APP_USER=xxx 覆盖）。
 #
 # 路径全部相对本脚本（仓库根）派生，不硬编码 /srv/club —— 在哪 clone 就部署在哪。
 # 幂等：可重复跑（用户/依赖已在则跳过）。
@@ -135,6 +136,10 @@ cd "$DIR"
 set -a; . ./.env; set +a
 uv run python manage.py migrate
 uv run python manage.py collectstatic --noinput
+mkdir -p run
+if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git rev-parse HEAD > run/applied-release
+fi
 EOF
 
 # ---- 8. systemd unit（路径派生；ExecStart 调 start.sh）----
@@ -150,11 +155,19 @@ User=$APP_USER
 Group=$APP_USER
 WorkingDirectory=$DIR
 ExecStart=$DIR/start.sh
+ExecReload=/bin/kill -s HUP \$MAINPID
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 UNIT
+
+# 旧版曾单独装 *-updater.service；生命周期现已并进 start.sh。
+if [ -f "/etc/systemd/system/${SERVICE_NAME}-updater.service" ]; then
+  echo "==> 停用并移除过期的 ${SERVICE_NAME}-updater.service（改由 start.sh 拉起）"
+  systemctl disable --now "${SERVICE_NAME}-updater" >/dev/null 2>&1 || true
+  rm -f "/etc/systemd/system/${SERVICE_NAME}-updater.service"
+fi
 
 # ---- 9. nginx 站点（路径派生；\$host 等 nginx 变量用反斜杠护住）----
 echo "==> 写 /etc/nginx/sites-available/$SERVICE_NAME"
@@ -166,6 +179,15 @@ server {
 
     location /static/ { alias $DIR/staticfiles/; }
     location /media/   { alias $DIR/media/; }
+
+    # Gunicorn restart gap: Django maintenance flag is gone with the workers.
+    error_page 502 /maintenance.html;
+    location = /maintenance.html {
+        alias $DIR/static/maintenance.html;
+        default_type text/html;
+        charset utf-8;
+        internal;
+    }
 
     location / {
         proxy_pass http://unix:$DIR/run/gunicorn.sock;
@@ -179,10 +201,10 @@ ln -sf "/etc/nginx/sites-available/$SERVICE_NAME" "/etc/nginx/sites-enabled/$SER
 nginx -t
 systemctl reload nginx
 
-# ---- 10. sudoers：放行 deploy 免密管理本服务（update.sh 用）----
+# ---- 10. sudoers：放行服务用户免密管理 club（手动 --apply-now 的 restart / is-active）----
 echo "==> 写 /etc/sudoers.d/$SERVICE_NAME（$APP_USER 免密 systemctl $SERVICE_NAME）"
 cat > "/etc/sudoers.d/$SERVICE_NAME" <<SUDOERS
-$APP_USER ALL=(ALL) NOPASSWD: $SYSTEMCTL start $SERVICE_NAME, $SYSTEMCTL stop $SERVICE_NAME, $SYSTEMCTL restart $SERVICE_NAME, $SYSTEMCTL is-active $SERVICE_NAME
+$APP_USER ALL=(ALL) NOPASSWD: $SYSTEMCTL start $SERVICE_NAME, $SYSTEMCTL stop $SERVICE_NAME, $SYSTEMCTL restart $SERVICE_NAME, $SYSTEMCTL reload $SERVICE_NAME, $SYSTEMCTL is-active $SERVICE_NAME
 SUDOERS
 chmod 440 "/etc/sudoers.d/$SERVICE_NAME"
 visudo -c -f "/etc/sudoers.d/$SERVICE_NAME"
@@ -194,10 +216,12 @@ systemctl enable --now "$SERVICE_NAME"
 echo
 echo "✅ 部署完成。"
 echo "   访问： http://${SERVER_NAME/#_/localhost}   （SERVER_NAME=_ 时用服务器 IP）"
-echo "   日志： sudo journalctl -u $SERVICE_NAME -f"
+echo "   日志： sudo journalctl -u $SERVICE_NAME -f   （含更新守护进程，与 Gunicorn 同 unit）"
 echo
 echo "⚠️  收尾（必做）："
-echo "   1) 编辑 $DIR/.env 填生产值（DJANGO_DEBUG=0 / ALLOWED_HOSTS=你的域名,IP / SECRET_KEY / EMAIL_* / TURNSTILE_*），"
+echo "   1) 编辑 $DIR/.env 填生产值（DJANGO_DEBUG=0 / ALLOWED_HOSTS=你的域名,IP / SECRET_KEY / EMAIL_* / TURNSTILE_* / UPDATE_GITHUB_TOKEN），"
 echo "      再：sudo systemctl restart $SERVICE_NAME"
 echo "   2) 建超管： sudo -u $APP_USER HOME=$APP_HOME bash -lc 'cd \"$DIR\" && set -a;. ./.env;set +a && uv run python manage.py createsuperuser'"
 echo "   3) /admin/ 把成员加入「社长」「信息组」组（没组=没权限）。"
+echo "   4) 夜间窗口/轮询在 /admin/ 「站点策略」；UPDATE_GITHUB_TOKEN 须能读 GitHub Releases。"
+echo "   5) 若曾装过 ${SERVICE_NAME}-updater.service，本脚本已停用；更新现由 start.sh 随 club 启动。"

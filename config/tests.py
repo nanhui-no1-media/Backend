@@ -65,5 +65,7 @@ class SettingsHygieneTest(TestCase):
             "EMAIL_HOST_PASSWORD",
             "TURNSTILE_SITE_KEY",
             "TURNSTILE_SECRET_KEY",
+            "UPDATE_GITHUB_TOKEN",
+            "UPDATE_GITHUB_REPO",
         ):
             self.assertIn(key, text, f".env.example 缺少 {key}")

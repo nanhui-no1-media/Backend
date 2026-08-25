@@ -1,15 +1,25 @@
 """Site policy singleton: defaults, cache invalidation, public GET."""
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from common.admin import SiteSettingsAdmin
 from common.models import SiteSettings
 from common.policy import (
+    DEFAULT_AUTO_UPDATE_ENABLED,
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
     DEFAULT_SYNC_UPLOAD_MAX_BYTES,
     DEFAULT_TUS_MEDIA_MAX_BYTES,
+    DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END,
+    DEFAULT_UPDATE_DB_BACKUP_KEEP,
+    DEFAULT_UPDATE_POLL_INTERVAL_SECONDS,
+    DEFAULT_UPDATE_RELEASE_KEEP,
+    DEFAULT_UPDATE_TIMEZONE,
+    DEFAULT_UPDATE_WINDOW_END_HOUR,
+    DEFAULT_UPDATE_WINDOW_START_HOUR,
     get_policy,
     invalidate_policy_cache,
 )
@@ -37,6 +47,17 @@ class SitePolicyDefaultsTest(TestCase):
         self.assertEqual(p.feedback_anon_per_ip_per_day, DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY)
         self.assertEqual(p.sync_upload_max_bytes, DEFAULT_SYNC_UPLOAD_MAX_BYTES)
         self.assertEqual(p.tus_media_max_bytes, DEFAULT_TUS_MEDIA_MAX_BYTES)
+        self.assertEqual(p.auto_update_enabled, DEFAULT_AUTO_UPDATE_ENABLED)
+        self.assertEqual(p.update_poll_interval_seconds, DEFAULT_UPDATE_POLL_INTERVAL_SECONDS)
+        self.assertEqual(p.update_timezone, DEFAULT_UPDATE_TIMEZONE)
+        self.assertEqual(p.update_window_start_hour, DEFAULT_UPDATE_WINDOW_START_HOUR)
+        self.assertEqual(p.update_window_end_hour, DEFAULT_UPDATE_WINDOW_END_HOUR)
+        self.assertEqual(
+            p.update_apply_cutoff_minutes_before_end,
+            DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END,
+        )
+        self.assertEqual(p.update_release_keep, DEFAULT_UPDATE_RELEASE_KEEP)
+        self.assertEqual(p.update_db_backup_keep, DEFAULT_UPDATE_DB_BACKUP_KEEP)
 
     def test_save_always_pk_1_and_invalidates_cache(self):
         get_policy()  # warm cache with defaults
@@ -61,6 +82,34 @@ class SitePolicyDefaultsTest(TestCase):
         invalidate_policy_cache()
         self.assertEqual(get_policy().register_per_ip_per_day, 9)
 
+    def test_window_hours_reject_out_of_range(self):
+        obj, _ = SiteSettings.objects.get_or_create(pk=1)
+        obj.update_window_start_hour = 24
+        with self.assertRaises(ValidationError):
+            obj.full_clean()
+        obj.update_window_start_hour = 1
+        obj.update_window_end_hour = -1
+        with self.assertRaises(ValidationError):
+            obj.full_clean()
+
+    def test_admin_fieldset_auto_update(self):
+        titles = [fs[0] for fs in SiteSettingsAdmin.fieldsets]
+        self.assertIn("自动更新", titles)
+        auto = next(fs for fs in SiteSettingsAdmin.fieldsets if fs[0] == "自动更新")
+        self.assertEqual(
+            auto[1]["fields"],
+            (
+                "auto_update_enabled",
+                "update_poll_interval_seconds",
+                "update_timezone",
+                "update_window_start_hour",
+                "update_window_end_hour",
+                "update_apply_cutoff_minutes_before_end",
+                "update_release_keep",
+                "update_db_backup_keep",
+            ),
+        )
+
 
 class SitePolicyPublicGetTest(TestCase):
     def setUp(self):
@@ -82,12 +131,36 @@ class SitePolicyPublicGetTest(TestCase):
         self.assertEqual(data["feedback_anon_per_ip_per_day"], 10)
         self.assertEqual(data["sync_upload_max_bytes"], 50 * 1024 * 1024)
         self.assertEqual(data["tus_media_max_bytes"], 500 * 1024 * 1024)
+        self.assertEqual(data["auto_update_enabled"], True)
+        self.assertEqual(data["update_poll_interval_seconds"], 900)
+        self.assertEqual(data["update_timezone"], "Asia/Shanghai")
+        self.assertEqual(data["update_window_start_hour"], 1)
+        self.assertEqual(data["update_window_end_hour"], 3)
+        self.assertEqual(data["update_apply_cutoff_minutes_before_end"], 30)
+        self.assertEqual(data["update_release_keep"], 3)
+        self.assertEqual(data["update_db_backup_keep"], 5)
 
     def test_get_reflects_saved_row(self):
         obj, _ = SiteSettings.objects.get_or_create(pk=1)
         obj.verification_enabled = False
         obj.sync_upload_max_bytes = 1024
+        obj.auto_update_enabled = False
+        obj.update_poll_interval_seconds = 60
+        obj.update_timezone = "UTC"
+        obj.update_window_start_hour = 2
+        obj.update_window_end_hour = 4
+        obj.update_apply_cutoff_minutes_before_end = 15
+        obj.update_release_keep = 2
+        obj.update_db_backup_keep = 1
         obj.save()
         data = APIClient().get("/site-policy/").json()
         self.assertFalse(data["verification_enabled"])
         self.assertEqual(data["sync_upload_max_bytes"], 1024)
+        self.assertFalse(data["auto_update_enabled"])
+        self.assertEqual(data["update_poll_interval_seconds"], 60)
+        self.assertEqual(data["update_timezone"], "UTC")
+        self.assertEqual(data["update_window_start_hour"], 2)
+        self.assertEqual(data["update_window_end_hour"], 4)
+        self.assertEqual(data["update_apply_cutoff_minutes_before_end"], 15)
+        self.assertEqual(data["update_release_keep"], 2)
+        self.assertEqual(data["update_db_backup_keep"], 1)

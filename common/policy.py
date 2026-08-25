@@ -21,6 +21,14 @@ DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR = 5
 DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY = 10
 DEFAULT_SYNC_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 DEFAULT_TUS_MEDIA_MAX_BYTES = 500 * 1024 * 1024
+DEFAULT_AUTO_UPDATE_ENABLED = True
+DEFAULT_UPDATE_POLL_INTERVAL_SECONDS = 900
+DEFAULT_UPDATE_TIMEZONE = "Asia/Shanghai"
+DEFAULT_UPDATE_WINDOW_START_HOUR = 1
+DEFAULT_UPDATE_WINDOW_END_HOUR = 3
+DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END = 30
+DEFAULT_UPDATE_RELEASE_KEEP = 3
+DEFAULT_UPDATE_DB_BACKUP_KEEP = 5
 
 
 @dataclass(frozen=True)
@@ -32,6 +40,14 @@ class SitePolicy:
     feedback_anon_per_ip_per_day: int
     sync_upload_max_bytes: int
     tus_media_max_bytes: int
+    auto_update_enabled: bool
+    update_poll_interval_seconds: int
+    update_timezone: str
+    update_window_start_hour: int
+    update_window_end_hour: int
+    update_apply_cutoff_minutes_before_end: int
+    update_release_keep: int
+    update_db_backup_keep: int
 
     @classmethod
     def defaults(cls) -> SitePolicy:
@@ -43,6 +59,14 @@ class SitePolicy:
             feedback_anon_per_ip_per_day=DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
             sync_upload_max_bytes=DEFAULT_SYNC_UPLOAD_MAX_BYTES,
             tus_media_max_bytes=DEFAULT_TUS_MEDIA_MAX_BYTES,
+            auto_update_enabled=DEFAULT_AUTO_UPDATE_ENABLED,
+            update_poll_interval_seconds=DEFAULT_UPDATE_POLL_INTERVAL_SECONDS,
+            update_timezone=DEFAULT_UPDATE_TIMEZONE,
+            update_window_start_hour=DEFAULT_UPDATE_WINDOW_START_HOUR,
+            update_window_end_hour=DEFAULT_UPDATE_WINDOW_END_HOUR,
+            update_apply_cutoff_minutes_before_end=DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END,
+            update_release_keep=DEFAULT_UPDATE_RELEASE_KEEP,
+            update_db_backup_keep=DEFAULT_UPDATE_DB_BACKUP_KEEP,
         )
 
 
@@ -66,6 +90,14 @@ def _snapshot(row) -> SitePolicy:
         feedback_anon_per_ip_per_day=row.feedback_anon_per_ip_per_day,
         sync_upload_max_bytes=row.sync_upload_max_bytes,
         tus_media_max_bytes=row.tus_media_max_bytes,
+        auto_update_enabled=row.auto_update_enabled,
+        update_poll_interval_seconds=row.update_poll_interval_seconds,
+        update_timezone=row.update_timezone,
+        update_window_start_hour=row.update_window_start_hour,
+        update_window_end_hour=row.update_window_end_hour,
+        update_apply_cutoff_minutes_before_end=row.update_apply_cutoff_minutes_before_end,
+        update_release_keep=row.update_release_keep,
+        update_db_backup_keep=row.update_db_backup_keep,
     )
 
 

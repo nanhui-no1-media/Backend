@@ -99,6 +99,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # 维护旗标 run/MAINTENANCE：503 HTML，不碰 DB / session（须先于 Session/CSRF/Tus）。
+    'common.middleware.MaintenanceModeMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -221,6 +223,14 @@ PRIVATE_MEDIA_ROOT = BASE_DIR / "private_media"
 # sitekey 公开（前端常量）；secret 走 .env。DEBUG 或未配 secret 时跳过校验（本地可测）。
 TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "")
 TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "")
+
+# GitHub Release auto-update (spawned by start.sh next to Gunicorn). Token is the secret;
+# repo is optional infra. Window / poll knobs live in SiteSettings (ADR-0010).
+UPDATE_GITHUB_TOKEN = os.environ.get("UPDATE_GITHUB_TOKEN", "")
+UPDATE_GITHUB_REPO = (
+    os.environ.get("UPDATE_GITHUB_REPO", "nanhui-no1-media/Backend")
+    or "nanhui-no1-media/Backend"
+)
 
 # Django REST Framework
 REST_FRAMEWORK = {

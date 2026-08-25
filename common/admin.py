@@ -23,6 +23,21 @@ class SiteSettingsAdmin(admin.ModelAdmin):
             },
         ),
         ("上传", {"fields": ("sync_upload_max_bytes", "tus_media_max_bytes")}),
+        (
+            "自动更新",
+            {
+                "fields": (
+                    "auto_update_enabled",
+                    "update_poll_interval_seconds",
+                    "update_timezone",
+                    "update_window_start_hour",
+                    "update_window_end_hour",
+                    "update_apply_cutoff_minutes_before_end",
+                    "update_release_keep",
+                    "update_db_backup_keep",
+                )
+            },
+        ),
     )
 
     def has_add_permission(self, request):

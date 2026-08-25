@@ -63,10 +63,7 @@ db.sqlite3-journal
 # 用户上传：公开媒体（头像等）与私有媒体（身份证明等审计留底）均不入库
 media/
 private_media/
-# dev.sh 启动脚本的后台服务日志（运行期产物）
-dev-backend.log
-dev-frontend.log
-# 生产运行期产物：gunicorn unix socket 目录、update.sh 的 DB 快照
+# 生产运行期产物：gunicorn unix socket 目录、updater 的 DB 快照与 Release 包
 run/
 backups/
 
