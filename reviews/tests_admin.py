@@ -1,4 +1,10 @@
 """Django admin review change form embeds the target SPA page."""
+import copy
+import shutil
+import tempfile
+from pathlib import Path
+
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.test import Client, TestCase
 
@@ -15,7 +21,15 @@ class ReviewAdminPreviewTest(TestCase):
         self.review = open_review(news=self.news, actor=self.author)
 
     def test_spa_allows_same_origin_framing(self):
-        resp = Client().get("/")
+        # CI backend job has no webpack build; frontend/dist/index.html is absent.
+        tmpl_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(tmpl_dir, ignore_errors=True))
+        (tmpl_dir / "index.html").write_text("<html></html>", encoding="utf-8")
+        templates = copy.deepcopy(settings.TEMPLATES)
+        templates[0]["DIRS"] = [str(tmpl_dir), *templates[0]["DIRS"]]
+        with self.settings(TEMPLATES=templates):
+            resp = Client().get("/")
+        self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.headers.get("X-Frame-Options"), "SAMEORIGIN")
 
     def test_change_form_iframes_news_page(self):

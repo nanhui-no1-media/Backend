@@ -196,9 +196,10 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+# frontend/dist is a webpack artifact (gitignored); omit it when missing so
+# `manage.py test` / a fresh clone does not trip staticfiles.W004.
 STATICFILES_DIRS = [
-    BASE_DIR / 'frontend' / 'dist',
-    BASE_DIR / 'static'
+    p for p in (BASE_DIR / 'frontend' / 'dist', BASE_DIR / 'static') if p.is_dir()
 ]
 
 CORS_ALLOWED_ORIGINS = [
