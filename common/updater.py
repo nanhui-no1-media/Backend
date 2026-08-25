@@ -453,11 +453,11 @@ def _lock_exclusive(fh, *, blocking: bool) -> None:
     except ImportError:
         fcntl = None
     if fcntl is not None:
-        flags = fcntl.LOCK_EX
+        flags = fcntl.LOCK_EX # type: ignore
         if not blocking:
-            flags |= fcntl.LOCK_NB
+            flags |= fcntl.LOCK_NB # type: ignore
         try:
-            fcntl.flock(fh.fileno(), flags)
+            fcntl.flock(fh.fileno(), flags) # type: ignore
         except BlockingIOError:
             raise
         except OSError as exc:
@@ -479,7 +479,7 @@ def _lock_release(fh) -> None:
         fcntl = None
     if fcntl is not None:
         try:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN) # type: ignore
         except OSError:
             pass
         return
@@ -602,7 +602,7 @@ def github_json(url: str, token: str, *, timeout: int = 60, sleep: SleepFn = tim
             delay,
         )
         sleep(delay)
-    raise last_error  # pragma: no cover
+    raise last_error  # type: ignore # pragma: no cover
 
 
 def github_download(
@@ -1049,10 +1049,12 @@ def _ensure_uv_on_path() -> None:
 
 def _configure_logging() -> None:
     """Always attach updater logs to stdout (systemd/journalctl -u club)."""
-    try:
-        sys.stdout.reconfigure(line_buffering=True)
-    except (AttributeError, OSError):
-        pass
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        try:
+            reconfigure(line_buffering=True)
+        except OSError:
+            pass
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
