@@ -44,6 +44,9 @@ HEALTH_WAIT_SECONDS = 3
 RETRY_BASE_SECONDS = 5
 RETRY_MAX_SECONDS = 300
 MAX_DOWNLOAD_ATTEMPTS = 8
+PROGRESS_LOG_SECONDS = 2.0
+PROGRESS_LOG_BYTES = 8 * 1024 * 1024
+RETRYABLE_HTTP = frozenset({408, 425, 429, 500, 502, 503, 504})
 # POSIX hangup; production is Linux. Windows tests have no signal.SIGHUP.
 SIGHUP = getattr(signal, "SIGHUP", 1)
 # Set by start.sh so apply can SIGHUP Gunicorn (the parent) instead of
@@ -545,19 +548,70 @@ def _opener() -> urllib.request.OpenerDirector:
     return urllib.request.build_opener(_StripAuthOnRedirect)
 
 
-def github_json(url: str, token: str, *, timeout: int = 60) -> dict:
-    req = urllib.request.Request(
-        url,
-        headers=_github_headers(token, accept="application/vnd.github+json"),
-    )
-    try:
-        with _opener().open(req, timeout=timeout) as resp:
-            return json.load(resp)
-    except urllib.error.HTTPError as exc:
-        raise UpdaterError(f"GitHub HTTP {exc.code} for {url}") from exc
+def _format_bytes(n: float) -> str:
+    n = float(n)
+    if n < 1024:
+        return f"{int(n)} B"
+    if n < 1024 ** 2:
+        return f"{n / 1024:.1f} KiB"
+    return f"{n / (1024 ** 2):.1f} MiB"
 
 
-def github_download(url: str, dest: Path, token: str, *, timeout: int = 300) -> None:
+def _format_progress(name: str, copied: int, total: int | None, speed: float) -> str:
+    size = _format_bytes(copied)
+    if total and total > 0:
+        pct = min(100.0, 100.0 * copied / total)
+        size = f"{_format_bytes(copied)}/{_format_bytes(total)} ({pct:.0f}%)"
+    rate = f" {_format_bytes(speed)}/s" if speed > 0 else ""
+    return f"{name}: {size}{rate}"
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in RETRYABLE_HTTP
+    if isinstance(exc, UpdaterError):
+        return any(f"HTTP {code}" in str(exc) for code in RETRYABLE_HTTP)
+    return isinstance(exc, (urllib.error.URLError, TimeoutError, OSError, ConnectionError))
+
+
+def github_json(url: str, token: str, *, timeout: int = 60, sleep: SleepFn = time.sleep) -> dict:
+    last_error: Exception | None = None
+    for attempt in range(MAX_DOWNLOAD_ATTEMPTS):
+        req = urllib.request.Request(
+            url,
+            headers=_github_headers(token, accept="application/vnd.github+json"),
+        )
+        retryable = False
+        try:
+            with _opener().open(req, timeout=timeout) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as exc:
+            last_error = UpdaterError(f"GitHub HTTP {exc.code} for {url}")
+            retryable = _is_retryable(exc)
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_error = UpdaterError(f"GitHub request failed for {url}: {exc}")
+            retryable = True
+        if (not retryable) or attempt + 1 >= MAX_DOWNLOAD_ATTEMPTS:
+            raise last_error from None
+        delay = retry_delay(attempt)
+        log.warning(
+            "GitHub API attempt %s/%s failed: %s; retry in %.0fs",
+            attempt + 1,
+            MAX_DOWNLOAD_ATTEMPTS,
+            last_error,
+            delay,
+        )
+        sleep(delay)
+    raise last_error  # pragma: no cover
+
+
+def github_download(
+    url: str,
+    dest: Path,
+    token: str,
+    *,
+    timeout: int = 300,
+) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     req = urllib.request.Request(
         url,
@@ -565,10 +619,43 @@ def github_download(url: str, dest: Path, token: str, *, timeout: int = 300) -> 
     )
     try:
         with _opener().open(req, timeout=timeout) as resp, open(dest, "wb") as out:
-            shutil.copyfileobj(resp, out, length=1024 * 1024)
+            raw_len = resp.headers.get("Content-Length")
+            total = int(raw_len) if raw_len and str(raw_len).isdigit() else None
+            copied = 0
+            last_log = time.monotonic()
+            last_copied = 0
+            started = last_log
+            log.info(
+                "downloading %s (%s)",
+                dest.name,
+                _format_bytes(total) if total else "unknown size",
+            )
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+                copied += len(chunk)
+                now = time.monotonic()
+                if now - last_log >= PROGRESS_LOG_SECONDS or copied - last_copied >= PROGRESS_LOG_BYTES:
+                    speed = (copied - last_copied) / max(now - last_log, 1e-6)
+                    log.info("%s", _format_progress(dest.name, copied, total, speed))
+                    last_log = now
+                    last_copied = copied
+            elapsed = max(time.monotonic() - started, 1e-6)
+            log.info(
+                "downloaded %s %s in %.1fs (%s/s)",
+                dest.name,
+                _format_bytes(copied),
+                elapsed,
+                _format_bytes(copied / elapsed),
+            )
     except urllib.error.HTTPError as exc:
         dest.unlink(missing_ok=True)
         raise UpdaterError(f"GitHub HTTP {exc.code} downloading {url}") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        dest.unlink(missing_ok=True)
+        raise UpdaterError(f"download failed for {url}: {exc}") from exc
 
 
 def parse_release_assets(payload: dict) -> RemoteRelease | None:
@@ -681,6 +768,12 @@ def download_release(
     sidecar_part = Path(str(sidecar_dest) + ".part")
     last_error: Exception | None = None
     for attempt in range(MAX_DOWNLOAD_ATTEMPTS):
+        log.info(
+            "download %s attempt %s/%s",
+            remote.tarball_name,
+            attempt + 1,
+            MAX_DOWNLOAD_ATTEMPTS,
+        )
         part.unlink(missing_ok=True)
         sidecar_part.unlink(missing_ok=True)
         try:
@@ -692,19 +785,22 @@ def download_release(
                 raise ApplyError(f"downloaded sha256 mismatch: {actual} != {expected}")
             sidecar_part.replace(sidecar_dest)
             part.replace(dest)
+            log.info("saved %s", dest.name)
             return dest
         except (UpdaterError, ApplyError, OSError, urllib.error.URLError) as exc:
             last_error = exc
+            delay = retry_delay(attempt) if attempt + 1 < MAX_DOWNLOAD_ATTEMPTS else 0.0
             log.warning(
-                "download attempt %s/%s failed: %s",
+                "download attempt %s/%s failed: %s%s",
                 attempt + 1,
                 MAX_DOWNLOAD_ATTEMPTS,
                 exc,
+                f"; retry in {delay:.0f}s" if delay else "",
             )
             part.unlink(missing_ok=True)
             sidecar_part.unlink(missing_ok=True)
-            if attempt + 1 < MAX_DOWNLOAD_ATTEMPTS:
-                sleep(retry_delay(attempt))
+            if delay:
+                sleep(delay)
     raise UpdaterError(f"download failed after {MAX_DOWNLOAD_ATTEMPTS} attempts: {last_error}")
 
 
@@ -952,13 +1048,22 @@ def _ensure_uv_on_path() -> None:
 
 
 def _configure_logging() -> None:
-    if logging.getLogger().handlers:
-        return
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        stream=sys.stdout,
-    )
+    """Always attach updater logs to stdout (systemd/journalctl -u club)."""
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, OSError):
+        pass
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+    handler.setLevel(logging.INFO)
+    log.setLevel(logging.INFO)
+    if not any(
+        isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is sys.stdout
+        for h in log.handlers
+    ):
+        log.addHandler(handler)
+    log.propagate = False
 
 
 def _apply_pending(

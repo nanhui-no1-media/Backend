@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import tarfile
 import tempfile
+import urllib.error
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -46,6 +47,9 @@ from common.updater import (
     sync_tree,
     unpack_archive,
     verify_archive_checksum,
+    _format_bytes,
+    _format_progress,
+    _is_retryable,
 )
 
 
@@ -447,6 +451,20 @@ class GithubParseAndRetryTest(SimpleTestCase):
         self.assertEqual(retry_delay(0, base=5, cap=300, jitter=lambda: 0.0), 2.5)
         self.assertEqual(retry_delay(0, base=5, cap=300, jitter=lambda: 1.0), 5.0)
         self.assertEqual(retry_delay(10, base=5, cap=300, jitter=lambda: 1.0), 300.0)
+
+    def test_format_progress_includes_percent_and_rate(self):
+        self.assertEqual(_format_bytes(512), "512 B")
+        self.assertIn("KiB", _format_bytes(2048))
+        line = _format_progress("club.tgz.part", 10 * 1024 * 1024, 40 * 1024 * 1024, 1024 * 1024)
+        self.assertIn("25%", line)
+        self.assertIn("/s", line)
+
+    def test_http_503_is_retryable_404_is_not(self):
+        err_503 = urllib.error.HTTPError("http://x", 503, "unavailable", hdrs=None, fp=None)
+        err_404 = urllib.error.HTTPError("http://x", 404, "missing", hdrs=None, fp=None)
+        self.assertTrue(_is_retryable(err_503))
+        self.assertFalse(_is_retryable(err_404))
+        self.assertTrue(_is_retryable(urllib.error.URLError("timeout")))
 
     def test_poll_tick_skips_download_when_disabled(self):
         with tempfile.TemporaryDirectory() as raw:
