@@ -95,9 +95,11 @@ class ActivityViewSet(viewsets.ModelViewSet):
             "exhibits__ratings",
         )
         public = qs.filter(public_activity_q())
-        if self.action == "list":
-            return annotate_activity_debt(public, self.request.user)
         user = self.request.user
+        if self.action == "list":
+            return annotate_activity_debt(public, user)
+        if self.action == "mine" and user.is_authenticated:
+            return qs.filter(creator=user)
         if user.is_authenticated:
             if user.has_perm("reviews.moderate"):
                 return qs
@@ -107,11 +109,15 @@ class ActivityViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == "list":
             return ActivityListSerializer
+        if self.action == "mine":
+            return ActivityListSerializer
         return ActivityDetailSerializer
 
     def get_permissions(self):
         if self.action == "create":
             return [IsAuthenticated(), CanCreateActivity(), IsVerified()]
+        if self.action == "mine":
+            return [IsAuthenticated()]
         if self.action == "vote":
             return [IsAuthenticated(), IsVerified()]
         if self.action == "submit":
@@ -136,6 +142,16 @@ class ActivityViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         activity = serializer.save(creator=self.request.user)
         open_review(activity=activity, actor=self.request.user)
+
+    @action(detail=False, methods=["get"])
+    def mine(self, request):
+        """作者预览：当前用户发起的全部活动（含待审/驳回/下架）。"""
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        serializer = ActivityListSerializer(page or queryset, many=True, context={"request": request})
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
 
     def create(self, request, *args, **kwargs):
         # 展示:展品在详情页布展(待开始期),创建只收标量——0 展品可建,走 JSON 通用路径。

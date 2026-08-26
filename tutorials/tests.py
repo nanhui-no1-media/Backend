@@ -134,6 +134,21 @@ class TutorialReviewVisibilityTest(TestCase):
         self.assertEqual(rows[0]["target_type"], "tutorial")
         self.assertEqual(rows[0]["title"], "待审教程")
 
+    def test_author_preview_includes_reject_comment(self):
+        client = APIClient()
+        client.force_authenticate(self.mod)
+        client.post(
+            f"/reviews/reviews/{self.review_id}/reject/",
+            {"comment": "画质不足"},
+            format="json",
+        )
+        author = APIClient()
+        author.force_authenticate(self.author)
+        resp = author.get(f"/tutorials/tutorials/{self.tid}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["review_status"], "rejected")
+        self.assertEqual(resp.data["review_comment"], "画质不足")
+
 
 class TutorialContentReviewDisabledTest(TestCase):
     """content_review_enabled=False → 新建教程直接通过。"""

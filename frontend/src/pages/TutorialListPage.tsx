@@ -5,6 +5,7 @@ import Pagination from "../components/Pagination";
 import { usePagedList } from "../hooks/usePagedList";
 import { api } from "../api/client";
 import { tutorialApi, type TutorialItem } from "../api/tutorials";
+import { REVIEW_STATUS_LABELS } from "../types/reviews";
 import "../styles/list.css";
 import "../styles/about.css";
 
@@ -72,7 +73,9 @@ export default function TutorialListPage() {
                   <h3>{item.title}</h3>
                   {item.review_status && item.review_status !== "approved" && (
                     <div className="tcard-tags">
-                      <span className="badge">{item.review_status === "pending" ? "待审" : item.review_status}</span>
+                      <span className="badge">
+                        {REVIEW_STATUS_LABELS[item.review_status] ?? item.review_status}
+                      </span>
                     </div>
                   )}
                   <div className="tcard-foot">

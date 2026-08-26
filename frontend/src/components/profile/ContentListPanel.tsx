@@ -8,10 +8,15 @@ const DETAIL_PATH: Record<ContentType, string> = {
   news: "/news",
   proposals: "/activity",
   tasks: "/tasks",
+  activities: "/activity",
+  tutorials: "/tutorials",
 };
 
 const PROPOSAL_TYPE: Record<string, string> = {
   feedback: "意见反馈",
+};
+const ACTIVITY_TYPE: Record<string, string> = {
+  deliberation: "众议", collection: "征集", exhibition: "展示",
 };
 const TASK_STATUS: Record<string, string> = {
   pending: "待处理", in_progress: "进行中", reviewing: "待验收", review: "审核中", completed: "已完成", cancelled: "已取消",
@@ -20,20 +25,29 @@ const TASK_PRIORITY: Record<string, string> = {
   low: "低", medium: "中", high: "高", urgent: "紧急",
 };
 
+function reviewMeta(it: ContentItem): string {
+  return it.review_status === "pending" ? " · 待审"
+    : it.review_status === "rejected" ? " · 已驳回"
+    : it.review_status === "removed" ? " · 已下架"
+    : "";
+}
+
 function metaFor(type: ContentType, it: ContentItem): string {
   if (type === "news") {
     const draft = it.is_published === false ? " · 草稿" : "";
-    const review = it.review_status === "pending" ? " · 待审"
-      : it.review_status === "rejected" ? " · 已驳回"
-      : it.review_status === "removed" ? " · 已下架"
-      : "";
-    return (it.published_at?.slice(0, 10) || "") + draft + review;
+    return (it.published_at?.slice(0, 10) || "") + draft + reviewMeta(it);
   }
   if (type === "proposals") {
     return [it.proposal_type ? PROPOSAL_TYPE[it.proposal_type] ?? it.proposal_type : "", it.created_at?.slice(0, 10)]
       .filter(Boolean).join(" · ");
   }
-  // tasks
+  if (type === "activities") {
+    const kind = it.type ? ACTIVITY_TYPE[it.type] ?? it.type : "";
+    return [kind, it.created_at?.slice(0, 10)].filter(Boolean).join(" · ") + reviewMeta(it);
+  }
+  if (type === "tutorials") {
+    return (it.created_at?.slice(0, 10) || "") + reviewMeta(it);
+  }
   const st = it.status ? TASK_STATUS[it.status] ?? it.status : "";
   const pr = it.priority ? TASK_PRIORITY[it.priority] ?? it.priority : "";
   return [st, pr, it.created_at?.slice(0, 10)].filter(Boolean).join(" · ");

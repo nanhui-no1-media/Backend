@@ -40,6 +40,7 @@ export interface NewsDetail extends NewsListItem {
   related: NewsListItem[];
   updated_at: string;
   attachments: NewsAttachment[];
+  review_comment?: string;
 }
 
 export interface NewsFormData {

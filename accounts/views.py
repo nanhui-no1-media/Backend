@@ -804,20 +804,26 @@ def user_content_view(request, id):
         return JsonResponse({"error": "用户不存在"}, status=404)
 
     type_ = request.GET.get("type")
-    if type_ not in ("news", "proposals", "tasks"):
+    if type_ not in ("news", "proposals", "tasks", "activities", "tutorials"):
         return JsonResponse({"error": "无效的 type"}, status=400)
 
     visibility = content_visibility(request.user, viewed, type_)
     if visibility.denied:
         return JsonResponse({"error": "无权查看他人任务"}, status=403)
 
+    from reviews.visibility import review_status_of
     if type_ == "news":
         from news.models import News
-        from reviews.visibility import review_status_of
         qs = News.objects.filter(author=viewed, **visibility.extra_filter).select_related("review").order_by("-created_at", "-id")
     elif type_ == "proposals":
         from proposals.models import Proposal
         qs = Proposal.objects.filter(creator=viewed, **visibility.extra_filter).order_by("-created_at", "-id")
+    elif type_ == "activities":
+        from activities.models import Activity
+        qs = Activity.objects.filter(creator=viewed, **visibility.extra_filter).select_related("publication_review").order_by("-created_at", "-id")
+    elif type_ == "tutorials":
+        from tutorials.models import Tutorial
+        qs = Tutorial.objects.filter(uploader=viewed, **visibility.extra_filter).select_related("review").order_by("-created_at", "-id")
     else:  # tasks（visibility.denied 已保证仅本人到此）
         from tasks.models import Task
         qs = Task.objects.filter(assignee=viewed, **visibility.extra_filter).order_by("-created_at", "-id")
@@ -846,6 +852,22 @@ def user_content_view(request, id):
             "status": p.status,
             "created_at": p.created_at.isoformat(),
         } for p in page]
+    elif type_ == "activities":
+        results = [{
+            "id": a.id,
+            "title": a.title,
+            "type": a.type,
+            "status": a.status,
+            "review_status": review_status_of(a, related="publication_review"),
+            "created_at": a.created_at.isoformat(),
+        } for a in page]
+    elif type_ == "tutorials":
+        results = [{
+            "id": t.id,
+            "title": t.title,
+            "review_status": review_status_of(t),
+            "created_at": t.created_at.isoformat(),
+        } for t in page]
     else:
         results = [{
             "id": t.id,

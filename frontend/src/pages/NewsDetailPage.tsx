@@ -6,6 +6,7 @@ import PageChrome from "../components/PageChrome";
 import { newsApi } from "../api/news";
 import { type NewsDetail } from "../types/news";
 import { useEmbedMode } from "../embed";
+import AuthorReviewBanner from "../components/AuthorReviewBanner";
 import "../styles/news.css";
 import "../styles/form.css";
 
@@ -70,14 +71,12 @@ export default function NewsDetailPage({
             </nav>
             )}
 
-            {!embed && news.review_status === "pending" && (
-              <div className="form-notice" style={{ margin: "12px 0" }}>此稿待审，仅你与审核员可见，尚未对公众公开。</div>
-            )}
-            {!embed && news.review_status === "rejected" && (
-              <div className="alert alert-warning" style={{ margin: "12px 0" }}>此稿已驳回，不对公众展示。</div>
-            )}
-            {!embed && news.review_status === "removed" && (
-              <div className="alert alert-warning" style={{ margin: "12px 0" }}>此稿已下架，不对公众展示。</div>
+            {!embed && (
+            <AuthorReviewBanner
+              kind="news"
+              status={news.review_status}
+              comment={news.review_comment}
+            />
             )}
             <h1>{news.title}</h1>
 

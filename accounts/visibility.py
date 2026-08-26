@@ -82,6 +82,8 @@ def content_visibility(viewer, viewed, content_type):
 
     - news：他人仅已发布且过审；本人全部。
     - proposals：他人仅已通过；本人全部。
+    - activities：他人仅审核通过；本人全部。
+    - tutorials：他人仅审核通过；本人全部。
     - tasks：仅本人；他人无权（denied）。
 
     未知 ``content_type`` 抛 :class:`ValueError`（视图层先做 type 校验返回 400，
@@ -92,6 +94,16 @@ def content_visibility(viewer, viewed, content_type):
         return ContentVisibility(denied=False, extra_filter={} if owner else {"is_published": True, "review__status": "approved"})
     if content_type == "proposals":
         return ContentVisibility(denied=False, extra_filter={} if owner else {"status": "approved"})
+    if content_type == "activities":
+        return ContentVisibility(
+            denied=False,
+            extra_filter={} if owner else {"publication_review__status": "approved"},
+        )
+    if content_type == "tutorials":
+        return ContentVisibility(
+            denied=False,
+            extra_filter={} if owner else {"review__status": "approved"},
+        )
     if content_type == "tasks":
         return ContentVisibility(denied=not owner, extra_filter={})
     raise ValueError(f"未知内容类型: {content_type!r}")

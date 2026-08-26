@@ -4,6 +4,7 @@ import PageChrome from "../components/PageChrome";
 import { api } from "../api/client";
 import { tutorialApi, type TutorialItem } from "../api/tutorials";
 import { useEmbedMode } from "../embed";
+import AuthorReviewBanner from "../components/AuthorReviewBanner";
 import "../styles/detail.css";
 
 export default function TutorialDetailPage({
@@ -70,7 +71,6 @@ export default function TutorialDetailPage({
               <h1 className="detail-title">{item.title}</h1>
               <p className="detail-sub">
                 {item.uploader.nickname || item.uploader.username} · {item.views} 播放 · {item.favorite_count} 收藏
-                {item.review_status && item.review_status !== "approved" && ` · ${item.review_status === "pending" ? "待审" : item.review_status}`}
               </p>
             </div>
             {authed && (
@@ -81,6 +81,11 @@ export default function TutorialDetailPage({
           </div>
         </div>
       </div>
+      {!embed && (
+        <div className="container detail-container">
+          <AuthorReviewBanner kind="tutorial" status={item.review_status} comment={item.review_comment} />
+        </div>
+      )}
       <div className="container tutorial-media">
         {item.file_type === "video" && item.file_url && !videoFailed ? (
           <video

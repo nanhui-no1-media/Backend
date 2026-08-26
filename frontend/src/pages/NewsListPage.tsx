@@ -10,6 +10,7 @@ import {
   type NewsTag,
   NEWS_PAGE_SIZE,
 } from "../types/news";
+import { REVIEW_STATUS_LABELS } from "../types/reviews";
 import "../styles/news.css";
 
 const fmtDate = (d: string | null) => {
@@ -28,6 +29,7 @@ export default function NewsListPage() {
   const [hot, setHot] = useState<NewsListItem[]>([]);
   const [tagCloud, setTagCloud] = useState<NewsTag[]>([]);
   const [search, setSearch] = useState("");
+  const [mine, setMine] = useState(false);
 
   // 公开页：匿名也可读，故 me() 失败静默（不弹登录）
   useEffect(() => {
@@ -51,12 +53,17 @@ export default function NewsListPage() {
     totalPages,
     loading,
   } = usePagedList<NewsListItem>(
-    (params) => newsApi.list(params),
+    (params) => {
+      const next = { ...params };
+      const isMine = next.mine === "1";
+      delete next.mine;
+      return isMine ? newsApi.mine(next) : newsApi.list(next);
+    },
     NEWS_PAGE_SIZE,
-    { search: search || undefined },
+    { search: search || undefined, mine: mine ? "1" : undefined },
   );
 
-  const showFeatured = !search && page === 1;
+  const showFeatured = !mine && !search && page === 1;
   // 头条同时在列表中出现会重复，hero 展示时从列表中剔除
   const visibleItems = showFeatured && featured ? items.filter((n) => n.id !== featured.id) : items;
 
@@ -79,6 +86,11 @@ export default function NewsListPage() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {(me?.can_review_content || me?.can_review_identity) && (
               <button className="btn btn-ghost" onClick={() => navigate("/reviews")}>审核队列</button>
+            )}
+            {me?.can_manage_news && (
+              <button className="btn btn-ghost" onClick={() => setMine((v) => !v)}>
+                {mine ? "公开列表" : "我的稿件"}
+              </button>
             )}
             {me?.can_manage_news && (
               <button className="btn btn-primary" onClick={() => navigate("/news/new")}>
@@ -147,6 +159,11 @@ export default function NewsListPage() {
                     <h3>{n.title}</h3>
                     <p>{n.summary}</p>
                     <span className="read">阅读 {n.views}</span>
+                    {mine && n.review_status && n.review_status !== "approved" && (
+                      <span className="badge" style={{ marginLeft: 8 }}>
+                        {REVIEW_STATUS_LABELS[n.review_status] ?? n.review_status}
+                      </span>
+                    )}
                   </div>
                 </a>
               ))

@@ -16,6 +16,7 @@ import Avatar from "../components/Avatar";
 import PageChrome from "../components/PageChrome";
 import { useSitePolicy } from "../api/sitePolicy";
 import { useEmbedMode } from "../embed";
+import AuthorReviewBanner from "../components/AuthorReviewBanner";
 
 interface CurrentUser {
   id: number;
@@ -270,6 +271,19 @@ export default function ActivityDetailPage({
           </div>
           <h1 style={{ margin: "0 0 var(--s-4)" }}>{a.title}</h1>
         </div>
+
+        {!embed && (
+          <AuthorReviewBanner
+            kind="activity"
+            status={a.review_status}
+            comment={a.review_comment}
+            extra={
+              a.review_status === "pending" && a.status !== "closed" && a.status !== "archived"
+                ? "活动会按你设的时间推进，但在审核通过前成员看不到、也投不了。"
+                : undefined
+            }
+          />
+        )}
 
         {owesVote && isDeliberation && (
           <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>

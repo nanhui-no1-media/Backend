@@ -206,6 +206,49 @@ class ReviewQueueActionsTest(TestCase):
         public = APIClient()
         self.assertNotIn(self.news_id, _ids(public.get("/news/news/")))
 
+    def test_author_preview_includes_reject_comment(self):
+        self.client.post(
+            f"/reviews/reviews/{self.review_id}/reject/",
+            {"comment": "标题不准确"},
+            format="json",
+        )
+        author = APIClient()
+        author.force_authenticate(self.author)
+        resp = author.get(f"/news/news/{self.news_id}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["review_status"], "rejected")
+        self.assertEqual(resp.data["review_comment"], "标题不准确")
+
+    def test_public_approved_detail_hides_review_comment(self):
+        self.client.post(
+            f"/reviews/reviews/{self.review_id}/approve/",
+            {"comment": "内部备注"},
+            format="json",
+        )
+        public = APIClient()
+        resp = public.get(f"/news/news/{self.news_id}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["review_status"], "approved")
+        self.assertEqual(resp.data["review_comment"], "")
+
+
+class NewsMineListTest(TestCase):
+    """作者预览列表含待审稿；公开列表不含。"""
+
+    def test_mine_includes_pending_and_public_list_does_not(self):
+        author = _author()
+        client = APIClient()
+        client.force_authenticate(author)
+        created = client.post("/news/news/", {"title": "我的待审稿"}, format="json")
+        news_id = created.data["id"]
+        mine = client.get("/news/news/mine/")
+        self.assertEqual(mine.status_code, 200)
+        self.assertIn(news_id, _ids(mine))
+        self.assertNotIn(news_id, _ids(APIClient().get("/news/news/")))
+
+    def test_anonymous_mine_is_denied(self):
+        self.assertIn(APIClient().get("/news/news/mine/").status_code, (401, 403))
+
 
 class ReviewCapabilitiesTest(TestCase):
     """能力布尔由 has_perm 派生，不查组名。"""

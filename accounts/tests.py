@@ -759,12 +759,41 @@ class UserContentViewTest(TestCase):
         from news.models import News
         from proposals.models import Proposal
         from tasks.models import Task
-        from reviews.test_helpers import approve_news
+        from reviews.test_helpers import approve_news, approve_activity, approve_tutorial
         approve_news(News.objects.create(title="published", author=self.owner, is_published=True))
         News.objects.create(title="draft", author=self.owner, is_published=False)
         Proposal.objects.create(title="approved", proposal_type="feedback", status="approved", creator=self.owner)
         Proposal.objects.create(title="pending", proposal_type="feedback", status="pending_approval", creator=self.owner)
         Task.objects.create(title="t", creator=self.owner, assignee=self.owner)
+        from activities.models import Activity
+        from tutorials.models import Tutorial
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        pending_act = Activity.objects.create(
+            type="deliberation", status="open", title="pending-act", creator=self.owner,
+        )
+        approved_act = Activity.objects.create(
+            type="deliberation", status="open", title="approved-act", creator=self.owner,
+        )
+        approve_activity(approved_act)
+        pending_tut = Tutorial.objects.create(
+            title="pending-tut",
+            file=SimpleUploadedFile("a.mp4", b"x", content_type="video/mp4"),
+            file_type="video",
+            file_name="a.mp4",
+            file_size=1,
+            uploader=self.owner,
+        )
+        approved_tut = Tutorial.objects.create(
+            title="approved-tut",
+            file=SimpleUploadedFile("b.mp4", b"x", content_type="video/mp4"),
+            file_type="video",
+            file_name="b.mp4",
+            file_size=1,
+            uploader=self.owner,
+        )
+        approve_tutorial(approved_tut)
+        self.pending_act = pending_act
+        self.pending_tut = pending_tut
 
     def _login(self, user):
         c = Client()
@@ -792,6 +821,12 @@ class UserContentViewTest(TestCase):
         self.assertIn("draft", news)
         self.assertEqual(len(self._get(c, "proposals").json()["results"]), 2)
         self.assertEqual(len(self._get(c, "tasks").json()["results"]), 1)
+        acts = {r["title"] for r in self._get(c, "activities").json()["results"]}
+        self.assertIn("pending-act", acts)
+        self.assertIn("approved-act", acts)
+        tuts = {r["title"] for r in self._get(c, "tutorials").json()["results"]}
+        self.assertIn("pending-tut", tuts)
+        self.assertIn("approved-tut", tuts)
 
     def test_other_smoke_filtered_and_tasks_forbidden(self):
         # 他人冒烟：news 草稿不可见、proposals 未通过不可见（收窄生效）、tasks 403（边界）
@@ -801,6 +836,12 @@ class UserContentViewTest(TestCase):
         proposals = {r["title"] for r in self._get(c, "proposals").json()["results"]}
         self.assertNotIn("pending", proposals)
         self.assertEqual(self._get(c, "tasks").status_code, 403)
+        acts = {r["title"] for r in self._get(c, "activities").json()["results"]}
+        self.assertNotIn("pending-act", acts)
+        self.assertIn("approved-act", acts)
+        tuts = {r["title"] for r in self._get(c, "tutorials").json()["results"]}
+        self.assertNotIn("pending-tut", tuts)
+        self.assertIn("approved-tut", tuts)
 
 
 class UsersViewTest(TestCase):

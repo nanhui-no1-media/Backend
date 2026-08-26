@@ -18,6 +18,10 @@ export const newsApi = {
     return request(`/news/${qs}`) as Promise<NewsListResponse>;
   },
   get: (id: number) => request(`/news/${id}/`) as Promise<NewsDetail>,
+  mine: (params?: Record<string, string>) => {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return request(`/news/mine/${qs}`) as Promise<NewsListResponse>;
+  },
   create: (data: FormData) => request("/news/", { method: "POST", body: data }) as Promise<NewsDetail>,
   update: (id: number, data: FormData) => request(`/news/${id}/`, { method: "PATCH", body: data }) as Promise<NewsDetail>,
   remove: (id: number) => request(`/news/${id}/`, { method: "DELETE" }),

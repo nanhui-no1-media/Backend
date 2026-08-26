@@ -26,6 +26,7 @@ export interface TutorialItem {
   review_status: "pending" | "approved" | "rejected" | "removed" | null;
   created_at: string;
   updated_at?: string;
+  review_comment?: string;
 }
 
 export const tutorialApi = {

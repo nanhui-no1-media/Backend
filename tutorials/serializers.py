@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from tasks.serializers import SimpleUserSerializer
 
-from reviews.visibility import review_status_of
+from reviews.visibility import review_comment_for, review_status_of
 
 from .models import Tutorial
 
@@ -53,14 +53,20 @@ class TutorialListSerializer(serializers.ModelSerializer):
 
 class TutorialDetailSerializer(TutorialListSerializer):
     file_url = serializers.SerializerMethodField()
+    review_comment = serializers.SerializerMethodField()
 
     class Meta(TutorialListSerializer.Meta):
-        fields = TutorialListSerializer.Meta.fields + ["file_url", "updated_at"]
+        fields = TutorialListSerializer.Meta.fields + ["file_url", "review_comment", "updated_at"]
 
     def get_file_url(self, obj):
         request = self.context.get("request")
         url = obj.file.url
         return request.build_absolute_uri(url) if request else url
+
+    def get_review_comment(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return review_comment_for(obj, user, owner_id=obj.uploader_id)
 
 
 def classify_tutorial_file(upload):

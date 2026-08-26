@@ -141,6 +141,30 @@ class ContentVisibilityTest(TestCase):
             ContentVisibility(denied=True, extra_filter={}),
         )
 
+    def test_activities_owner_sees_all(self):
+        self.assertEqual(
+            content_visibility(self.owner, self.owner, "activities"),
+            ContentVisibility(denied=False, extra_filter={}),
+        )
+
+    def test_activities_other_only_approved(self):
+        self.assertEqual(
+            content_visibility(self.other, self.owner, "activities"),
+            ContentVisibility(denied=False, extra_filter={"publication_review__status": "approved"}),
+        )
+
+    def test_tutorials_owner_sees_all(self):
+        self.assertEqual(
+            content_visibility(self.owner, self.owner, "tutorials"),
+            ContentVisibility(denied=False, extra_filter={}),
+        )
+
+    def test_tutorials_other_only_approved(self):
+        self.assertEqual(
+            content_visibility(self.other, self.owner, "tutorials"),
+            ContentVisibility(denied=False, extra_filter={"review__status": "approved"}),
+        )
+
     def test_unknown_type_raises(self):
         with self.assertRaises(ValueError):
             content_visibility(self.other, self.owner, "bogus")

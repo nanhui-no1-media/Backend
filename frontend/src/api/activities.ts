@@ -20,6 +20,10 @@ export const activityApi = {
     return request(`/activities/${qs}`);
   },
   get: (id: number): Promise<ActivityDetail> => request(`/activities/${id}/`),
+  mine: (params?: Record<string, string>): Promise<ActivityListResponse> => {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return request(`/activities/mine/${qs}`);
+  },
   create: (data: ActivityFormData): Promise<ActivityDetail> =>
     request("/activities/", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: Record<string, unknown>): Promise<ActivityDetail> =>

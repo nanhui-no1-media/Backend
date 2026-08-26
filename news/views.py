@@ -7,7 +7,7 @@ from django.core.files.storage import default_storage
 from django.db.models import F
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import DjangoModelPermissionsOrAnonReadOnly
+from rest_framework.permissions import DjangoModelPermissionsOrAnonReadOnly, IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.utils import get_client_ip
@@ -44,6 +44,11 @@ class NewsViewSet(viewsets.ModelViewSet):
         qs = News.objects.select_related(
             "author", "author__profile", "review",
         ).prefetch_related("tags")
+        if self.action == "mine":
+            user = self.request.user
+            if not user.is_authenticated:
+                return qs.none()
+            return qs.filter(author=user)
         # 公开读只返回已发布且过审；写操作可见全部。retrieve 对作者/审核员开放预览。
         if self.action in PUBLIC_ACTIONS:
             public = qs.filter(**public_news_kwargs())
@@ -57,18 +62,30 @@ class NewsViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_serializer_class(self): # type: ignore
-        if self.action == "list":
+        if self.action in ("list", "mine"):
             return NewsListSerializer
         return NewsDetailSerializer
 
     def get_permissions(self):
         # 公开读（GET：list/retrieve/featured/hot/tags）匿名可读；
         # 写（POST/PUT/PATCH/DELETE：create/update/destroy/upload_image）按 news 模型权限校验。
+        if self.action == "mine":
+            return [IsAuthenticated()]
         return [DjangoModelPermissionsOrAnonReadOnly()]
 
     def perform_create(self, serializer):
         news = serializer.save(author=self.request.user)
         open_review(news=news, actor=self.request.user)
+
+    @action(detail=False, methods=["get"])
+    def mine(self, request):
+        """作者预览：当前用户的全部新闻（含待审/驳回/下架），不分公开过滤。"""
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        serializer = NewsListSerializer(page or queryset, many=True, context={"request": request})
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
 
     @action(detail=False, methods=["post"], url_path="upload_image")
     def upload_image(self, request):

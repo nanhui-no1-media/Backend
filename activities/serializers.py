@@ -6,7 +6,7 @@ from rest_framework import serializers
 from accounts.models import is_verified
 from attachments.serializers import AttachmentSerializer
 from common.rich_text import sanitize_html
-from reviews.visibility import review_status_of
+from reviews.visibility import review_comment_for, review_status_of
 from tasks.serializers import SimpleUserSerializer  # 复用（与申报/新闻一致）
 
 from .debt import activity_debt_reason
@@ -165,6 +165,7 @@ def _voting_active(activity):
 class ActivityDetailSerializer(serializers.ModelSerializer):
     creator = SimpleUserSerializer(read_only=True)
     review_status = serializers.SerializerMethodField()
+    review_comment = serializers.SerializerMethodField()
     # 众议读侧（展示的"选项"即展品，走 exhibits，options 返回 None）
     options = serializers.SerializerMethodField()
     ballots = serializers.SerializerMethodField()
@@ -184,7 +185,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         model = Activity
         fields = [
             "id", "type", "status", "title", "body", "creator",
-            "review_status",
+            "review_status", "review_comment",
             "start_at", "end_at",
             "max_choices_per_voter", "is_secret_ballot",
             "allowed_extensions", "max_file_size", "max_files_per_submission", "max_submissions",
@@ -195,10 +196,17 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "option_texts",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["creator", "status", "review_status", "created_at", "updated_at"]
+        read_only_fields = ["creator", "status", "review_status", "review_comment", "created_at", "updated_at"]
 
     def get_review_status(self, obj):
         return review_status_of(obj, related="publication_review")
+
+    def get_review_comment(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return review_comment_for(
+            obj, user, related="publication_review", owner_id=obj.creator_id,
+        )
 
     def validate_body(self, value):
         # 与新闻同级：写时消毒，存消毒后 HTML，读时原样返回。

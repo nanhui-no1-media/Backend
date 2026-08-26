@@ -15,7 +15,7 @@ export interface UserProfileData {
   groups?: string[];
 }
 
-export type ContentType = "news" | "proposals" | "tasks";
+export type ContentType = "news" | "proposals" | "tasks" | "activities" | "tutorials";
 
 export interface ContentItem {
   id: number;
@@ -28,6 +28,7 @@ export interface ContentItem {
   proposal_type?: string;
   status?: string;
   priority?: string;
+  type?: string;
 }
 
 /** 角色 variant → 徽章 CSS 类（配色在 styles/profile.css） */

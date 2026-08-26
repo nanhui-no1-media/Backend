@@ -70,6 +70,7 @@ export interface ActivityDetail {
   body: string;
   creator: TaskUser | null;
   review_status?: "pending" | "approved" | "rejected" | "removed" | null;
+  review_comment?: string;
   start_at: string | null;
   end_at: string | null;
   // 众议

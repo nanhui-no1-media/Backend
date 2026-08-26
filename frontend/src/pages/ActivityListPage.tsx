@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { activityApi } from "../api/activities";
+import { api } from "../api/client";
 import {
   ActivityListItem,
   ActivityType,
   ACTIVITY_TYPE_META,
   activityPhase,
 } from "../types/activities";
+import { REVIEW_STATUS_LABELS } from "../types/reviews";
 import { usePagedList } from "../hooks/usePagedList";
 import Pagination from "../components/Pagination";
 import Avatar from "../components/Avatar";
@@ -27,11 +29,22 @@ export default function ActivityListPage() {
   const navigate = useNavigate();
   const [typeFilter, setTypeFilter] = useState<ActivityType | "">("");
   const [search, setSearch] = useState("");
+  const [mine, setMine] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
+
+  useEffect(() => {
+    api.me().then(() => setLoggedIn(true)).catch(() => setLoggedIn(false));
+  }, []);
 
   const { data: activities, page, setPage, totalPages, loading, error } = usePagedList<ActivityListItem>(
-    (params) => activityApi.list(params),
+    (params) => {
+      const next = { ...params };
+      const isMine = next.mine === "1";
+      delete next.mine;
+      return isMine ? activityApi.mine(next) : activityApi.list(next);
+    },
     PAGE_SIZE,
-    { type: typeFilter || undefined, search: search || undefined },
+    { type: typeFilter || undefined, search: search || undefined, mine: mine ? "1" : undefined },
   );
 
   return (
@@ -48,10 +61,17 @@ export default function ActivityListPage() {
               <h1>活动</h1>
               <p className="section-sub">众议、征集、展示，发起即对全体已验证成员开放。</p>
             </div>
-            <button className="btn btn-primary" onClick={() => navigate("/activity/new")}>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-              发起活动
-            </button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {loggedIn && (
+                <button className="btn btn-ghost" onClick={() => setMine((v) => !v)}>
+                  {mine ? "公开列表" : "我的活动"}
+                </button>
+              )}
+              <button className="btn btn-primary" onClick={() => navigate("/activity/new")}>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                发起活动
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -104,6 +124,11 @@ export default function ActivityListPage() {
                   </span>
                   {a.owed === "vote" && <span className="badge badge-warning">未投</span>}
                   {a.owed === "submit" && <span className="badge badge-warning">未交</span>}
+                  {a.review_status && a.review_status !== "approved" && (
+                    <span className="badge badge-warning">
+                      {REVIEW_STATUS_LABELS[a.review_status] ?? a.review_status}
+                    </span>
+                  )}
                   {a.creator && (
                     <span className="who">
                       <Avatar user={a.creator} />

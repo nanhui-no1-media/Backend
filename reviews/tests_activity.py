@@ -198,6 +198,40 @@ class ActivityReviewQueueActionsTest(TestCase):
         reader.force_authenticate(self.other)
         self.assertNotIn(self.activity_id, _ids(reader.get("/activities/activities/")))
 
+    def test_author_preview_includes_reject_comment(self):
+        self.client.post(
+            f"/reviews/reviews/{self.review_id}/reject/",
+            {"comment": "主题不符"},
+            format="json",
+        )
+        author = APIClient()
+        author.force_authenticate(self.author)
+        resp = author.get(f"/activities/activities/{self.activity_id}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["review_status"], "rejected")
+        self.assertEqual(resp.data["review_comment"], "主题不符")
+
+
+class ActivityMineListTest(TestCase):
+    """作者预览列表含待审活动；成员公开列表不含。"""
+
+    def test_mine_includes_pending_and_public_list_does_not(self):
+        author = _author()
+        other = grant_verification(User.objects.create_user(username="peer", password="x"))
+        client = APIClient()
+        created = _create(client, author, title="我的待审活动")
+        activity_id = created.data["id"]
+        mine = client.get("/activities/activities/mine/")
+        self.assertEqual(mine.status_code, 200)
+        self.assertIn(activity_id, _ids(mine))
+
+        peer = APIClient()
+        peer.force_authenticate(other)
+        self.assertNotIn(activity_id, _ids(peer.get("/activities/activities/")))
+
+    def test_anonymous_mine_is_denied(self):
+        self.assertIn(APIClient().get("/activities/activities/mine/").status_code, (401, 403))
+
 
 class ActivityLifecycleNotBlockedByReviewTest(TestCase):
     """待审期间活动自身生命周期仍推进（scheduled → open），只是对公众不可见。"""
