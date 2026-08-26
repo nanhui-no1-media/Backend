@@ -134,7 +134,7 @@ export default function AboutPage() {
 
   return (
     <AppShell>
-      <div className="page-head">
+      <div className="page-head about-head">
         <div className="container detail-container">
           <nav className="breadcrumb">
             <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
@@ -178,8 +178,6 @@ export default function AboutPage() {
                       onClick={() => setPinnedKey(pinned ? null : block.key)}
                     >
                       <span className="section-h">{block.title}</span>
-                      <span className="about-block-hint about-block-hint--hover">悬停展开</span>
-                      <span className="about-block-hint about-block-hint--touch">点击展开</span>
                       <svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
                     </button>
                   </h2>
