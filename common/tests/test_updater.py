@@ -22,6 +22,7 @@ from common.models import SiteSettings
 from common.policy import SitePolicy, get_policy
 from common.updater import (
     ApplyError,
+    ApplyInterrupted,
     CommandError,
     RemoteRelease,
     SPAWNED_ENV,
@@ -35,6 +36,7 @@ from common.updater import (
     archive_sha,
     before_apply_cutoff,
     can_start_apply,
+    decide_interrupt,
     fetch_release,
     in_apply_window,
     is_complete_archive,
@@ -513,6 +515,185 @@ class UnpackExcludeRollbackTest(SimpleTestCase):
         self.paths.applied_file.write_text("bbbbbbbbbbbb\n", encoding="utf-8")
         self.assertEqual(previous_local_archive(self.paths), a)
         self.assertIsNotNone(b)
+
+    def test_interrupt_before_sync_cancels_and_drops_maintenance(self):
+        self._seed_live()
+        v2 = self._tarball("bbbbbbbbbbbb", {"app.py": b"v2\n"})
+
+        def check(step, files_changed):
+            if step == "backup":
+                self.assertFalse(files_changed)
+                return "abort_clean"
+            return None
+
+        with self.assertRaises(ApplyInterrupted) as caught:
+            apply_release(
+                self.paths,
+                v2,
+                _policy(),
+                run=lambda argv, *, check=True: 0,
+                sleep=lambda _s: None,
+                now_fn=lambda: _at(1, 15),
+                drain_seconds=0,
+                interrupt_check=check,
+            )
+        self.assertEqual(caught.exception.action, "abort_clean")
+        self.assertEqual((self.root / "app.py").read_text(encoding="utf-8"), "old\n")
+        self.assertFalse(self.paths.maintenance_flag.exists())
+
+    def test_interrupt_after_sync_rolls_back_files_and_db(self):
+        self._seed_live()
+        v1 = self._tarball("aaaaaaaaaaaa", {"app.py": b"good\n"})
+        v2 = self._tarball("bbbbbbbbbbbb", {"app.py": b"bad\n"})
+        unpack_archive(v1, self.paths.staging_dir)
+        sync_tree(self.paths.staging_dir, self.root)
+        self.paths.applied_file.write_text("aaaaaaaaaaaa\n", encoding="utf-8")
+
+        def check(step, files_changed):
+            if step == "sync":
+                self.assertTrue(files_changed)
+                return "rollback"
+            return None
+
+        with self.assertRaises(ApplyInterrupted) as caught:
+            apply_release(
+                self.paths,
+                v2,
+                _policy(),
+                run=lambda argv, *, check=True: 0,
+                sleep=lambda _s: None,
+                now_fn=lambda: _at(1, 15),
+                drain_seconds=0,
+                interrupt_check=check,
+            )
+        self.assertEqual(caught.exception.action, "rollback")
+        self.assertEqual((self.root / "app.py").read_text(encoding="utf-8"), "good\n")
+        conn = sqlite3.connect(self.root / "db.sqlite3")
+        self.assertEqual(conn.execute("SELECT v FROM t").fetchone()[0], "before")
+        conn.close()
+        self.assertEqual(
+            self.paths.applied_file.read_text(encoding="utf-8").strip(), "aaaaaaaaaaaa"
+        )
+        self.assertFalse(self.paths.maintenance_flag.exists())
+
+    def test_interrupt_hold_keeps_maintenance_and_new_files(self):
+        self._seed_live()
+        v2 = self._tarball("bbbbbbbbbbbb", {"app.py": b"held\n"})
+
+        def check(step, files_changed):
+            if step == "sync":
+                return "hold"
+            return None
+
+        with self.assertRaises(ApplyInterrupted) as caught:
+            apply_release(
+                self.paths,
+                v2,
+                _policy(),
+                run=mock.Mock(side_effect=AssertionError("must not continue apply")),
+                sleep=lambda _s: None,
+                now_fn=lambda: _at(1, 15),
+                drain_seconds=0,
+                interrupt_check=check,
+            )
+        self.assertEqual(caught.exception.action, "hold")
+        self.assertEqual((self.root / "app.py").read_text(encoding="utf-8"), "held\n")
+        self.assertTrue(self.paths.maintenance_flag.exists())
+
+    def test_interrupt_continue_still_applies(self):
+        self._seed_live()
+        v2 = self._tarball("bbbbbbbbbbbb", {"app.py": b"v2\n"})
+        seen: list[str] = []
+
+        def check(step, files_changed):
+            seen.append(step)
+            if step in ("backup", "sync"):
+                return "continue"
+            return None
+
+        sha = apply_release(
+            self.paths,
+            v2,
+            _policy(),
+            run=lambda argv, *, check=True: 0,
+            sleep=lambda _s: None,
+            now_fn=lambda: _at(1, 15),
+            drain_seconds=0,
+            interrupt_check=check,
+        )
+        self.assertEqual(sha, "bbbbbbbbbbbb")
+        self.assertEqual((self.root / "app.py").read_text(encoding="utf-8"), "v2\n")
+        self.assertFalse(self.paths.maintenance_flag.exists())
+        self.assertIn("backup", seen)
+        self.assertIn("sync", seen)
+
+
+class InterruptDecisionTest(SimpleTestCase):
+    def test_no_tty_defaults_to_cancel_before_files_change(self):
+        self.assertEqual(
+            decide_interrupt(files_changed=False, step="backup", interactive=False),
+            "abort_clean",
+        )
+
+    def test_no_tty_defaults_to_rollback_after_files_change(self):
+        self.assertEqual(
+            decide_interrupt(files_changed=True, step="migrate", interactive=False),
+            "rollback",
+        )
+
+    def test_empty_enter_uses_recommended_choice(self):
+        self.assertEqual(
+            decide_interrupt(
+                files_changed=False, step="drain", interactive=True, reader=lambda _p: ""
+            ),
+            "abort_clean",
+        )
+        self.assertEqual(
+            decide_interrupt(
+                files_changed=True, step="sync", interactive=True, reader=lambda _p: "\n"
+            ),
+            "rollback",
+        )
+
+    def test_interactive_choices(self):
+        self.assertEqual(
+            decide_interrupt(
+                files_changed=True, step="sync", interactive=True, reader=lambda _p: "c"
+            ),
+            "continue",
+        )
+        self.assertEqual(
+            decide_interrupt(
+                files_changed=True, step="sync", interactive=True, reader=lambda _p: "h"
+            ),
+            "hold",
+        )
+        self.assertEqual(
+            decide_interrupt(
+                files_changed=False, step="drain", interactive=True, reader=lambda _p: "继续"
+            ),
+            "continue",
+        )
+
+    def test_eof_and_garbage_use_default(self):
+        def boom(_prompt):
+            raise EOFError
+
+        self.assertEqual(
+            decide_interrupt(
+                files_changed=True, step="deps", interactive=True, reader=boom
+            ),
+            "rollback",
+        )
+        self.assertEqual(
+            decide_interrupt(
+                files_changed=False,
+                step="drain",
+                interactive=True,
+                reader=lambda _p: "xyz",
+            ),
+            "abort_clean",
+        )
 
 
 class GithubParseAndRetryTest(SimpleTestCase):

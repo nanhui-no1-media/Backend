@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterator, Sequence
+from typing import Any, Callable, Iterator, Literal, Sequence
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -93,6 +93,159 @@ class ApplyError(UpdaterError):
 
 class WindowClosed(ApplyError):
     """Clock hit the policy window end mid-apply."""
+
+
+class ApplyInterrupted(ApplyError):
+    """Ctrl+C (or equivalent) after the operator chose how to stop."""
+
+    def __init__(self, action: str):
+        self.action = action
+        super().__init__(f"interrupted ({action})")
+
+
+InterruptChoice = Literal["continue", "rollback", "abort_clean", "hold"]
+InterruptCheck = Callable[[str, bool], InterruptChoice | None]
+InterruptReader = Callable[[str], str]
+
+_interrupt_requested = False
+_in_rollback = False
+
+
+def request_interrupt() -> None:
+    """Mark a cooperative pause after the current apply step (SIGINT handler)."""
+    global _interrupt_requested
+    _interrupt_requested = True
+    if _in_rollback:
+        log.warning("Ctrl+C during rollback ignored until rollback finishes")
+        return
+    log.warning("Ctrl+C received; will ask what to do after the current step")
+
+
+def _sigint_handler(signum, frame) -> None:  # noqa: ARG001
+    request_interrupt()
+
+
+def _install_sigint() -> object | None:
+    try:
+        previous = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, _sigint_handler)
+        return previous
+    except (ValueError, OSError):
+        return None
+
+
+def _restore_sigint(previous: object | None) -> None:
+    if previous is None:
+        return
+    try:
+        signal.signal(signal.SIGINT, previous)  # type: ignore[arg-type]
+    except (ValueError, OSError):
+        pass
+
+
+def interrupt_interactive() -> bool:
+    if spawned_from_web():
+        return False
+    try:
+        return sys.stdin.isatty()
+    except Exception:
+        return False
+
+
+def decide_interrupt(
+    *,
+    files_changed: bool,
+    step: str,
+    interactive: bool | None = None,
+    reader: InterruptReader | None = None,
+) -> InterruptChoice:
+    """Choose a stable stop: rollback / cancel / hold maintenance / continue."""
+    if interactive is None:
+        interactive = interrupt_interactive()
+    default: InterruptChoice = "rollback" if files_changed else "abort_clean"
+    if not interactive:
+        log.warning(
+            "interrupt at step=%s files_changed=%s; no TTY, using %s",
+            step,
+            files_changed,
+            default,
+        )
+        return default
+
+    if files_changed:
+        prompt = (
+            f"\n收到 Ctrl+C。站点文件已经替换（步骤：{step}）。"
+            "强行活着退出会留下半套代码。\n"
+            "  [r] 回滚到上一版本并恢复这次更新前的数据库备份（推荐）\n"
+            "  [c] 继续完成这次更新\n"
+            "  [h] 立刻退出，保持维护页（站点继续 503）\n"
+            "请选择 [r/c/h]，直接回车 = 回滚： "
+        )
+        aliases = {
+            "": "rollback",
+            "r": "rollback",
+            "rollback": "rollback",
+            "回滚": "rollback",
+            "c": "continue",
+            "continue": "continue",
+            "继续": "continue",
+            "h": "hold",
+            "hold": "hold",
+            "维护": "hold",
+        }
+    else:
+        prompt = (
+            f"\n收到 Ctrl+C。当前尚未替换站点文件（步骤：{step}）。\n"
+            "  [a] 取消更新并撤下维护页（推荐）\n"
+            "  [c] 继续这次更新\n"
+            "请选择 [a/c]，直接回车 = 取消： "
+        )
+        aliases = {
+            "": "abort_clean",
+            "a": "abort_clean",
+            "abort": "abort_clean",
+            "取消": "abort_clean",
+            "c": "continue",
+            "continue": "continue",
+            "继续": "continue",
+        }
+
+    read = reader or input
+    try:
+        raw = (read(prompt) or "").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        log.warning("interrupt prompt aborted; using %s", default)
+        return default
+    choice = aliases.get(raw)
+    if choice is None:
+        log.warning("unrecognized interrupt choice %r; using %s", raw, default)
+        return default
+    return choice  # type: ignore[return-value]
+
+
+def _consume_interrupt(
+    step: str,
+    files_changed: bool,
+    *,
+    interrupt_check: InterruptCheck | None,
+    interactive: bool | None = None,
+    reader: InterruptReader | None = None,
+) -> None:
+    global _interrupt_requested
+    choice: InterruptChoice | None = None
+    if interrupt_check is not None:
+        choice = interrupt_check(step, files_changed)
+    elif _interrupt_requested:
+        _interrupt_requested = False
+        choice = decide_interrupt(
+            files_changed=files_changed,
+            step=step,
+            interactive=interactive,
+            reader=reader,
+        )
+    if choice is None or choice == "continue":
+        return
+    raise ApplyInterrupted(choice)
 
 
 class CommandError(ApplyError):
@@ -926,9 +1079,17 @@ def find_uv() -> str:
 
 
 def make_runner(cwd: Path) -> Runner:
+    extra: dict = {}
+    if os.name != "nt":
+        extra["start_new_session"] = True
+    else:
+        create_new = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        if create_new:
+            extra["creationflags"] = create_new
+
     def run(argv: Sequence[str], *, check: bool = True) -> int:
         log.info("+ %s", " ".join(str(a) for a in argv))
-        completed = subprocess.run([str(a) for a in argv], cwd=cwd)
+        completed = subprocess.run([str(a) for a in argv], cwd=cwd, **extra)
         if check and completed.returncode != 0:
             raise CommandError(argv, completed.returncode)
         return completed.returncode
@@ -988,7 +1149,9 @@ def rollback_release(
     sleep: SleepFn,
     service: str,
 ) -> None:
+    global _in_rollback
     log.error("rolling back to %s", previous_sha or "current files + db snapshot")
+    _in_rollback = True
     try:
         update_progress(paths.maintenance_flag, "rollback")
         if restore_files and previous_archive is not None and is_complete_archive(previous_archive):
@@ -1013,6 +1176,8 @@ def rollback_release(
             log.error("rollback service unhealthy; leaving MAINTENANCE on")
     except Exception:
         log.exception("rollback failed; leaving MAINTENANCE on")
+    finally:
+        _in_rollback = False
 
 
 def apply_release(
@@ -1027,8 +1192,10 @@ def apply_release(
     service: str = "club",
     drain_seconds: float = DRAIN_SECONDS,
     reexec: bool = False,
+    interrupt_check: InterruptCheck | None = None,
 ) -> str:
-    """Apply a complete local tarball. On failure or window end, roll back."""
+    """Apply a complete local tarball. On failure, window end, or confirmed Ctrl+C, roll back."""
+    global _interrupt_requested
     sha = archive_sha(archive)
     if sha is None:
         raise ApplyError(f"refusing to apply incomplete archive {archive.name}")
@@ -1050,67 +1217,100 @@ def apply_release(
     db_bak = paths.backups_dir / f"db-{stamp}.sqlite3"
     files_changed = False
     uv = find_uv()
+    prev_sigint = _install_sigint()
+    _interrupt_requested = False
+
+    def checkpoint(step: str) -> None:
+        _consume_interrupt(step, files_changed, interrupt_check=interrupt_check)
 
     enter_update(paths.maintenance_flag, sha=sha)
-    sleep(drain_seconds)
-    update_progress(paths.maintenance_flag, "backup", sha=sha)
-    backup_sqlite(paths.db, db_bak)
     try:
-        prune_db_backups(paths, policy.update_db_backup_keep)
-    except OSError:
-        log.warning("prune of old DB snapshots failed", exc_info=True)
-
-    try:
-        _check_window(now_fn(), policy, respect_window=respect_window)
-        update_progress(paths.maintenance_flag, "unpack", sha=sha)
-        unpack_archive(archive, paths.staging_dir)
-        _check_window(now_fn(), policy, respect_window=respect_window)
-        update_progress(paths.maintenance_flag, "sync", sha=sha)
-        sync_tree(paths.staging_dir, paths.root)
-        files_changed = True
-        _check_window(now_fn(), policy, respect_window=respect_window)
-        update_progress(paths.maintenance_flag, "deps", sha=sha)
-        run([uv, "sync", "--frozen"])
-        _check_window(now_fn(), policy, respect_window=respect_window)
-        update_progress(paths.maintenance_flag, "migrate", sha=sha)
-        run([uv, "run", "python", "manage.py", "migrate"])
-        _check_window(now_fn(), policy, respect_window=respect_window)
-        update_progress(paths.maintenance_flag, "collectstatic", sha=sha)
-        run([uv, "run", "python", "manage.py", "collectstatic", "--noinput"])
-        _check_window(now_fn(), policy, respect_window=respect_window)
-        update_progress(paths.maintenance_flag, "reload", sha=sha)
-        reload_web(run, service)
-        sleep(HEALTH_WAIT_SECONDS)
-        if not _service_active(run, service):
-            raise ApplyError(f"{service} is not active after reload")
-        write_applied_sha(paths, sha)
         try:
-            os.utime(archive, None)
-        except OSError:
-            pass
-        try:
-            prune_releases(paths, policy.update_release_keep)
-        except OSError:
-            log.warning("prune of old release tarballs failed", exc_info=True)
-    except Exception as exc:
-        log.exception("apply of %s failed: %s", sha, exc)
-        rollback_release(
-            paths,
-            previous_archive=previous,
-            db_snapshot=db_bak if db_bak.is_file() else None,
-            previous_sha=previous_sha,
-            restore_files=files_changed,
-            run=run,
-            sleep=sleep,
-            service=service,
-        )
-        raise
+            sleep(drain_seconds)
+            checkpoint("drain")
+            update_progress(paths.maintenance_flag, "backup", sha=sha)
+            backup_sqlite(paths.db, db_bak)
+            try:
+                prune_db_backups(paths, policy.update_db_backup_keep)
+            except OSError:
+                log.warning("prune of old DB snapshots failed", exc_info=True)
+            checkpoint("backup")
+            _check_window(now_fn(), policy, respect_window=respect_window)
+            update_progress(paths.maintenance_flag, "unpack", sha=sha)
+            unpack_archive(archive, paths.staging_dir)
+            checkpoint("unpack")
+            _check_window(now_fn(), policy, respect_window=respect_window)
+            update_progress(paths.maintenance_flag, "sync", sha=sha)
+            sync_tree(paths.staging_dir, paths.root)
+            files_changed = True
+            checkpoint("sync")
+            _check_window(now_fn(), policy, respect_window=respect_window)
+            update_progress(paths.maintenance_flag, "deps", sha=sha)
+            run([uv, "sync", "--frozen"])
+            checkpoint("deps")
+            _check_window(now_fn(), policy, respect_window=respect_window)
+            update_progress(paths.maintenance_flag, "migrate", sha=sha)
+            run([uv, "run", "python", "manage.py", "migrate"])
+            checkpoint("migrate")
+            _check_window(now_fn(), policy, respect_window=respect_window)
+            update_progress(paths.maintenance_flag, "collectstatic", sha=sha)
+            run([uv, "run", "python", "manage.py", "collectstatic", "--noinput"])
+            checkpoint("collectstatic")
+            _check_window(now_fn(), policy, respect_window=respect_window)
+            update_progress(paths.maintenance_flag, "reload", sha=sha)
+            reload_web(run, service)
+            sleep(HEALTH_WAIT_SECONDS)
+            if not _service_active(run, service):
+                raise ApplyError(f"{service} is not active after reload")
+            write_applied_sha(paths, sha)
+            try:
+                os.utime(archive, None)
+            except OSError:
+                pass
+            try:
+                prune_releases(paths, policy.update_release_keep)
+            except OSError:
+                log.warning("prune of old release tarballs failed", exc_info=True)
+        except ApplyInterrupted as exc:
+            log.warning("apply of %s interrupted: %s", sha, exc.action)
+            if exc.action == "rollback":
+                rollback_release(
+                    paths,
+                    previous_archive=previous,
+                    db_snapshot=db_bak if db_bak.is_file() else None,
+                    previous_sha=previous_sha,
+                    restore_files=files_changed,
+                    run=run,
+                    sleep=sleep,
+                    service=service,
+                )
+            elif exc.action == "abort_clean":
+                leave_update(paths.maintenance_flag)
+            else:
+                log.error("leaving MAINTENANCE on at operator request")
+            raise
+        except Exception as exc:
+            log.exception("apply of %s failed: %s", sha, exc)
+            rollback_release(
+                paths,
+                previous_archive=previous,
+                db_snapshot=db_bak if db_bak.is_file() else None,
+                previous_sha=previous_sha,
+                restore_files=files_changed,
+                run=run,
+                sleep=sleep,
+                service=service,
+            )
+            raise
 
-    leave_update(paths.maintenance_flag)
-    log.info("applied %s", sha)
-    if reexec:
-        reexec_updater(paths)
-    return sha
+        leave_update(paths.maintenance_flag)
+        log.info("applied %s", sha)
+        if reexec:
+            reexec_updater(paths)
+        return sha
+    finally:
+        _restore_sigint(prev_sigint)
+        _interrupt_requested = False
 
 
 def _ensure_uv_on_path() -> None:
@@ -1287,6 +1487,9 @@ def apply_now(
                 respect_window=False,
                 service=service,
             )
+    except ApplyInterrupted as exc:
+        log.warning("--apply-now interrupted (%s)", exc.action)
+        return 130
     except Exception:
         log.exception("--apply-now failed")
         return 1
@@ -1399,6 +1602,9 @@ def rollback_now(
                 respect_window=False,
                 service=service,
             )
+    except ApplyInterrupted as exc:
+        log.warning("--rollback interrupted (%s)", exc.action)
+        return 130
     except Exception:
         log.exception("--rollback failed")
         return 1
