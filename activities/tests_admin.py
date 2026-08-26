@@ -55,6 +55,7 @@ class SurveyAdminDashboardTest(TestCase):
         self.assertEqual(results.status_code, 200)
         rhtml = results.content.decode()
         self.assertIn("survey.analytics.min.js", rhtml)
+        self.assertIn("analytics-zh-cn.js", rhtml)
         self.assertIn("chart.umd.min.js", rhtml)
         self.assertIn("暂无作答", rhtml)
 

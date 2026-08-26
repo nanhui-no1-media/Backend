@@ -22,6 +22,9 @@
         if (Survey.surveyLocalization) {
           Survey.surveyLocalization.currentLocale = "zh-cn";
         }
+        if (SurveyAnalytics.localization) {
+          SurveyAnalytics.localization.currentLocale = "zh-cn";
+        }
         var vizPanel = new SurveyAnalytics.Dashboard({
           questions: survey.getAllQuestions(),
           data: answers || [],
