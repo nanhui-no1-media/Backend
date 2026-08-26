@@ -4,7 +4,7 @@ import { activityApi } from "../api/activities";
 import { useSitePolicy } from "../api/sitePolicy";
 import RichTextEditor from "../components/RichTextEditor";
 import AppShell from "../components/AppShell";
-import type { ActivityType, ExhibitionFormData } from "../types/activities";
+import type { ActivityType, ExhibitionFormData, SurveyAudience, SurveyFormData } from "../types/activities";
 import "../styles/form.css";
 
 // 默认截止时间：当前 + N 天，格式 datetime-local 取值（yyyy-MM-ddThh:mm）
@@ -58,6 +58,9 @@ export default function ActivityFormPage() {
   // 展示字段：是否启用投票（默认纯陈列，仅展品+赞/踩）
   const [votingEnabled, setVotingEnabled] = useState(false); // #56：展示投票可选，默认不启用
 
+  // 调研字段：受众（创建后不可改）
+  const [audience, setAudience] = useState<SurveyAudience>("members");
+
   const switchType = (t: ActivityType) => {
     setType(t);
     setEndAt(defaultEnd(t === "deliberation" ? 3 : 7));
@@ -85,11 +88,12 @@ export default function ActivityFormPage() {
         setOptions(a.options ? a.options.map((o) => o.text) : ["", ""]);
         setK(a.max_choices_per_voter);
         setSecret(a.is_secret_ballot);
-      } else {
-        // 展示：展品已冻结（创建时录入），回填投票开关 / K / 秘密
+      } else if (a.type === "exhibition") {
         setVotingEnabled(a.voting_enabled);
         setK(a.max_choices_per_voter);
         setSecret(a.is_secret_ballot);
+      } else if (a.type === "survey") {
+        setAudience(a.audience || "members");
       }
     }).catch((e: any) => setError(e?.message || "加载失败"));
   }, [editId]);
@@ -152,7 +156,7 @@ export default function ActivityFormPage() {
         saved = editId
           ? await activityApi.update(editId, payload as unknown as Record<string, unknown>)
           : await activityApi.create(payload);
-      } else {
+      } else if (type === "exhibition") {
         // 展示创建/编辑:JSON 标量(展品改在详情页 add_exhibit)
         const payload: ExhibitionFormData = {
           type: "exhibition",
@@ -161,6 +165,18 @@ export default function ActivityFormPage() {
           voting_enabled: votingEnabled,
           max_choices_per_voter: k,
           is_secret_ballot: secret,
+          start_at: toIso(startAt),
+          end_at: toIso(endAt),
+        };
+        saved = editId
+          ? await activityApi.update(editId, payload as unknown as Record<string, unknown>)
+          : await activityApi.create(payload);
+      } else {
+        const payload: SurveyFormData = {
+          type: "survey",
+          title: title.trim(),
+          body,
+          audience,
           start_at: toIso(startAt),
           end_at: toIso(endAt),
         };
@@ -186,7 +202,7 @@ export default function ActivityFormPage() {
             <span>{editId ? "编辑活动" : "发起活动"}</span>
           </nav>
           <h1>{editId ? "编辑活动" : "发起活动"}</h1>
-          <p className="section-sub">{editId ? "修改待开始活动的时间与内容（开放后即锁定）。" : "发起一场众议（投票）或征集（收作品），发起即对全体已验证成员开放。"}</p>
+          <p className="section-sub">{editId ? "修改待开始活动的时间与内容（开放后即锁定）。" : "发起一场众议、征集、展示或调研。调研问卷在创建后再编辑。"}</p>
         </div>
       </div>
 
@@ -200,10 +216,11 @@ export default function ActivityFormPage() {
         <form onSubmit={submit} className="card card-pad">
           <div className="field">
             <label className="label">类型{editId ? "（已固定）" : ""}</label>
-            <div className="seg" role="tablist">
+            <div className="seg" role="tablist" style={{ flexWrap: "wrap" }}>
               <button type="button" className="seg-btn" aria-selected={type === "deliberation"} disabled={!!editId} onClick={() => !editId && switchType("deliberation")}>众议（投票）</button>
               <button type="button" className="seg-btn" aria-selected={type === "collection"} disabled={!!editId} onClick={() => !editId && switchType("collection")}>征集（收作品）</button>
               <button type="button" className="seg-btn" aria-selected={type === "exhibition"} disabled={!!editId} onClick={() => !editId && switchType("exhibition")}>展示（陈列评分）</button>
+              <button type="button" className="seg-btn" aria-selected={type === "survey"} disabled={!!editId} onClick={() => !editId && switchType("survey")}>调研（问卷）</button>
             </div>
           </div>
 
@@ -297,7 +314,7 @@ export default function ActivityFormPage() {
                 </label>
               </div>
             </>
-          ) : (
+          ) : type === "exhibition" ? (
             <>
               {/* 展示：截止 + 启用投票开关（展品在详情页布展） */}
               <div className="field">
@@ -333,6 +350,21 @@ export default function ActivityFormPage() {
                   </div>
                 </div>
               )}
+            </>
+          ) : (
+            <>
+              <div className="field">
+                <label className="label">受众{editId ? "（已固定）" : ""}</label>
+                <div className="seg" role="radiogroup">
+                  <button type="button" className="seg-btn" aria-selected={audience === "members"} disabled={!!editId} onClick={() => !editId && setAudience("members")}>仅成员</button>
+                  <button type="button" className="seg-btn" aria-selected={audience === "public"} disabled={!!editId} onClick={() => !editId && setAudience("public")}>公开</button>
+                </div>
+                <div className="hint">公开：访客可列出、打开、提交；仅成员：须登录。创建后不可改。问卷在创建后于详情页编辑。</div>
+              </div>
+              <div className="field">
+                <label className="label">征答截止</label>
+                <input className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+              </div>
             </>
           )}
 

@@ -1,19 +1,18 @@
-"""活动视图集（ADR 0007）。
+"""活动视图集（ADR 0007 / 0011）。
 
-T1：创建（已验证成员）+ 列表/详情（成员可读）+ 正文图片上传。
-T2：众议投票（自定义选项、K 选、一人一张不可改、到点惰性结算、公开计票）。
-征集投稿/复审在 T4–T5 增补。
+创建（已验证成员）+ 列表/详情（成员可读；访客仅公开调研）+ 正文图片上传。
+众议投票 / 征集投稿复审 / 展示布展 / 调研作答。
 """
 import os
 import uuid
 from datetime import timedelta
 
 from django.core.files.storage import default_storage
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.permissions import IsVerified
@@ -21,7 +20,8 @@ from accounts.permissions import IsVerified
 from attachments.models import Attachment
 from attachments.validation import classify_file_type, upload_error
 from reviews.lifecycle import open_review
-from reviews.visibility import public_activity_q
+from reviews.models import Review
+from reviews.visibility import public_activity_q, review_record_of
 
 from .debt import annotate_activity_debt
 from .lifecycle import (
@@ -33,7 +33,9 @@ from .lifecycle import (
     can_curate,
     can_edit,
     can_edit_exhibit,
+    can_edit_schema,
     can_rate,
+    can_respond,
     can_submit,
     can_vote,
     collection_close_target,
@@ -43,13 +45,13 @@ from .lifecycle import (
     transition_overdue,
 )
 from .models import (
-    Activity, Ballot, BallotSelection, Exhibit, ExhibitRating, Submission, VoteOption,
+    Activity, Ballot, BallotSelection, Exhibit, ExhibitRating,
+    Submission, SurveyResponse, VoteOption,
 )
 from .permissions import (
     CanCreateActivity,
     CanModifyActivity,
     CanReviewSubmission,
-    CanViewActivity,
 )
 from .serializers import ActivityDetailSerializer, ActivityListSerializer
 
@@ -79,7 +81,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        # 惰性流转：到 start_at 的待开始活动自动开放；到 end_at 的众议/展示自动结算。
+        # 惰性流转：到 start_at 的待开始活动自动开放；到 end_at 的众议/展示/调研自动结算。
         # 审核轴只门控可见性，不阻断上述状态机。
         transition_due_starts()
         transition_overdue()
@@ -96,6 +98,9 @@ class ActivityViewSet(viewsets.ModelViewSet):
         )
         public = qs.filter(public_activity_q())
         user = self.request.user
+        if not user.is_authenticated:
+            # 访客：仅过审且公开的调研（其他类型标题泄漏只走首页 feed）
+            return public.filter(type="survey", audience="public")
         if self.action == "list":
             return annotate_activity_debt(public, user)
         if self.action == "mine" and user.is_authenticated:
@@ -118,6 +123,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated(), CanCreateActivity(), IsVerified()]
         if self.action == "mine":
             return [IsAuthenticated()]
+        if self.action in ("list", "retrieve", "respond"):
+            return [AllowAny()]
         if self.action == "vote":
             return [IsAuthenticated(), IsVerified()]
         if self.action == "submit":
@@ -137,7 +144,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated(), IsVerified()]
         if self.action in ("update", "partial_update", "destroy"):
             return [IsAuthenticated(), CanModifyActivity()]
-        return [IsAuthenticated(), CanViewActivity()]  # list / retrieve
+        return [IsAuthenticated()]
 
     def perform_create(self, serializer):
         activity = serializer.save(creator=self.request.user)
@@ -177,10 +184,22 @@ class ActivityViewSet(viewsets.ModelViewSet):
         return exhibit
 
     def perform_update(self, serializer):
-        # 仅待开始（scheduled）期间可改；开放后锁定（要改只能删重建）。
-        # get_object 已先跑 transition_due_starts，故到点自动开放后此处即拦下。
-        if not can_edit(serializer.instance):
-            from rest_framework.exceptions import PermissionDenied
+        # 标题/正文/时间：仅待开始（scheduled）可改。
+        # 调研 schema：待开始，或开放且尚无作答。受众不可改（序列化器已拦）。
+        from rest_framework.exceptions import PermissionDenied
+
+        instance = serializer.instance
+        incoming = serializer.validated_data
+        general_keys = [k for k in incoming if k not in ("schema", "audience")]
+        if general_keys and not can_edit(instance):
+            raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
+        if "schema" in incoming:
+            if instance.type == "survey":
+                if not can_edit_schema(instance):
+                    raise PermissionDenied("当前不可修改问卷")
+            elif not can_edit(instance):
+                raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
+        elif not incoming and not can_edit(instance):
             raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
         super().perform_update(serializer)
 
@@ -228,6 +247,38 @@ class ActivityViewSet(viewsets.ModelViewSet):
 
         activity = self.get_queryset().get(pk=activity.pk)  # 刷新聚合计数
         return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+
+    # ── 调研作答（公开受众任何人；仅成员须登录；已登录一人一次）──
+    @action(detail=True, methods=["post"])
+    def respond(self, request, pk=None):
+        activity = self.get_object()
+        review = review_record_of(activity, related="publication_review")
+        if review is not None and review.status != Review.STATUS_APPROVED:
+            return Response({"detail": "调研尚未公开"}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_respond(activity, request.user):
+            if activity.type != "survey":
+                return Response({"detail": "仅调研可以作答"}, status=status.HTTP_400_BAD_REQUEST)
+            if activity.status != OPEN:
+                return Response({"detail": "当前不可作答"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "仅成员可作答，请先登录"}, status=status.HTTP_401_UNAUTHORIZED)
+        answers = request.data.get("answers")
+        if not isinstance(answers, dict):
+            return Response({"detail": "answers 须为 JSON 对象"}, status=status.HTTP_400_BAD_REQUEST)
+        user = request.user if request.user.is_authenticated else None
+        if user is not None and SurveyResponse.objects.filter(
+            activity=activity, user=user,
+        ).exists():
+            return Response({"detail": "你已经提交过了"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            with transaction.atomic():
+                SurveyResponse.objects.create(activity=activity, user=user, answers=answers)
+        except IntegrityError:
+            return Response({"detail": "你已经提交过了"}, status=status.HTTP_400_BAD_REQUEST)
+        activity = self.get_queryset().get(pk=activity.pk)
+        return Response(
+            ActivityDetailSerializer(activity, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     # ── 征集投稿（一次性多文件、提交即锁定、一人一作品）──
     @action(detail=True, methods=["post"])
@@ -322,7 +373,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
     def close(self, request, pk=None):
         activity = self.get_object()
         now = timezone.now()
-        if activity.type == "deliberation":
+        if activity.type in ("deliberation", "exhibition", "survey"):
             if activity.status != OPEN:
                 return Response({"detail": "当前不可关闭"}, status=status.HTTP_400_BAD_REQUEST)
             Activity.objects.filter(pk=activity.pk, status=OPEN).update(
@@ -333,12 +384,6 @@ class ActivityViewSet(viewsets.ModelViewSet):
                 return Response({"detail": "当前不可关闭"}, status=status.HTTP_400_BAD_REQUEST)
             Activity.objects.filter(pk=activity.pk, status=COLLECTING).update(
                 status=collection_close_target(activity), updated_at=now,
-            )
-        elif activity.type == "exhibition":
-            if activity.status != OPEN:
-                return Response({"detail": "当前不可关闭"}, status=status.HTTP_400_BAD_REQUEST)
-            Activity.objects.filter(pk=activity.pk, status=OPEN).update(
-                status=CLOSED, updated_at=now,
             )
         else:
             return Response({"detail": "不支持"}, status=status.HTTP_400_BAD_REQUEST)

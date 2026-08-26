@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "webpack serve",
-    "build": "webpack --mode production && node scripts/assert-live2d-dist.js"
+    "build": "webpack --mode production && node scripts/assert-live2d-dist.js",
+    "copy-surveyjs": "node scripts/copy-surveyjs.js"
   },
   "keywords": [],
   "author": "",
@@ -30,12 +31,16 @@
     "frappe-gantt": "^1.2.2",
     "lowlight": "^3.3.0",
     "mammoth": "^1.12.0",
+    "chart.js": "^4.5.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.15.1",
+    "survey-analytics": "^3.0.1",
     "survey-core": "^3.0.1",
     "survey-creator-core": "^3.0.1",
+    "survey-creator-js": "^3.0.1",
     "survey-creator-react": "^3.0.1",
+    "survey-js-ui": "^3.0.1",
     "survey-react-ui": "^3.0.1",
     "tus-js-client": "^4.3.1"
   },

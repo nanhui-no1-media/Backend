@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../api/client";
 import type { ContentType, ContentItem } from "../../types/profile";
+import { ACTIVITY_TYPE_LABELS, type ActivityType } from "../../types/activities";
 import "../../styles/form.css";
 
 const DETAIL_PATH: Record<ContentType, string> = {
@@ -14,9 +15,6 @@ const DETAIL_PATH: Record<ContentType, string> = {
 
 const PROPOSAL_TYPE: Record<string, string> = {
   feedback: "意见反馈",
-};
-const ACTIVITY_TYPE: Record<string, string> = {
-  deliberation: "众议", collection: "征集", exhibition: "展示",
 };
 const TASK_STATUS: Record<string, string> = {
   pending: "待处理", in_progress: "进行中", reviewing: "待验收", review: "审核中", completed: "已完成", cancelled: "已取消",
@@ -42,7 +40,7 @@ function metaFor(type: ContentType, it: ContentItem): string {
       .filter(Boolean).join(" · ");
   }
   if (type === "activities") {
-    const kind = it.type ? ACTIVITY_TYPE[it.type] ?? it.type : "";
+    const kind = it.type ? ACTIVITY_TYPE_LABELS[it.type as ActivityType] ?? it.type : "";
     return [kind, it.created_at?.slice(0, 10)].filter(Boolean).join(" · ") + reviewMeta(it);
   }
   if (type === "tutorials") {

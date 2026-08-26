@@ -1,19 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { newsApi } from "../api/news";
-import { useLoginModal } from "./LoginModalProvider";
 import { ActivityCard, FeaturedNewsCard, NewsCard, TaskCard } from "./feed/FeedCards";
 import type { FeedItem, FeedResponse } from "../types/feed";
 
 interface Props {
-  // HomePage 的 user 状态：这里只需 id（登录态判定 + 重拉依赖）与真值（点击活动时游客/成员分流）
+  // HomePage 的 user 状态：登录态变化时重拉 feed（任务格随之出现/消失）
   user: { id: number } | null;
 }
 
 export default function ClubFeed({ user }: Props) {
   const [data, setData] = useState<FeedResponse | null>(null);
   const navigate = useNavigate();
-  const { openLogin } = useLoginModal();
 
   // 用户身份变化（登录/登出）时重拉，让任务格随之出现/消失
   useEffect(() => {
@@ -23,10 +21,8 @@ export default function ClubFeed({ user }: Props) {
 
   const goNews = (id: number) => navigate(`/news/${id}`);
   const goTask = (id: number) => navigate(`/tasks/${id}`);
-  const goActivity = (id: number) => {
-    if (user) navigate(`/activity/${id}`);
-    else openLogin(`/activity/${id}`); // 游客点活动 → 弹登录（引流）
-  };
+  // 详情路由公开：公开调研可直达；众议/征集/展示及仅成员调研 404 后由详情页提示登录
+  const goActivity = (id: number) => navigate(`/activity/${id}`);
 
   const open = (item: FeedItem) => () => {
     if (item.type === "news") goNews(item.id);

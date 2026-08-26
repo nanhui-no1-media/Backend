@@ -1,8 +1,8 @@
-"""活动生命周期模块（ADR 0007 / 遵循 ADR 0003：状态机与访问控制分离）。
+"""活动生命周期模块（ADR 0007 / 0011 / 遵循 ADR 0003：状态机与访问控制分离）。
 
 独占活动的状态机与守卫，对外暴露纯领域逻辑。
 
-- 众议：open（投票中）→ closed（已截止结算）；到 ``end_at`` 惰性结算。
+- 众议 / 调研：open → closed；到 ``end_at`` 惰性结算。
 - 征集：collecting → reviewing → archived；满 ``max_submissions`` 自动 collecting→reviewing。
 """
 
@@ -18,24 +18,22 @@ ARCHIVED = "archived"      # 征集：已归档
 
 
 def initial_status(activity_type, start_at=None):
-    """活动创建时的初始状态：``start_at`` 在未来 → scheduled（待开始）；否则众议=open / 征集=collecting。
+    """活动创建时的初始状态：``start_at`` 在未来 → scheduled（待开始）；否则众议/展示/调研=open、征集=collecting。
 
     供序列化器 create 共用的单一事实源。``start_at`` 为 None 表示不排期（创建即开放）。
     """
     if start_at is not None and start_at > timezone.now():
         return SCHEDULED
-    if activity_type == "deliberation":
+    if activity_type in ("deliberation", "exhibition", "survey"):
         return OPEN
     if activity_type == "collection":
         return COLLECTING
-    if activity_type == "exhibition":
-        return OPEN
     raise ValueError(f"未知活动类型: {activity_type!r}")
 
 
 def transition_due_starts():
     """惰性开放：把已到 ``start_at`` 的 scheduled 活动翻转为开放态
-    （众议→open / 征集→collecting）。在 list/get/vote/submit 入口调用。
+    （众议/展示/调研→open / 征集→collecting）。在 list/get/vote/submit/respond 入口调用。
 
     逐行条件更新（status=scheduled）保证并发安全——多个读者同时触达时只有一个请求真正翻转。
     """
@@ -54,8 +52,34 @@ def transition_due_starts():
 
 
 def can_edit(activity):
-    """是否可编辑（改 start_at/end_at/正文/选项/配置）：仅 scheduled（待开始）期间。开放后锁定。"""
+    """是否可编辑（改 start_at/end_at/正文/选项/配置）：仅 scheduled（待开始）期间。开放后锁定。
+
+    调研 Schema 另见 ``can_edit_schema``（开放且零作答时仍可改问卷，标题/时间仍走本谓词）。
+    """
     return activity.status == SCHEDULED
+
+
+def can_edit_schema(activity):
+    """调研问卷 Schema 可否改：类型=调研，且待开始，或开放中尚无作答。"""
+    if activity.type != "survey":
+        return False
+    if activity.status == SCHEDULED:
+        return True
+    if activity.status == OPEN:
+        return not SurveyResponse.objects.filter(activity_id=activity.pk).exists()
+    return False
+
+
+def can_respond(activity, user):
+    """调研作答守卫：类型=调研、状态=open。公开受众任何人；仅成员须登录。
+
+    审核通过由视图另判；已登录重复提交由视图 + 部分唯一约束收口。
+    """
+    if activity.type != "survey" or activity.status != OPEN:
+        return False
+    if activity.audience == "public":
+        return True
+    return bool(getattr(user, "is_authenticated", False))
 
 
 # ---- 众议 --------------------------------------------------------------
@@ -123,14 +147,14 @@ def can_close(activity, user):
 
 
 def transition_overdue():
-    """惰性结算：把已到 ``end_at`` 的开放态众议/展示从 open 流转到 closed。
+    """惰性结算：把已到 ``end_at`` 的开放态众议/展示/调研从 open 流转到 closed。
 
-    在 list/get/vote/rate 入口调用。逐行条件更新保证每条活动只被一个请求流转（并发安全；
+    在 list/get/vote/rate/respond 入口调用。逐行条件更新保证每条活动只被一个请求流转（并发安全；
     Django 无内置调度，此惰性方式无需 cron）。征集另有满额流转（``maybe_close_collection_on_cap``）。
     """
     now = timezone.now()
     overdue = Activity.objects.filter(
-        type__in=("deliberation", "exhibition"), status=OPEN, end_at__lte=now,
+        type__in=("deliberation", "exhibition", "survey"), status=OPEN, end_at__lte=now,
     )
     closed_pks = []
     for activity in overdue:
@@ -209,4 +233,4 @@ def maybe_close_deliberation_on_full_vote(activity):
 
 
 # 延迟导入打破 activities 内部循环（lifecycle ↔ models 同 app，无环；保留供未来跨引用）。
-from .models import Activity, Ballot, Submission  # noqa: E402
+from .models import Activity, Ballot, Submission, SurveyResponse  # noqa: E402

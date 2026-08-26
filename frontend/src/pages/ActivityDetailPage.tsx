@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, Link, useLocation } from "react-router-dom";
 import { api } from "../api/client";
 import { activityApi } from "../api/activities";
 import {
   ActivityDetail,
   ActivityListItem,
   ACTIVITY_TYPE_META,
+  AUDIENCE_LABELS,
   activityPhase,
   REVIEW_STATUS_LABELS,
   REVIEW_STATUS_BADGE_CLASS,
@@ -14,8 +15,10 @@ import type { ActivityStatus } from "../types/activities";
 import type { Attachment } from "../types/tasks";
 import Avatar from "../components/Avatar";
 import PageChrome from "../components/PageChrome";
+import SurveyFill from "../components/SurveyFill";
 import { useSitePolicy } from "../api/sitePolicy";
 import { useEmbedMode } from "../embed";
+import { useLoginModal } from "../components/LoginModalProvider";
 import AuthorReviewBanner from "../components/AuthorReviewBanner";
 
 interface CurrentUser {
@@ -34,6 +37,8 @@ export default function ActivityDetailPage({
   const params = useParams<{ id: string }>();
   const id = activityId != null ? String(activityId) : params.id;
   const navigate = useNavigate();
+  const location = useLocation();
+  const { openLogin, authNonce } = useLoginModal();
   const urlEmbed = useEmbedMode();
   const embed = Boolean(embedded || urlEmbed);
   const policy = useSitePolicy();
@@ -41,7 +46,11 @@ export default function ActivityDetailPage({
   const [activity, setActivity] = useState<ActivityDetail | null>(null);
   const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [loadStatus, setLoadStatus] = useState<number>(0);
   const [busy, setBusy] = useState(false);
+  const [guestSubmitted, setGuestSubmitted] = useState(false);
+  const [fillKey, setFillKey] = useState(0);
 
   // 展示布展(策展人;待开始+展示中):手动添加 / 删 / 从征集导入(改标题仅待开始)
   const [newTitle, setNewTitle] = useState("");
@@ -60,18 +69,45 @@ export default function ActivityDetailPage({
   const [comments, setComments] = useState<Record<number, string>>({});
   useEffect(() => {
     api.me().then((d) => setUser({ id: d.user.id, can_review_collections: d.user.permissions?.can_review_collections, can_change_activity: d.user.permissions?.can_change_activity })).catch(() => setUser(null));
-  }, []);
+  }, [authNonce]);
 
-  const load = () => {
+  useEffect(() => {
     if (!id) return;
+    setLoadError("");
+    setLoadStatus(0);
+    setActivity(null);
+    setGuestSubmitted(false);
     activityApi.get(Number(id))
       .then((a) => { setActivity(a); setSelected(a.my_selections ?? []); })
-      .catch((err) => setError(err.message));
-  };
-  useEffect(load, [id]);
+      .catch((err: any) => {
+        setLoadError(err.message || "加载失败");
+        setLoadStatus(err.status || 0);
+      });
+  }, [id, authNonce]);
 
-  if (error) return <PageChrome embedded={embed}><div className="container" style={{ padding: "var(--s-16)" }}><div className="alert alert-danger"><span>{error}</span></div></div></PageChrome>;
-  if (!activity) return <PageChrome embedded={embed}><div className="container" style={{ padding: "var(--s-16)" }}><p className="muted">加载中…</p></div></PageChrome>;
+  if (!activity) {
+    if (user === undefined || !loadError) {
+      return <PageChrome embedded={embed}><div className="container" style={{ padding: "var(--s-16)" }}><p className="muted">加载中…</p></div></PageChrome>;
+    }
+    const needLogin = !embed && !user && (loadStatus === 404 || loadStatus === 403);
+    return (
+      <PageChrome embedded={embed}>
+        <div className="container" style={{ padding: "var(--s-16)" }}>
+          {needLogin ? (
+            <div className="card card-pad">
+              <h2 style={{ margin: "0 0 var(--s-3)" }}>需要登录</h2>
+              <p className="muted" style={{ marginBottom: "var(--s-4)" }}>
+                该活动仅登录成员可见。众议、征集、展示及仅成员调研需登录后查看。
+              </p>
+              <button className="btn btn-primary" onClick={() => openLogin(location.pathname + location.search)}>登录</button>
+            </div>
+          ) : (
+            <div className="alert alert-danger"><span>{loadError}</span></div>
+          )}
+        </div>
+      </PageChrome>
+    );
+  }
 
   const a = activity;
   const isOwner = !!user && a.creator?.id === user.id;
@@ -80,6 +116,34 @@ export default function ActivityDetailPage({
   const isDeliberation = a.type === "deliberation";
   const isCollection = a.type === "collection";
   const isExhibition = a.type === "exhibition";
+  const isSurvey = a.type === "survey";
+  const canEditSchema =
+    isSurvey &&
+    canManage &&
+    (a.status === "scheduled" || (a.status === "open" && (a.response_count ?? 0) === 0));
+  const surveyApproved = !a.review_status || a.review_status === "approved";
+  const alreadySubmitted = !!user && a.my_response != null;
+  const canFillSurvey =
+    isSurvey &&
+    a.status === "open" &&
+    surveyApproved &&
+    !alreadySubmitted &&
+    !guestSubmitted &&
+    (a.audience === "public" || !!user);
+  const closeLabel = isDeliberation
+    ? "提前结束投票"
+    : isCollection
+      ? "提前结束收件"
+      : isSurvey
+        ? "提前结束征答"
+        : "提前结束展示";
+  const closeConfirm = isDeliberation
+    ? "提前结束投票并结算？"
+    : isCollection
+      ? (a.review_enabled ? "提前结束收件、进入复审？" : "提前结束收件并归档？")
+      : isSurvey
+        ? "提前结束征答？"
+        : "提前结束展示并结算？";
   const owesVote = (isDeliberation && a.status === "open" && a.my_selections === null)
     || (isExhibition && a.voting_enabled && a.status === "open" && a.my_selections === null);
   const owesSubmit = isCollection && a.status === "collecting" && !a.my_submission;
@@ -92,10 +156,14 @@ export default function ActivityDetailPage({
   const fmtTime = (d: string | null) =>
     d ? new Date(d).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
   const phases = (() => {
-    if (isDeliberation || isExhibition) {
+    if (isDeliberation || isExhibition || isSurvey) {
       const ns = [];
       if (a.start_at) ns.push({ key: "scheduled", label: "待开始", time: fmtTime(a.start_at) });
-      ns.push({ key: "open", label: isExhibition ? "展示中" : "投票中", time: a.start_at ? null : fmtTime(a.created_at) });
+      ns.push({
+        key: "open",
+        label: isExhibition ? "展示中" : isSurvey ? "征答中" : "投票中",
+        time: a.start_at ? null : fmtTime(a.created_at),
+      });
       ns.push({ key: "closed", label: "已结束", time: fmtTime(a.end_at) });
       return ns;
     }
@@ -147,11 +215,7 @@ export default function ActivityDetailPage({
   };
 
   const doClose = async () => {
-    const msg = isDeliberation
-      ? "提前结束投票并结算？"
-      : isExhibition ? "提前结束展示并结算？"
-      : a.review_enabled ? "提前结束收件、进入复审？" : "提前结束收件并归档？";
-    if (!window.confirm(msg)) return;
+    if (!window.confirm(closeConfirm)) return;
     setBusy(true); setError("");
     try { setActivity(await activityApi.close(a.id)); }
     catch (e: any) { setError(e.message); }
@@ -245,11 +309,20 @@ export default function ActivityDetailPage({
             <span className="sep">/</span>
             <span>{a.title}</span>
           </nav>
-          {canManage && a.status === "scheduled" && !memberDebt && (
-            <button className="btn btn-primary btn-sm" onClick={() => navigate(`/activity/${a.id}/edit`)}>
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
-              编辑
-            </button>
+          {((canManage && a.status === "scheduled" && !memberDebt) || canEditSchema) && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {canManage && a.status === "scheduled" && !memberDebt && (
+                <button className="btn btn-primary btn-sm" onClick={() => navigate(`/activity/${a.id}/edit`)}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+                  编辑
+                </button>
+              )}
+              {canEditSchema && (
+                <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/activity/${a.id}/survey-edit`)}>
+                  编辑问卷
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -268,6 +341,11 @@ export default function ActivityDetailPage({
               <span className="act-medal-ico">{ACTIVITY_TYPE_META[a.type].emoji}</span>
               {ACTIVITY_TYPE_META[a.type].label}
             </span>
+            {isSurvey && (
+              <span className={"badge " + (a.audience === "public" ? "badge-brand" : "badge-neutral")}>
+                {AUDIENCE_LABELS[a.audience]}
+              </span>
+            )}
           </div>
           <h1 style={{ margin: "0 0 var(--s-4)" }}>{a.title}</h1>
         </div>
@@ -279,7 +357,9 @@ export default function ActivityDetailPage({
             comment={a.review_comment}
             extra={
               a.review_status === "pending" && a.status !== "closed" && a.status !== "archived"
-                ? "活动会按你设的时间推进，但在审核通过前成员看不到、也投不了。"
+                ? (isSurvey
+                  ? "活动会按你设的时间推进，但在审核通过前访客/成员看不到、也作答不了。"
+                  : "活动会按你设的时间推进，但在审核通过前成员看不到、也投不了。")
                 : undefined
             }
           />
@@ -330,7 +410,7 @@ export default function ActivityDetailPage({
               )}
               {(a.status === "open" || a.status === "collecting") && (
                 <button className="btn btn-ghost btn-sm" onClick={doClose} disabled={busy}>
-                  {isDeliberation ? "提前结束投票" : isCollection ? "提前结束收件" : "提前结束展示"}
+                  {closeLabel}
                 </button>
               )}
             </div>
@@ -343,14 +423,58 @@ export default function ActivityDetailPage({
           {!memberDebt && canManage && (a.status === "open" || a.status === "collecting") && (
             <div style={{ marginTop: "var(--s-4)" }}>
               <button className="btn btn-ghost btn-sm" onClick={doClose} disabled={busy}>
-                {isDeliberation ? "提前结束投票" : isCollection ? "提前结束收件" : "提前结束展示"}
+                {closeLabel}
               </button>
             </div>
           )}
         </div>
         )}
 
-        {/* 时间线（横向 stepper） */}
+        {isSurvey && (
+          <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
+            <h3 className="section-h">问卷</h3>
+            {canEditSchema && (
+              <div style={{ marginBottom: 12 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/activity/${a.id}/survey-edit`)}>编辑问卷</button>
+              </div>
+            )}
+            {a.status === "scheduled" && (
+              <p className="muted">调研尚未开始。{canEditSchema ? "可先编辑问卷。" : "开始后即可作答。"}</p>
+            )}
+            {a.status === "open" && !surveyApproved && (
+              <p className="muted">审核通过后即可作答。</p>
+            )}
+            {a.status === "open" && surveyApproved && alreadySubmitted && (
+              <p className="muted">你已经提交过了。</p>
+            )}
+            {a.status === "open" && surveyApproved && guestSubmitted && (
+              <div>
+                <p>感谢作答。</p>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => { setGuestSubmitted(false); setFillKey((k) => k + 1); }}
+                >
+                  再填一份
+                </button>
+              </div>
+            )}
+            {canFillSurvey && (
+              <SurveyFill
+                key={fillKey}
+                schema={a.schema || { pages: [{ name: "page1", elements: [] }] }}
+                onComplete={async (answers) => {
+                  const updated = await activityApi.respond(a.id, answers);
+                  setActivity(updated);
+                  if (!updated.my_response) setGuestSubmitted(true);
+                }}
+              />
+            )}
+            {a.status === "closed" && (
+              <p className="muted">征答已结束。{a.response_count != null ? `已收到 ${a.response_count} 份作答。` : ""}</p>
+            )}
+          </div>
+        )}
+
         <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
           <h3 className="section-h">时间线</h3>
           <div className="act-stepper">

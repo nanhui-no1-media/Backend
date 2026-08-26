@@ -192,6 +192,7 @@ h1, h2, h3, h4, .display { font-family: var(--font-display); color: var(--fg); l
 .medal-vote { background: var(--brand-100); color: var(--brand-800); }
 .medal-collect { background: oklch(0.95 0.040 160); color: oklch(0.42 0.110 160); }
 .medal-exhibit { background: oklch(0.95 0.035 300); color: oklch(0.42 0.10 300); }
+.medal-survey { background: oklch(0.95 0.040 220); color: oklch(0.42 0.10 220); }
 /* 阶段勋章配色（替换纯文字状态徽章；open 阶段按类型区分，展示=紫） */
 .medal-phase-amber { background: var(--warning-bg); color: var(--warning); }
 .medal-phase-brand { background: var(--brand-50); color: var(--brand-700); }

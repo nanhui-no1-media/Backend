@@ -19,11 +19,13 @@ from .lifecycle import (
     SCHEDULED,
     can_curate,
     can_edit_exhibit,
+    can_edit_schema,
+    can_respond,
     can_vote,
     initial_status,
     transition_overdue,
 )
-from .models import Activity
+from .models import Activity, SurveyResponse
 
 
 class InitialStatusTest(TestCase):
@@ -32,6 +34,12 @@ class InitialStatusTest(TestCase):
 
     def test_collection_opens_collecting(self):
         self.assertEqual(initial_status("collection"), COLLECTING)
+
+    def test_exhibition_opens_open(self):
+        self.assertEqual(initial_status("exhibition"), OPEN)
+
+    def test_survey_opens_open(self):
+        self.assertEqual(initial_status("survey"), OPEN)
 
     def test_unknown_type_raises(self):
         with self.assertRaises(ValueError):
@@ -104,6 +112,15 @@ class TransitionOverdueTest(TestCase):
         transition_overdue()
         self.assertEqual(Activity.objects.get(pk=c.pk).status, COLLECTING)
 
+    def test_overdue_survey_flips_to_closed(self):
+        a = Activity.objects.create(
+            type="survey", status=OPEN, title="s",
+            end_at=timezone.now() - timedelta(minutes=1),
+        )
+        closed = transition_overdue()
+        self.assertIn(a.pk, closed)
+        self.assertEqual(Activity.objects.get(pk=a.pk).status, CLOSED)
+
 
 class CanCurateTest(TestCase):
     def setUp(self):
@@ -150,3 +167,68 @@ class CanCurateTest(TestCase):
 
     def test_anonymous_cannot_edit_exhibit(self):
         self.assertFalse(can_edit_exhibit(self.exhibit_scheduled, AnonymousUser()))
+
+
+class CanEditSchemaTest(TestCase):
+    def setUp(self):
+        self.user = grant_verification(User.objects.create_user(username="u", password="x"))
+        self.scheduled = Activity.objects.create(type="survey", status=SCHEDULED, title="s")
+        self.open = Activity.objects.create(type="survey", status=OPEN, title="o")
+        self.closed = Activity.objects.create(type="survey", status=CLOSED, title="c")
+        self.deliberation = Activity.objects.create(
+            type="deliberation", status=OPEN, title="d", max_choices_per_voter=1,
+        )
+
+    def test_scheduled_survey_allows_schema_edit(self):
+        self.assertTrue(can_edit_schema(self.scheduled))
+
+    def test_open_survey_with_zero_responses_allows_schema_edit(self):
+        self.assertTrue(can_edit_schema(self.open))
+
+    def test_open_survey_with_response_blocks_schema_edit(self):
+        SurveyResponse.objects.create(activity=self.open, user=self.user, answers={"q": "a"})
+        self.assertFalse(can_edit_schema(self.open))
+
+    def test_closed_survey_blocks_schema_edit(self):
+        self.assertFalse(can_edit_schema(self.closed))
+
+    def test_non_survey_blocks_schema_edit(self):
+        self.assertFalse(can_edit_schema(self.deliberation))
+
+
+class CanRespondTest(TestCase):
+    def setUp(self):
+        self.user = grant_verification(User.objects.create_user(username="u", password="x"))
+        self.public_open = Activity.objects.create(
+            type="survey", status=OPEN, title="p", audience="public",
+        )
+        self.members_open = Activity.objects.create(
+            type="survey", status=OPEN, title="m", audience="members",
+        )
+        self.public_closed = Activity.objects.create(
+            type="survey", status=CLOSED, title="c", audience="public",
+        )
+        self.scheduled = Activity.objects.create(
+            type="survey", status=SCHEDULED, title="s", audience="public",
+        )
+        self.deliberation = Activity.objects.create(
+            type="deliberation", status=OPEN, title="d", max_choices_per_voter=1,
+        )
+
+    def test_public_open_allows_anonymous(self):
+        self.assertTrue(can_respond(self.public_open, AnonymousUser()))
+
+    def test_members_open_blocks_anonymous(self):
+        self.assertFalse(can_respond(self.members_open, AnonymousUser()))
+
+    def test_members_open_allows_authenticated(self):
+        self.assertTrue(can_respond(self.members_open, self.user))
+
+    def test_closed_blocks_respond(self):
+        self.assertFalse(can_respond(self.public_closed, AnonymousUser()))
+
+    def test_scheduled_blocks_respond(self):
+        self.assertFalse(can_respond(self.scheduled, self.user))
+
+    def test_non_survey_blocks_respond(self):
+        self.assertFalse(can_respond(self.deliberation, self.user))

@@ -90,7 +90,7 @@ def build_feed(*, request, limit=6):
 
     - featured：头条新闻（featured=True 优先；否则阅读人数最高）；无新闻为 None，且不计入 items。
     - items：活动 / 新闻 /（登录时的）任务，按 timestamp 降序 + 类型打散，截断到 limit。
-    - 可见性：任务仅登录用户可见；活动仅公开投影。
+    - 可见性：任务仅登录用户可见；访客不可见仅成员调研；活动仅公开投影。
     """
     user = getattr(request, "user", None)
     is_authed = bool(user and user.is_authenticated)
@@ -110,7 +110,11 @@ def build_feed(*, request, limit=6):
     for n in news_qs:
         candidates.append(((n.published_at or n.created_at), _news_dict(n, request)))
 
-    for a in Activity.objects.filter(public_activity_q()).exclude(status="archived"):
+    activities = Activity.objects.filter(public_activity_q()).exclude(status="archived")
+    if not is_authed:
+        # 访客不可见仅成员调研；众议/征集/展示标题泄漏保持原样
+        activities = activities.exclude(type="survey", audience="members")
+    for a in activities:
         candidates.append((a.created_at, _activity_dict(a, request)))
 
     if is_authed:

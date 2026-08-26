@@ -1,4 +1,4 @@
-"""活动模型（ADR 0007）：活动独立于申报，分众议（投票）/ 征集（收作品）两类型。
+"""活动模型（ADR 0007 / 0011）：活动独立于申报，分众议 / 征集 / 展示 / 调研。
 
 与申报(proposals)分离——申报退化为纯反馈容器。状态机与守卫集中在 lifecycle.py
 （遵循 ADR 0003），此处只给 DB 枚举与字段。
@@ -7,17 +7,30 @@ from django.conf import settings
 from django.db import models
 
 
+def default_survey_schema():
+    """调研默认 Schema：一页空问卷（形状与 recruitment.default_schema 相同，内容为空）。"""
+    return {
+        "title": "",
+        "pages": [{"name": "page1", "elements": []}],
+    }
+
+
 class Activity(models.Model):
-    """活动：发起人对全社团开放的协作事项，两类型之一。"""
+    """活动：发起人对全社团开放的协作事项，四类型之一。"""
 
     TYPE_CHOICES = [
         ("deliberation", "众议"),
         ("collection", "征集"),
         ("exhibition", "展示"),
+        ("survey", "调研"),
+    ]
+    AUDIENCE_CHOICES = [
+        ("public", "公开"),
+        ("members", "仅成员"),
     ]
     # 状态语义随类型而异（状态机见 lifecycle.py）：
     #   排期：scheduled（待开始，start_at 之前）→ 到点开放
-    #   众议：open（投票中）→ closed（已截止结算）
+    #   众议 / 调研：open（投票中 / 征答中）→ closed（已截止）
     #   征集：collecting（收件中）→ reviewing（复审中）→ archived（已归档）
     STATUS_CHOICES = [
         ("scheduled", "待开始"),
@@ -68,6 +81,14 @@ class Activity(models.Model):
     # True = 创建时为每展品建 VoteOption，成员可对展品投票；False（默认）= 纯陈列，
     # 不建选项，仅赞/踩（ExhibitRating）。创建后不可改。
     voting_enabled = models.BooleanField("启用投票", default=False)
+
+    # 调研专属：受众。仅 type=survey 有意义；其他类型保持默认 members（门户仍仅成员可见）。
+    # 创建后不可改（与展示 voting_enabled 同思路）。
+    audience = models.CharField(
+        "受众", max_length=8, choices=AUDIENCE_CHOICES, default="members",
+    )
+    # 调研专属：SurveyJS Schema。其他类型忽略。
+    schema = models.JSONField("问卷 Schema", default=default_survey_schema)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -255,3 +276,38 @@ class ExhibitRating(models.Model):
 
     def __str__(self):
         return f"{self.user_id} -> {self.exhibit_id} ({self.choice})" # type: ignore
+
+
+class SurveyResponse(models.Model):
+    """调研作答：一份调研上的一次提交。
+
+    已登录用户一人一行（部分唯一约束）；访客 user=null，不限次数。
+    """
+
+    activity = models.ForeignKey(
+        Activity, on_delete=models.CASCADE,
+        related_name="survey_responses", verbose_name="活动",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="survey_responses", verbose_name="作答者",
+    )
+    answers = models.JSONField("作答", default=dict)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "调研作答"
+        verbose_name_plural = "调研作答"
+        ordering = ["-submitted_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["activity", "user"],
+                condition=models.Q(user__isnull=False),
+                name="unique_survey_response_per_user",
+            ),
+        ]
+
+    def __str__(self):
+        who = self.user_id if self.user_id else "guest"
+        return f"{who} -> {self.activity_id}" # type: ignore

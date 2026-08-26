@@ -1,7 +1,7 @@
 """活动访问控制（遵循 ADR 0005：命名 BasePermission 子类 + has_perm，绝不查组名）。
 
 身份门禁（已验证成员）由 accounts.IsVerified 在视图层单独挂——此处只管"角色能力 +
-对象所有权"。读默认对全体成员开放（CanViewActivity 仅要求登录）。
+对象所有权"。读：已登录成员见全部过审活动；访客仅 list/retrieve 公开调研（AllowAny + queryset）。
 """
 from rest_framework import permissions
 

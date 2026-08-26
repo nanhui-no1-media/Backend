@@ -38,6 +38,7 @@ const TutorialFormPage = lazy(() => import("./pages/TutorialFormPage"));
 const JoinPage = lazy(() => import("./pages/JoinPage"));
 const JoinFormPage = lazy(() => import("./pages/JoinFormPage"));
 const JoinEditorPage = lazy(() => import("./pages/JoinEditorPage"));
+const SurveyEditorPage = lazy(() => import("./pages/SurveyEditorPage"));
 
 function Loading() {
   return <div style={{ textAlign: "center", padding: "80px 0", color: "#6b7280" }}>加载中...</div>;
@@ -78,8 +79,9 @@ export default function App() {
           <Route path="/messages/:id" element={<ProtectedRoute><MessagePage /></ProtectedRoute>} />
           <Route path="/activity" element={<ActivityListPage />} />
           <Route path="/activity/new" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
-          <Route path="/activity/:id" element={<ProtectedRoute><ActivityDetailPage /></ProtectedRoute>} />
+          <Route path="/activity/:id" element={<ActivityDetailPage />} />
           <Route path="/activity/:id/edit" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
+          <Route path="/activity/:id/survey-edit" element={<ProtectedRoute><SurveyEditorPage /></ProtectedRoute>} />
           <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
           <Route path="/feedback" element={<ProposalListPage />} />
           <Route path="/feedback/:id" element={<ProtectedRoute><ProposalDetailPage /></ProtectedRoute>} />

@@ -119,6 +119,7 @@ class ActivityListSerializer(serializers.ModelSerializer):
         model = Activity
         fields = [
             "id", "type", "status", "title", "creator",
+            "audience",
             "review_status", "owed", "start_at", "end_at", "created_at", "updated_at",
         ]
 
@@ -176,6 +177,9 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     submissions = serializers.SerializerMethodField()
     # 展示读侧
     exhibits = serializers.SerializerMethodField()
+    # 调研读侧：问卷 + 我的作答 + 作答总数（不作答列表）
+    my_response = serializers.SerializerMethodField()
+    response_count = serializers.SerializerMethodField()
     # 众议写侧：创建时给选项文本（开放即锁定，无后续编辑）
     option_texts = serializers.ListField(
         child=serializers.CharField(max_length=200), write_only=True, required=False,
@@ -190,13 +194,18 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "max_choices_per_voter", "is_secret_ballot",
             "allowed_extensions", "max_file_size", "max_files_per_submission", "max_submissions",
             "review_enabled", "voting_enabled",
+            "audience", "schema", "my_response", "response_count",
             "options", "ballots", "my_selections", "total_ballots",
             "my_submission", "submissions",
             "exhibits",
             "option_texts",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["creator", "status", "review_status", "review_comment", "created_at", "updated_at"]
+        read_only_fields = [
+            "creator", "status", "review_status", "review_comment",
+            "my_response", "response_count",
+            "created_at", "updated_at",
+        ]
 
     def get_review_status(self, obj):
         return review_status_of(obj, related="publication_review")
@@ -212,7 +221,22 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         # 与新闻同级：写时消毒，存消毒后 HTML，读时原样返回。
         return sanitize_html(value or "")
 
+    def validate_schema(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("问卷 Schema 须为 JSON 对象")
+        if "pages" not in value:
+            raise serializers.ValidationError("Schema 须包含 pages")
+        return value
+
     def validate(self, attrs):
+        # 受众创建后不可改（与展示 voting_enabled 同思路）
+        if self.instance is not None and "audience" in attrs:
+            if attrs["audience"] != self.instance.audience:
+                raise serializers.ValidationError({"audience": "受众创建后不可改"})
+        activity_type = attrs.get("type") or getattr(self.instance, "type", None)
+        if activity_type != "survey":
+            attrs.pop("schema", None)
+            attrs.pop("audience", None)
         # 开始 < 截止（两者都给时；update 取实例现值兜底 partial）
         start_at = attrs.get("start_at", getattr(self.instance, "start_at", None))
         end_at = attrs.get("end_at", getattr(self.instance, "end_at", None))
@@ -250,7 +274,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         texts = validated_data.pop("option_texts", [])
         activity_type = validated_data["type"]
-        # 截止默认相对开始时间：有 start_at 则从其起算，否则从现在；众议 +3 天 / 征集 +7 天。
+        # 截止默认相对开始时间：有 start_at 则从其起算，否则从现在；众议 +3 天 / 其余（含调研）+7 天。
         start_at = validated_data.get("start_at")
         if not validated_data.get("end_at"):
             base = start_at or timezone.now()
@@ -263,7 +287,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         return activity
 
     def update(self, instance, validated_data):
-        # 仅在 scheduled（待开始）期间允许更新（视图层已 gate）；含众议选项替换。
+        # 视图层 gate：标题/正文/时间须 scheduled；调研 schema 可在开放且零作答时改。
         texts = validated_data.pop("option_texts", None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -343,3 +367,20 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         if obj.type != "exhibition":
             return None
         return ExhibitSerializer(obj.exhibits.all(), many=True, context=self.context).data
+
+    # ---- 调研读侧 ----
+
+    def get_my_response(self, obj):
+        if obj.type != "survey":
+            return None
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return None
+        resp = obj.survey_responses.filter(user=user).first()
+        return resp.answers if resp else None
+
+    def get_response_count(self, obj):
+        if obj.type != "survey":
+            return None
+        return obj.survey_responses.count()

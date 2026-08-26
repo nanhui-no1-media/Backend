@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { SurveyCreator, SurveyCreatorComponent } from "survey-creator-react";
 import "survey-core/survey-core.css";
 import "survey-creator-core/survey-creator-core.css";
+import { SURVEY_LOCALE } from "../utils/surveyCreatorLocale";
 import AppShell from "../components/AppShell";
 import { api } from "../api/client";
 import { recruitmentApi } from "../api/recruitment";
@@ -27,7 +28,7 @@ export default function JoinEditorPage() {
     let alive = true;
     recruitmentApi.getSchema().then((d) => {
       if (!alive) return;
-      const c = new SurveyCreator({ showLogicTab: true });
+      const c = new SurveyCreator({ showLogicTab: true, locale: SURVEY_LOCALE });
       c.JSON = d.schema;
       setCreator(c);
     });

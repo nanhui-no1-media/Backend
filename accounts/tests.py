@@ -694,6 +694,31 @@ class CapabilityKeysContractTest(TestCase):
             f"能力键集漂移：后端={sorted(be_keys)} 前端={sorted(fe_keys)}",
         )
 
+    def test_capability_key_set_unchanged_no_survey_can(self):
+        """ADR 0011：调研不拆新 can_*；能力键集保持既有投影。"""
+        from .views import _capabilities
+
+        expected = {
+            "can_manage_news",
+            "can_manage_tasks",
+            "can_assign_task",
+            "can_manage_tags",
+            "can_approve_proposals",
+            "can_change_proposals",
+            "can_change_activity",
+            "can_view_feedback",
+            "can_review_collections",
+            "can_edit_about",
+            "can_manage_exam",
+            "can_review_content",
+            "can_review_identity",
+            "can_force_publish",
+        }
+        user = User.objects.create_user(username="cap", password="p")
+        keys = set(_capabilities(user).keys())
+        self.assertEqual(keys, expected)
+        self.assertFalse(any("survey" in k for k in keys))
+
 
 class UserProfileViewTest(TestCase):
     """薄冒烟：本人/管理员/他人各一条（字段可见集）+ 边界；可见性矩阵见 tests_visibility。"""

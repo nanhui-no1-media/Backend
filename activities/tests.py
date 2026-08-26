@@ -15,7 +15,7 @@ from rest_framework.test import APIClient
 from accounts.test_helpers import grant_verification
 from reviews.test_helpers import approve_activity
 
-from .models import Activity
+from .models import Activity, SurveyResponse, default_survey_schema
 
 
 def _publish_created(resp):
@@ -117,11 +117,21 @@ class ActivityCreateReadTest(TestCase):
         self.assertEqual(resp.data["body"], "<p>hi</p>")
         self.assertEqual(resp.data["creator"]["id"], self.author.pk)
 
-    def test_unauthenticated_list_forbidden(self):
+    def test_unauthenticated_list_only_public_surveys(self):
+        Activity.objects.create(type="deliberation", status="open", title="hidden-delib", creator=self.author)
+        approve_activity(Activity.objects.create(
+            type="survey", status="open", title="public-survey",
+            creator=self.author, audience="public",
+        ))
+        approve_activity(Activity.objects.create(
+            type="survey", status="open", title="members-survey",
+            creator=self.author, audience="members",
+        ))
         self.client.force_authenticate(None)
         resp = self.client.get("/activities/activities/")
-        # 仅 SessionAuthentication：未带凭据 → 403（无 WWW-Authenticate 挑战）。
-        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 200)
+        items = resp.data["results"] if isinstance(resp.data, dict) and "results" in resp.data else resp.data
+        self.assertEqual({i["title"] for i in items}, {"public-survey"})
 
     # ---- 删除（发起人 / change_activity）----
 
@@ -1180,3 +1190,178 @@ class ExhibitionTest(TestCase):
         Submission.objects.get(pk=sub_ids[0]).attachments.all().delete()
         detail = self.client.get(f"/activities/activities/{aid}/").data
         self.assertEqual(len(detail["exhibits"][0]["files"]), 1)
+
+
+class SurveyActivityTest(TestCase):
+    """调研：创建默认 / 访客公开可见性 / 一人一答 / 问卷可改窗口 / 惰性关闭。"""
+
+    _SCHEMA = {
+        "title": "满意度",
+        "pages": [{"name": "page1", "elements": [{"type": "text", "name": "q1", "title": "意见"}]}],
+    }
+
+    def setUp(self):
+        self.author = grant_verification(User.objects.create_user(username="author", password="x"))
+        self.m1 = grant_verification(User.objects.create_user(username="m1", password="x"))
+        self.client = APIClient()
+
+    def _create(self, user, **payload):
+        defaults = {"type": "survey", "title": "问卷", "body": "<p>x</p>"}
+        defaults.update(payload)
+        return _json(self.client, "post", "/activities/activities/", user, defaults)
+
+    def _respond(self, user, aid, answers=None):
+        return _json(
+            self.client, "post", f"/activities/activities/{aid}/respond/", user,
+            {"answers": answers if answers is not None else {"q1": "ok"}},
+        )
+
+    def _guest_get(self, path):
+        self.client.force_authenticate(None)
+        return self.client.get(path)
+
+    def _guest_respond(self, aid, answers=None):
+        self.client.force_authenticate(None)
+        return self.client.post(
+            f"/activities/activities/{aid}/respond/",
+            data=json.dumps({"answers": answers if answers is not None else {"q1": "ok"}}),
+            content_type="application/json",
+        )
+
+    # ---- 创建 ----
+
+    def test_create_survey_defaults_schema_and_members_audience(self):
+        resp = self._create(self.author)
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["type"], "survey")
+        self.assertEqual(resp.data["status"], "open")
+        self.assertEqual(resp.data["audience"], "members")
+        self.assertEqual(resp.data["schema"], default_survey_schema())
+        self.assertEqual(resp.data["response_count"], 0)
+        self.assertIsNone(resp.data["my_response"])
+        self.assertIsNotNone(resp.data["end_at"])  # 默认 +7d
+
+    def test_create_survey_with_public_audience(self):
+        resp = self._create(self.author, audience="public")
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["audience"], "public")
+
+    def test_list_includes_audience(self):
+        self._create(self.author, audience="public")
+        resp = _json(self.client, "get", "/activities/activities/", self.m1)
+        items = resp.data["results"] if isinstance(resp.data, dict) and "results" in resp.data else resp.data
+        self.assertIn("audience", items[0])
+
+    def test_audience_immutable_after_create(self):
+        aid = self._create(self.author).data["id"]
+        r = _json(self.client, "patch", f"/activities/activities/{aid}/", self.author,
+                  {"audience": "public"})
+        self.assertEqual(r.status_code, 400)
+
+    # ---- 访客：公开过审调研可列/开/交；仅成员与其他类型 404 ----
+
+    def test_guest_list_retrieve_respond_public_approved_open(self):
+        a = self._create(self.author, audience="public", schema=self._SCHEMA)
+        aid = a.data["id"]
+        listing = self._guest_get("/activities/activities/")
+        items = listing.data["results"] if isinstance(listing.data, dict) and "results" in listing.data else listing.data
+        self.assertEqual({i["title"] for i in items}, {"问卷"})
+        retrieve = self._guest_get(f"/activities/activities/{aid}/")
+        self.assertEqual(retrieve.status_code, 200)
+        self.assertEqual(retrieve.data["schema"], self._SCHEMA)
+        self.assertIsNone(retrieve.data["my_response"])
+        r = self._guest_respond(aid, {"q1": "访客"})
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["response_count"], 1)
+
+    def test_guest_404_on_members_only_and_other_types(self):
+        members = self._create(self.author)  # 默认 audience=members
+        delib = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "众议", "body": "<p>x</p>", "option_texts": ["A", "B"],
+        })
+        collection = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "collection", "title": "征集", "body": "<p>x</p>",
+        })
+        for aid in (members.data["id"], delib.data["id"], collection.data["id"]):
+            self.assertEqual(self._guest_get(f"/activities/activities/{aid}/").status_code, 404)
+            self.assertEqual(self._guest_respond(aid).status_code, 404)
+
+    def test_guest_cannot_see_unapproved_public_survey(self):
+        self.client.force_authenticate(self.author)
+        resp = self.client.post(
+            "/activities/activities/",
+            data=json.dumps({"type": "survey", "title": "待审公开", "audience": "public"}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data.get("review_status"), "pending")
+        aid = resp.data["id"]
+        self.assertEqual(self._guest_get(f"/activities/activities/{aid}/").status_code, 404)
+        listing = self._guest_get("/activities/activities/")
+        items = listing.data["results"] if isinstance(listing.data, dict) and "results" in listing.data else listing.data
+        self.assertEqual({i["title"] for i in items}, set())
+
+    # ---- 作答唯一性 ----
+
+    def test_member_one_response_second_post_400(self):
+        aid = self._create(self.author).data["id"]
+        first = self._respond(self.m1, aid, {"q1": "一次"})
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(first.data["my_response"], {"q1": "一次"})
+        self.assertEqual(first.data["response_count"], 1)
+        self.assertEqual(self._respond(self.m1, aid, {"q1": "二次"}).status_code, 400)
+        self.assertEqual(SurveyResponse.objects.filter(activity_id=aid, user=self.m1).count(), 1)
+
+    def test_guest_multiple_responses_allowed(self):
+        aid = self._create(self.author, audience="public").data["id"]
+        self.assertEqual(self._guest_respond(aid, {"q1": "a"}).status_code, 201)
+        self.assertEqual(self._guest_respond(aid, {"q1": "b"}).status_code, 201)
+        self.assertEqual(SurveyResponse.objects.filter(activity_id=aid, user__isnull=True).count(), 2)
+
+    def test_member_can_respond_to_members_survey(self):
+        aid = self._create(self.author).data["id"]
+        r = self._respond(self.m1, aid)
+        self.assertEqual(r.status_code, 201)
+
+    def test_cannot_respond_to_deliberation(self):
+        d = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "x", "body": "<p>x</p>", "option_texts": ["A", "B"],
+        })
+        self.assertEqual(self._respond(self.m1, d.data["id"]).status_code, 400)
+
+    def test_respond_requires_answers_object(self):
+        aid = self._create(self.author, audience="public").data["id"]
+        r = _json(self.client, "post", f"/activities/activities/{aid}/respond/", self.m1, {"answers": "nope"})
+        self.assertEqual(r.status_code, 400)
+
+    # ---- Schema 可改窗口 ----
+
+    def test_schema_patch_allowed_while_open_with_zero_responses(self):
+        aid = self._create(self.author).data["id"]
+        r = _json(self.client, "patch", f"/activities/activities/{aid}/", self.author,
+                  {"schema": self._SCHEMA})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["schema"], self._SCHEMA)
+
+    def test_schema_patch_refused_after_first_response(self):
+        aid = self._create(self.author).data["id"]
+        self.assertEqual(self._respond(self.m1, aid).status_code, 201)
+        r = _json(self.client, "patch", f"/activities/activities/{aid}/", self.author,
+                  {"schema": self._SCHEMA})
+        self.assertEqual(r.status_code, 403)
+
+    def test_title_still_locked_while_open(self):
+        aid = self._create(self.author).data["id"]
+        r = _json(self.client, "patch", f"/activities/activities/{aid}/", self.author, {"title": "改"})
+        self.assertEqual(r.status_code, 403)
+
+    # ---- 惰性关闭 ----
+
+    def test_end_at_auto_closes_survey_and_blocks_respond(self):
+        aid = self._create(self.author, audience="public").data["id"]
+        Activity.objects.filter(pk=aid).update(end_at=timezone.now() - timedelta(minutes=1))
+        _json(self.client, "get", f"/activities/activities/{aid}/", self.author)  # 触发惰性结算
+        resp = _json(self.client, "get", f"/activities/activities/{aid}/", self.author)
+        self.assertEqual(resp.data["status"], "closed")
+        self.assertEqual(self._respond(self.m1, aid).status_code, 400)
+        self.assertEqual(self._guest_respond(aid).status_code, 400)

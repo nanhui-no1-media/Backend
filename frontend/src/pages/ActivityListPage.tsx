@@ -6,6 +6,7 @@ import {
   ActivityListItem,
   ActivityType,
   ACTIVITY_TYPE_META,
+  AUDIENCE_LABELS,
   activityPhase,
 } from "../types/activities";
 import { REVIEW_STATUS_LABELS } from "../types/reviews";
@@ -59,7 +60,7 @@ export default function ActivityListPage() {
           <div className="page-head-row">
             <div>
               <h1>活动</h1>
-              <p className="section-sub">众议、征集、展示，发起即对全体已验证成员开放。</p>
+              <p className="section-sub">众议、征集、展示、调研。</p>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {loggedIn && (
@@ -78,13 +79,20 @@ export default function ActivityListPage() {
 
       <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
         <div className="prop-tabs">
-          <div className="seg" role="tablist" aria-label="活动类型">
+          <div className="seg" role="tablist" aria-label="活动类型" style={{ flexWrap: "wrap" }}>
             <button className="seg-btn" type="button" aria-selected={typeFilter === ""} onClick={() => setTypeFilter("")}>全部</button>
             <button className="seg-btn" type="button" aria-selected={typeFilter === "deliberation"} onClick={() => setTypeFilter("deliberation")}>众议</button>
             <button className="seg-btn" type="button" aria-selected={typeFilter === "collection"} onClick={() => setTypeFilter("collection")}>征集</button>
             <button className="seg-btn" type="button" aria-selected={typeFilter === "exhibition"} onClick={() => setTypeFilter("exhibition")}>展示</button>
+            <button className="seg-btn" type="button" aria-selected={typeFilter === "survey"} onClick={() => setTypeFilter("survey")}>调研</button>
           </div>
         </div>
+
+        {!loggedIn && (
+          <p className="muted" style={{ margin: "var(--s-3) 0 0" }}>
+            未登录仅显示公开调研。众议、征集、展示及仅成员调研需登录后查看。
+          </p>
+        )}
 
         <div className="prop-filter">
           <div className="input-affix search-affix">
@@ -122,6 +130,11 @@ export default function ActivityListPage() {
                     <span className="act-medal-ico">{ACTIVITY_TYPE_META[a.type].emoji}</span>
                     {ACTIVITY_TYPE_META[a.type].label}
                   </span>
+                  {a.type === "survey" && a.audience && (
+                    <span className={"badge " + (a.audience === "public" ? "badge-brand" : "badge-neutral")}>
+                      {AUDIENCE_LABELS[a.audience]}
+                    </span>
+                  )}
                   {a.owed === "vote" && <span className="badge badge-warning">未投</span>}
                   {a.owed === "submit" && <span className="badge badge-warning">未交</span>}
                   {a.review_status && a.review_status !== "approved" && (

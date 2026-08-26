@@ -26,7 +26,7 @@ def activity_debt_reason(activity, *, has_ballot, has_submission):
         and not has_ballot
     ):
         return REASON_VOTE
-    return None
+    return None  # 调研等其余类型不算社团义务，不进债
 
 
 def annotate_activity_debt(qs, user):

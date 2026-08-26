@@ -1,0 +1,15 @@
+/* Shared SurveyJS fill layout: join questionnaire + 调研 activity.
+   Site .container (1200px) + responsive widthMode; override leftover static max-width. */
+
+.survey-card {
+  min-height: 70vh;
+}
+
+.survey-card .sd-root-modern,
+.survey-card .sd-container-modern {
+  min-height: 70vh;
+}
+
+.survey-card .sd-body.sd-body--static {
+  max-width: none;
+}

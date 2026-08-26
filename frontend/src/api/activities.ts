@@ -37,7 +37,14 @@ export const activityApi = {
       body: JSON.stringify({ option_ids: optionIds }),
     }),
 
-  // 众议 / 展示 / 征集：提前关闭（众议/展示立即结算；征集结束收件进入复审或归档）
+  // 调研作答（公开受众任何人；仅成员须登录；已登录一人一次）
+  respond: (id: number, answers: Record<string, unknown>): Promise<ActivityDetail> =>
+    request(`/activities/${id}/respond/`, {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    }),
+
+  // 众议 / 展示 / 征集 / 调研：提前关闭（众议/展示/调研立即结算；征集结束收件进入复审或归档）
   close: (id: number): Promise<ActivityDetail> =>
     request(`/activities/${id}/close/`, { method: "POST" }),
 

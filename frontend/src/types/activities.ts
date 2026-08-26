@@ -1,8 +1,9 @@
 import type { TaskUser, Attachment } from "./tasks";
 
-// 活动（ADR 0007）：众议（投票）/ 征集（收作品）/ 展示（陈列评分）。独立于申报（反馈）。
+// 活动（ADR 0007 / 0011）：众议 / 征集 / 展示 / 调研。独立于申报（反馈）。
 
-export type ActivityType = "deliberation" | "collection" | "exhibition";
+export type ActivityType = "deliberation" | "collection" | "exhibition" | "survey";
+export type SurveyAudience = "public" | "members";
 export type ActivityStatus =
   | "scheduled" // 排期：start_at 之前，待开始
   | "open" // 众议：投票中
@@ -18,6 +19,7 @@ export interface ActivityListItem {
   status: ActivityStatus;
   title: string;
   creator: TaskUser | null;
+  audience?: SurveyAudience; // 调研：公开 / 仅成员；其他类型默认 members
   review_status?: "pending" | "approved" | "rejected" | "removed" | null;
   owed?: "vote" | "submit" | null;
   start_at: string | null;
@@ -91,6 +93,11 @@ export interface ActivityDetail {
   // 展示
   exhibits: Exhibit[] | null;
   voting_enabled: boolean; // 展示是否启用活动级投票；false=纯陈列（仅展品+赞/踩）
+  // 调研
+  audience: SurveyAudience;
+  schema: Record<string, unknown>;
+  my_response: Record<string, unknown> | null; // 已登录用户的作答；访客 / 未答为 null
+  response_count: number | null; // 作答总数（不作答列表；非调研为 null）
   created_at: string;
   updated_at: string;
 }
@@ -131,14 +138,29 @@ export interface ExhibitionFormData {
   end_at?: string;
 }
 
-// 众议/征集/展示均走 JSON 创建标量(展品改在详情页 add_exhibit 录入)。
-export type ActivityFormData = DeliberationFormData | CollectionFormData | ExhibitionFormData;
+export interface SurveyFormData {
+  type: "survey";
+  title: string;
+  body: string;
+  audience: SurveyAudience;
+  start_at?: string;
+  end_at?: string;
+}
+
+// 众议/征集/展示/调研均走 JSON 创建标量(展品改在详情页 add_exhibit 录入；调研问卷改在 survey-edit)。
+export type ActivityFormData = DeliberationFormData | CollectionFormData | ExhibitionFormData | SurveyFormData;
 
 // ---- 标签 ----
 export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   deliberation: "众议",
   collection: "征集",
   exhibition: "展示",
+  survey: "调研",
+};
+
+export const AUDIENCE_LABELS: Record<SurveyAudience, string> = {
+  public: "公开",
+  members: "仅成员",
 };
 
 // 活动类型勋章：emoji + 配色徽章（替换纯文字 type-tag）
@@ -146,6 +168,7 @@ export const ACTIVITY_TYPE_META: Record<ActivityType, { label: string; emoji: st
   deliberation: { label: "众议", emoji: "🗳", medal: "medal-vote" },
   collection: { label: "征集", emoji: "📥", medal: "medal-collect" },
   exhibition: { label: "展示", emoji: "🖼", medal: "medal-exhibit" },
+  survey: { label: "调研", emoji: "📋", medal: "medal-survey" },
 };
 
 export const ACTIVITY_STATUS_LABELS: Record<ActivityStatus, string> = {
@@ -159,7 +182,7 @@ export const ACTIVITY_STATUS_LABELS: Record<ActivityStatus, string> = {
 
 // ---- 阶段勋章（替换纯文字状态徽章）：emoji + 配色 pill ----
 // 类型勋章(ACTIVITY_TYPE_META)回答"这是什么活动"，阶段勋章回答"现在到哪一步了"。
-// open 阶段按类型区分（众议=投票中 / 展示=展示中）——展示在 open 态不再误显示"投票中"。
+// open 阶段按类型区分（众议=投票中 / 展示=展示中 / 调研=征答中）——展示/调研在 open 态不再误显示"投票中"。
 export const ACTIVITY_PHASE_EMOJI: Record<ActivityStatus, string> = {
   scheduled: "⏳",
   open: "⚖️",
@@ -178,11 +201,12 @@ const PHASE_CLASS: Record<ActivityStatus, string> = {
   archived: "medal-phase-neutral",
 };
 
-// open 阶段按类型差异化：展示=展示中(紫)，众议=投票中(brand)；征集不会进入 open（占位）。
+// open 阶段按类型差异化：展示=展示中(紫)，调研=征答中，众议=投票中(brand)；征集不会进入 open（占位）。
 const OPEN_PHASE: Record<ActivityType, { label: string; medalClass: string }> = {
   deliberation: { label: "投票中", medalClass: "medal-phase-brand" },
   collection: { label: "投票中", medalClass: "medal-phase-brand" },
   exhibition: { label: "展示中", medalClass: "medal-phase-exhibit" },
+  survey: { label: "征答中", medalClass: "medal-phase-brand" },
 };
 
 export interface ActivityPhaseMeta {

@@ -239,6 +239,19 @@ class FeedTest(TestCase):
         for forbidden in ("budget", "body", "options", "exhibits", "creator"):
             self.assertNotIn(forbidden, ex)
 
+    def test_guest_feed_hides_members_only_surveys(self):
+        """访客不可见仅成员调研；公开调研可见；众议标题泄漏保持原样。"""
+        self._activity("public-survey", days_ago=0, type="survey", status="open", audience="public")
+        self._activity("members-survey", days_ago=0, type="survey", status="open", audience="members")
+        self._activity("delib", days_ago=0, type="deliberation", status="open")
+        guest_titles = {i["title"] for i in build_feed(request=self.anon)["items"] if i["type"] == "activity"}
+        self.assertIn("public-survey", guest_titles)
+        self.assertNotIn("members-survey", guest_titles)
+        self.assertIn("delib", guest_titles)
+        member_titles = {i["title"] for i in build_feed(request=self.authed)["items"] if i["type"] == "activity"}
+        self.assertIn("members-survey", member_titles)
+        self.assertIn("public-survey", member_titles)
+
     def test_limit_truncates(self):
         for i in range(10):
             self._news(f"n{i}", days_ago=i)
