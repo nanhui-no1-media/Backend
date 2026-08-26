@@ -13,7 +13,6 @@ import {
 } from "../types/proposals";
 import Pagination from "../components/Pagination";
 import AppShell from "../components/AppShell";
-import { useLoginModal } from "../components/LoginModalProvider";
 import { usePagedList } from "../hooks/usePagedList";
 import type { Paginated } from "../types/pagination";
 import "../styles/list.css";
@@ -28,7 +27,6 @@ interface CurrentUser {
 
 export default function ProposalListPage() {
   const navigate = useNavigate();
-  const { openLogin } = useLoginModal();
   // undefined = 解析中, null = 未登录（匿名）
   const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState("");
@@ -58,13 +56,13 @@ export default function ProposalListPage() {
   const canViewFeedback = !!user?.can_view_feedback;
   const isLoggedIn = !!user;
 
-  // 匿名用户默认展开反馈表单
+  // 无审批权限时页面只剩提交表单，默认展开；有权限者保持收起，先看列表。
   useEffect(() => {
-    if (user === null) setShowFeedbackForm(true);
+    if (user === undefined) return;
+    if (!user?.can_view_feedback) setShowFeedbackForm(true);
   }, [user]);
 
-  // 加载列表：社长见全部反馈，普通成员见自己提交的（后端按 view_feedback 裁剪）；分页 20/页。
-  // enabled 等身份解析（undefined=解析中 / null=匿名不展示列表 / 登录后才拉）。
+  // 审批列表：仅持 view_feedback 者可见；无权限只保留提交表单。
   const {
     data: proposals,
     page,
@@ -77,7 +75,7 @@ export default function ProposalListPage() {
     (params) => proposalApi.list(params) as Promise<Paginated<ProposalListItem>>,
     PAGE_SIZE,
     { status: statusFilter || undefined, search: search || undefined },
-    isLoggedIn,
+    canViewFeedback,
   );
 
   const submitFeedback = async (e: React.FormEvent) => {
@@ -156,7 +154,7 @@ export default function ProposalListPage() {
             <span>意见反馈</span>
           </nav>
           <h1>意见反馈</h1>
-          <p className="section-sub">匿名或署名提交建议 / 投诉 / 举报；社长在此审批。</p>
+          <p className="section-sub">匿名或署名提交建议 / 投诉 / 举报。</p>
         </div>
       </div>
 
@@ -176,7 +174,7 @@ export default function ProposalListPage() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5h16v12H7l-3 3z" /></svg>
                 提交意见反馈 / 举报
               </div>
-              <div className="fb-hint">可匿名或署名（登录后）提交，仅社长可见。</div>
+              <div className="fb-hint">可匿名或署名（登录后）提交。</div>
             </div>
             <span className="fb-toggle">{showFeedbackForm ? "收起" : "展开"}
               <svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
@@ -219,7 +217,7 @@ export default function ProposalListPage() {
                     <label className="label">署名 <span className="hint">（登录用户）</span></label>
                     <label className="fb-attrib">
                       <input type="checkbox" checked={fbAttributed} onChange={(e) => { setFbAttributed(e.target.checked); if (!e.target.checked) setFbFiles([]); }} />
-                      <span>署名提交 —— 社长可见我的身份，可附带图片 / 视频证据</span>
+                      <span>署名提交 —— 处理人可见我的身份，可附带图片 / 视频证据</span>
                     </label>
                     {fbAttributed && (
                       <input type="file" multiple accept="image/*,video/*" onChange={(e) => setFbFiles(Array.from(e.target.files || []))} />
@@ -237,22 +235,8 @@ export default function ProposalListPage() {
           )}
         </section>
 
-        {/* 列表区：社长见全部反馈；普通成员见自己提交的 */}
-        {!isLoggedIn ? (
-          <div className="alert alert-info" style={{ alignItems: "center" }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v4h1" /></svg>
-            <span style={{ flex: 1 }}><strong>登录后可查看你提交的反馈</strong></span>
-            <button className="btn btn-primary btn-sm" onClick={() => openLogin()}>去登录</button>
-          </div>
-        ) : (
+        {canViewFeedback && (
           <>
-            {canViewFeedback && (
-              <div className="lock-note" style={{ margin: "var(--s-4) 0 var(--s-2)", display: "inline-flex" }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
-                社长视角：可见全部反馈
-              </div>
-            )}
-
             <div className="prop-filter">
               <div className="input-affix search-affix">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>

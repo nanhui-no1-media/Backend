@@ -2,7 +2,7 @@ from rest_framework import permissions
 
 
 class CanViewTutorial(permissions.BasePermission):
-    """公开读：list/retrieve/tags 匿名可读。"""
+    """公开读：list/retrieve 匿名可读。"""
 
     def has_permission(self, request, view):
         if request.method in permissions.SAFE_METHODS:

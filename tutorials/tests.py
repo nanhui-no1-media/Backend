@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 from accounts.test_helpers import grant_verification
 from common.models import SiteSettings
 from reviews.models import Review
-from tutorials.models import Tutorial, TutorialTag
+from tutorials.models import Tutorial
 
 
 def _grant(user, app_label, *codenames):
@@ -45,17 +45,16 @@ class TutorialUploadTest(TestCase):
         self.client.force_authenticate(self.user)
 
     def test_verified_member_uploads_video(self):
-        tag = TutorialTag.objects.get(name="Ps")
         resp = self.client.post(
             "/tutorials/tutorials/",
-            {"title": "Ps 入门", "description": "基础", "file": _mp4(), "tag_ids": str(tag.pk)},
+            {"title": "Ps 入门", "description": "基础", "file": _mp4()},
             format="multipart",
         )
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.data["title"], "Ps 入门")
         self.assertEqual(resp.data["file_type"], "video")
         self.assertEqual(resp.data["review_status"], "pending")
-        self.assertEqual(resp.data["tags"][0]["name"], "Ps")
+        self.assertNotIn("tags", resp.data)
 
     def test_unverified_cannot_upload(self):
         guest = User.objects.create_user(username="g", password="x")
@@ -76,10 +75,6 @@ class TutorialUploadTest(TestCase):
             format="multipart",
         )
         self.assertEqual(resp.status_code, 400)
-
-    def test_controlled_tags_exist(self):
-        names = set(TutorialTag.objects.values_list("name", flat=True))
-        self.assertTrue({"Ps", "Ae", "Pr", "剪映", "入门", "进阶", "比赛", "宣传"} <= names)
 
 
 class TutorialReviewVisibilityTest(TestCase):
@@ -195,16 +190,6 @@ class TutorialFavoriteAndViewsTest(TestCase):
             self.client.get(f"/tutorials/tutorials/{self.tid}/")
         t = Tutorial.objects.get(pk=self.tid)
         self.assertEqual(t.views, 1)
-
-    def test_tag_filter(self):
-        tag = TutorialTag.objects.get(name="Ps")
-        t = Tutorial.objects.get(pk=self.tid)
-        t.tags.add(tag)
-        listing = APIClient().get(f"/tutorials/tutorials/?tag={tag.pk}")
-        self.assertIn(self.tid, _ids(listing))
-        other = TutorialTag.objects.get(name="Ae")
-        listing2 = APIClient().get(f"/tutorials/tutorials/?tag={other.pk}")
-        self.assertNotIn(self.tid, _ids(listing2))
 
 
 class TutorialMineAndOrphanVisibilityTest(TestCase):

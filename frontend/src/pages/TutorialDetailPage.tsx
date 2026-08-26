@@ -102,9 +102,6 @@ export default function TutorialDetailPage({
       </div>
       <div className="container detail-container">
         {item.description && <div className="card card-pad" style={{ marginTop: "var(--s-5)" }}>{item.description}</div>}
-        <div style={{ marginTop: "var(--s-4)", display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {item.tags.map((t) => <span key={t.id} className="badge badge-ghost">{t.name}</span>)}
-        </div>
       </div>
     </PageChrome>
   );

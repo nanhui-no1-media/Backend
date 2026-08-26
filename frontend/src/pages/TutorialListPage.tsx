@@ -4,7 +4,7 @@ import AppShell from "../components/AppShell";
 import Pagination from "../components/Pagination";
 import { usePagedList } from "../hooks/usePagedList";
 import { api } from "../api/client";
-import { tutorialApi, type TutorialItem, type TutorialTag } from "../api/tutorials";
+import { tutorialApi, type TutorialItem } from "../api/tutorials";
 import "../styles/list.css";
 import "../styles/about.css";
 
@@ -12,14 +12,11 @@ const PAGE_SIZE = 20;
 
 export default function TutorialListPage() {
   const navigate = useNavigate();
-  const [tags, setTags] = useState<TutorialTag[]>([]);
-  const [tag, setTag] = useState("");
   const [mine, setMine] = useState(false);
   const [canUpload, setCanUpload] = useState(false);
 
   useEffect(() => {
     document.title = "教程集锦 · 南汇一中传媒社";
-    tutorialApi.tags().then(setTags).catch(() => setTags([]));
     api.me()
       .then((d: any) => {
         setCanUpload(!!d.profile?.is_verified || d.role?.variant === "superadmin");
@@ -30,7 +27,7 @@ export default function TutorialListPage() {
   const { data, page, setPage, totalPages, loading, error } = usePagedList<TutorialItem>(
     (params) => (mine ? tutorialApi.mine(params) : tutorialApi.list(params)),
     PAGE_SIZE,
-    mine ? { scope: "mine" } : { tag: tag || undefined },
+    mine ? { scope: "mine" } : {},
   );
 
   return (
@@ -61,16 +58,6 @@ export default function TutorialListPage() {
         </div>
       </div>
       <div className="container" style={{ paddingBottom: "var(--s-16)" }}>
-        {!mine && (
-          <div className="filter-bar" role="tablist" aria-label="标签">
-            <button className="chip" aria-pressed={!tag} onClick={() => setTag("")}>全部</button>
-            {tags.map((t) => (
-              <button key={t.id} className="chip" aria-pressed={tag === String(t.id)} onClick={() => setTag(String(t.id))}>
-                {t.name}
-              </button>
-            ))}
-          </div>
-        )}
         {error && <div className="alert alert-danger">{error}</div>}
         {loading ? <p className="task-empty">加载中…</p> : data.length === 0 ? (
           <p className="task-empty">暂无教程。</p>
@@ -83,12 +70,11 @@ export default function TutorialListPage() {
                 </div>
                 <div className="tcard-body">
                   <h3>{item.title}</h3>
-                  <div className="tcard-tags">
-                    {item.tags.map((tg) => <span key={tg.id} className="badge badge-ghost">{tg.name}</span>)}
-                    {item.review_status && item.review_status !== "approved" && (
+                  {item.review_status && item.review_status !== "approved" && (
+                    <div className="tcard-tags">
                       <span className="badge">{item.review_status === "pending" ? "待审" : item.review_status}</span>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   <div className="tcard-foot">
                     <span>{item.views} 播放</span>
                     <span>{item.favorite_count} 收藏</span>

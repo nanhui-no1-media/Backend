@@ -15,31 +15,8 @@ def tutorial_cover_path(instance, filename):
     return f"tutorial_covers/{uuid.uuid4().hex}{ext}"
 
 
-class TutorialTag(models.Model):
-    """受控标签：工具 / 场景，管理员维护固定清单。"""
-
-    KIND_TOOL = "tool"
-    KIND_SCENE = "scene"
-    KIND_CHOICES = [
-        (KIND_TOOL, "使用工具"),
-        (KIND_SCENE, "使用场景"),
-    ]
-
-    name = models.CharField("名称", max_length=40, unique=True)
-    kind = models.CharField("类别", max_length=12, choices=KIND_CHOICES)
-    order = models.PositiveSmallIntegerField("排序", default=0)
-
-    class Meta:
-        verbose_name = "教程标签"
-        verbose_name_plural = "教程标签"
-        ordering = ["kind", "order", "id"]
-
-    def __str__(self):
-        return self.name
-
-
 class Tutorial(models.Model):
-    """教程集锦条目：视频或文档，带受控标签。公开可见性由统一审核轴门控。"""
+    """教程集锦条目：视频或文档。公开可见性由统一审核轴门控。"""
 
     FILE_VIDEO = "video"
     FILE_DOCUMENT = "document"
@@ -59,7 +36,6 @@ class Tutorial(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
         related_name="tutorials", verbose_name="上传者",
     )
-    tags = models.ManyToManyField(TutorialTag, blank=True, related_name="tutorials", verbose_name="标签")
     views = models.PositiveIntegerField("播放量", default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

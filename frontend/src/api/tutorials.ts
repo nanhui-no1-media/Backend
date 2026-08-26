@@ -3,13 +3,6 @@ import type { Paginated } from "../types/pagination";
 
 const request = createRequest("/tutorials");
 
-export interface TutorialTag {
-  id: number;
-  name: string;
-  kind: "tool" | "scene";
-  order: number;
-}
-
 export interface TutorialUser {
   id: number;
   username: string;
@@ -27,7 +20,6 @@ export interface TutorialItem {
   file_url?: string;
   cover_url: string | null;
   uploader: TutorialUser;
-  tags: TutorialTag[];
   views: number;
   favorite_count: number;
   favorited: boolean;
@@ -44,7 +36,6 @@ export const tutorialApi = {
   get: (id: number) => request(`/tutorials/${id}/`) as Promise<TutorialItem>,
   create: (data: FormData) =>
     request("/tutorials/", { method: "POST", body: data }) as Promise<TutorialItem>,
-  tags: () => request("/tutorials/tags/") as Promise<TutorialTag[]>,
   mine: (params?: Record<string, string>) => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
     return request(`/tutorials/mine/${qs}`) as Promise<Paginated<TutorialItem>>;

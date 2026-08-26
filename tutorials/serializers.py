@@ -4,7 +4,7 @@ from tasks.serializers import SimpleUserSerializer
 
 from reviews.visibility import review_status_of
 
-from .models import Tutorial, TutorialTag
+from .models import Tutorial
 
 _VIDEO_TYPES = {"video/mp4", "video/webm", "video/ogg", "video/quicktime"}
 _DOC_TYPES = {
@@ -15,15 +15,8 @@ _DOC_TYPES = {
 _MAX_BYTES = 500 * 1024 * 1024
 
 
-class TutorialTagSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TutorialTag
-        fields = ["id", "name", "kind", "order"]
-
-
 class TutorialListSerializer(serializers.ModelSerializer):
     uploader = SimpleUserSerializer(read_only=True)
-    tags = TutorialTagSerializer(many=True, read_only=True)
     cover_url = serializers.SerializerMethodField()
     favorite_count = serializers.SerializerMethodField()
     review_status = serializers.SerializerMethodField()
@@ -33,7 +26,7 @@ class TutorialListSerializer(serializers.ModelSerializer):
         model = Tutorial
         fields = [
             "id", "title", "description", "file_type", "file_name", "file_size",
-            "cover_url", "uploader", "tags", "views", "favorite_count",
+            "cover_url", "uploader", "views", "favorite_count",
             "favorited", "review_status", "created_at",
         ]
 
@@ -60,13 +53,9 @@ class TutorialListSerializer(serializers.ModelSerializer):
 
 class TutorialDetailSerializer(TutorialListSerializer):
     file_url = serializers.SerializerMethodField()
-    tag_ids = serializers.PrimaryKeyRelatedField(
-        source="tags", many=True, queryset=TutorialTag.objects.all(),
-        write_only=True, required=False,
-    )
 
     class Meta(TutorialListSerializer.Meta):
-        fields = TutorialListSerializer.Meta.fields + ["file_url", "tag_ids", "updated_at"]
+        fields = TutorialListSerializer.Meta.fields + ["file_url", "updated_at"]
 
     def get_file_url(self, obj):
         request = self.context.get("request")

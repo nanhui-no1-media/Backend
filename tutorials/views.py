@@ -10,12 +10,11 @@ from reviews.lifecycle import open_review
 from reviews.models import Review
 from reviews.visibility import public_tutorial_q, review_status_of
 
-from .models import Tutorial, TutorialFavorite, TutorialTag, TutorialView
+from .models import Tutorial, TutorialFavorite, TutorialView
 from .permissions import CanModifyTutorial, CanViewTutorial
 from .serializers import (
     TutorialDetailSerializer,
     TutorialListSerializer,
-    TutorialTagSerializer,
     validate_tutorial_upload,
 )
 
@@ -32,13 +31,10 @@ class TutorialViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Tutorial.objects.select_related(
             "uploader", "uploader__profile", "review",
-        ).prefetch_related("tags", "favorites")
+        ).prefetch_related("favorites")
         public = qs.filter(public_tutorial_q())
         if self.action == "list":
-            tag = self.request.query_params.get("tag")
-            if tag:
-                public = public.filter(tags__id=tag)
-            return public.distinct()
+            return public
         user = self.request.user
         if self.action == "mine" and user.is_authenticated:
             return qs.filter(uploader=user)
@@ -54,7 +50,7 @@ class TutorialViewSet(viewsets.ModelViewSet):
         return TutorialDetailSerializer
 
     def get_permissions(self):
-        if self.action in ("list", "retrieve", "tags"):
+        if self.action in ("list", "retrieve"):
             return [CanViewTutorial()]
         if self.action == "create":
             return [IsVerified()]
@@ -72,10 +68,6 @@ class TutorialViewSet(viewsets.ModelViewSet):
         title = (request.data.get("title") or "").strip()
         if not title:
             return Response({"detail": "请填写标题"}, status=status.HTTP_400_BAD_REQUEST)
-        tag_ids = request.data.getlist("tag_ids") if hasattr(request.data, "getlist") else request.data.get("tag_ids") or []
-        if isinstance(tag_ids, str):
-            tag_ids = [x for x in tag_ids.split(",") if x]
-        tags = TutorialTag.objects.filter(pk__in=tag_ids)
         tutorial = Tutorial.objects.create(
             title=title[:200],
             description=(request.data.get("description") or "")[:2000],
@@ -86,7 +78,6 @@ class TutorialViewSet(viewsets.ModelViewSet):
             cover=request.FILES.get("cover") or "",
             uploader=request.user,
         )
-        tutorial.tags.set(tags)
         open_review(tutorial=tutorial, actor=request.user)
         serializer = TutorialDetailSerializer(tutorial, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -104,10 +95,6 @@ class TutorialViewSet(viewsets.ModelViewSet):
                 Tutorial.objects.filter(pk=instance.pk).update(views=F("views") + 1)
                 instance.refresh_from_db()
         return Response(self.get_serializer(instance).data)
-
-    @action(detail=False, methods=["get"])
-    def tags(self, request):
-        return Response(TutorialTagSerializer(TutorialTag.objects.all(), many=True).data)
 
     @action(detail=False, methods=["get"])
     def mine(self, request):
