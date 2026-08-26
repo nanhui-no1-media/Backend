@@ -12,7 +12,7 @@
 - 活动管理：活动、众议、征集、展示、审核
 - 招聘与审批：招聘信息、面试/审核流程
 - 后台管理：Django Admin + 自定义视图 + 前端 SPA
-- 运维能力：`deploy.sh` / `start.sh` 自动部署、systemd + Nginx + Gunicorn，适合内部低门槛生产环境
+- 运维能力：`scripts/install.sh` / `start.sh` 自动部署、systemd + Nginx + Gunicorn，适合内部低门槛生产环境
 
 ## 2. 技术栈
 
@@ -77,12 +77,11 @@ Backend/
 ├── proposals/            # 反馈/意见/提案模块
 ├── recruitment/          # 招聘模块
 ├── reviews/              # 审核与审查逻辑
-├── scripts/              # 运维脚本、更新脚本
+├── scripts/              # 运维脚本（install.sh、更新/回滚）
 ├── static/               # 静态资源
 ├── tasks/                # 任务与标签模块
 ├── tutorials/            # 教程上传与审核模块
 ├── .env.example          # 环境变量模板
-├── deploy.sh             # 生产部署脚本
 ├── start.sh              # 运行/重启脚本
 ├── manage.py             # Django 启动入口
 ├── pyproject.toml        # Python 项目配置
@@ -125,15 +124,15 @@ uv run python manage.py check            # 检查项目配置
 cd frontend && npm run dev               # 启动前端开发服务器
 cd frontend && npm run build             # 构建生产资源
 
-sudo ./deploy.sh                         # 一键部署生产环境
+sudo ./scripts/install.sh                # 一键部署生产环境
 ./start.sh                              # 启动生产服务
 ```
 
 ## 8. 维护建议
 
-- 生产环境请先复制 `.env.example` 为 `.env`，并按实际站点填充 SECRET_KEY、ALLOWED_HOSTS、邮箱参数等。
+- 生产环境用 `scripts/install.sh`：它会生成 SECRET_KEY、写入 FRONTEND_URL、创建超级用户。邮箱 / Turnstile / GitHub token 仍按需补进 `.env`。
 - 如果你需要给别人上手使用，优先为管理员配一份后台操作手册和一份运维手册，避免直接让运维/运营人员碰源码。
-- 日常更新时优先走 `git pull` + `uv sync` + `npm run build` + `migrate` + `systemctl restart club` 这套流程。
+- 日常更新走 GitHub Release + 更新守护进程（或 `scripts/updater.py --apply-now`），不要在生产机 `git pull` 再手工构建。
 - 代码需保持 DRF API 与前端能力一致，改动接口时同步更新文档和前端调用逻辑。
 
 如果你是第一次接手这个项目，建议先读：

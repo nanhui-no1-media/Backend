@@ -12,7 +12,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
-# .env 缺则从模板兜底复制（生产应由 deploy.sh 就位）；不覆盖既有。
+# .env 缺则从模板兜底复制（生产应由 install.sh 就位）；不覆盖既有。
 [ -f .env ] || cp .env.example .env
 # 导出 .env 供 gunicorn/Django 读（手动单跑时需要；systemd 调用时也幂等）。
 set -a; . ./.env; set +a

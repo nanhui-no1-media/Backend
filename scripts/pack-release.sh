@@ -3,8 +3,9 @@
 # sha256 sidecar for the GitHub Release (and later the updater daemon).
 #
 # Includes Django apps, config/, manage.py, pyproject.toml, uv.lock,
-# scripts/, start.sh, and frontend/dist/. Excludes VCS, venv, secrets,
-# local DB, media, and other runtime state.
+# scripts/, start.sh, .env.example, static/maintenance.html (nginx 502 page),
+# and frontend/dist/. Excludes VCS, venv, secrets, local DB, media, and other
+# runtime state.
 #
 # Usage: scripts/pack-release.sh [sha] [outdir]
 #   sha     defaults to $GITHUB_SHA
@@ -31,7 +32,9 @@ INCLUDE=(
   uv.lock
   scripts
   start.sh
+  .env.example
   frontend/dist
+  static/maintenance.html
 )
 
 shopt -s nullglob

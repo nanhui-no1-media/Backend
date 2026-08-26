@@ -61,6 +61,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Download frontend dist
         uses: actions/download-artifact@v4
@@ -75,15 +77,48 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           SHA="${GITHUB_SHA}"
           # GitHub rejects tags that are 40/64 hex (look like commit SHAs).
           TAG="club-${SHA}"
-          ASSETS=("club-${SHA}.tar.gz" "club-${SHA}.tar.gz.sha256")
+          cp scripts/install.sh install.sh
+          ASSETS=("club-${SHA}.tar.gz" "club-${SHA}.tar.gz.sha256" "install.sh")
+
+          PREV_TAG=""
+          while IFS= read -r t; do
+            [ -n "$t" ] || continue
+            if [ "$t" != "$TAG" ]; then
+              PREV_TAG="$t"
+              break
+            fi
+          done < <(gh release list --limit 10 --json tagName --jq '.[].tagName' || true)
+
+          NOTES_FILE="$(mktemp)"
+          {
+            echo "Runtime tree (Django apps + frontend/dist) for \`${SHA}\`."
+            echo
+            if [ -n "$PREV_TAG" ]; then
+              echo "## Changelog"
+              echo
+              LOG="$(git log --no-merges --pretty=format:'- %s (%h)' "${PREV_TAG}..${SHA}" || true)"
+              if [ -n "$LOG" ]; then
+                printf '%s\n' "$LOG"
+              else
+                echo "- No recorded commits since \`${PREV_TAG}\`."
+              fi
+              echo
+              echo "**Full diff:** https://github.com/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${TAG}"
+            else
+              echo "Initial packaged release."
+            fi
+          } > "$NOTES_FILE"
+
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${ASSETS[@]}" --clobber
+            gh release edit "$TAG" --notes-file "$NOTES_FILE"
           else
             gh release create "$TAG" "${ASSETS[@]}" \
               --target "$SHA" \
               --title "$TAG" \
-              --notes "Runtime tree (Django apps + frontend/dist) for ${SHA}."
+              --notes-file "$NOTES_FILE"
           fi

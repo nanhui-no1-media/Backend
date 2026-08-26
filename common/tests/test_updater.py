@@ -27,23 +27,29 @@ from common.updater import (
     SPAWNED_ENV,
     SIGHUP,
     SYNC_EXCLUDES,
+    UpdaterError,
     UpdaterPaths,
     WindowClosed,
     apply_release,
+    archive_for_sha,
     archive_sha,
     before_apply_cutoff,
     can_start_apply,
+    fetch_release,
     in_apply_window,
     is_complete_archive,
     load_policy,
+    normalize_sha,
     parse_release_assets,
     parse_sha256_sidecar,
     pending_archive,
     poll_tick,
+    previous_local_archive,
     prune_keep_newest,
     release_tag,
     retry_delay,
     restore_sqlite,
+    rollback_now,
     sync_tree,
     unpack_archive,
     verify_archive_checksum,
@@ -416,12 +422,132 @@ class UnpackExcludeRollbackTest(SimpleTestCase):
             )
         self.assertEqual((self.root / "app.py").read_text(encoding="utf-8"), "good\n")
 
+    def test_rollback_now_pins_named_release_and_keeps_db(self):
+        self._seed_live()
+        v1 = self._tarball("aaaaaaaaaaaa", {"app.py": b"v1\n"})
+        v2 = self._tarball("bbbbbbbbbbbb", {"app.py": b"v2\n"})
+        unpack_archive(v2, self.paths.staging_dir)
+        sync_tree(self.paths.staging_dir, self.root)
+        self.paths.applied_file.write_text("bbbbbbbbbbbb\n", encoding="utf-8")
+        conn = sqlite3.connect(self.root / "db.sqlite3")
+        conn.execute("UPDATE t SET v='after-v2'")
+        conn.commit()
+        conn.close()
+
+        with (
+            mock.patch("common.updater.load_policy", return_value=_policy()),
+            mock.patch("common.updater.github_token", return_value=""),
+        ):
+            rc = rollback_now(
+                self.paths,
+                target="aaaaaaaaaaaa",
+                run=lambda argv, *, check=True: 0,
+                sleep=lambda _s: None,
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual((self.root / "app.py").read_text(encoding="utf-8"), "v1\n")
+        self.assertEqual(
+            self.paths.applied_file.read_text(encoding="utf-8").strip(), "aaaaaaaaaaaa"
+        )
+        conn = sqlite3.connect(self.root / "db.sqlite3")
+        self.assertEqual(conn.execute("SELECT v FROM t").fetchone()[0], "after-v2")
+        conn.close()
+        self.assertFalse(self.paths.maintenance_flag.exists())
+        self.assertTrue(v1.is_file())
+        self.assertTrue(v2.is_file())
+
+    def test_rollback_without_target_uses_previous_local(self):
+        self._seed_live()
+        older = self._tarball("111111111111", {"app.py": b"older\n"})
+        newer = self._tarball("222222222222", {"app.py": b"newer\n"})
+        os.utime(older, (older.stat().st_mtime - 10, older.stat().st_mtime - 10))
+        unpack_archive(newer, self.paths.staging_dir)
+        sync_tree(self.paths.staging_dir, self.root)
+        self.paths.applied_file.write_text("222222222222\n", encoding="utf-8")
+
+        with (
+            mock.patch("common.updater.load_policy", return_value=_policy()),
+            mock.patch("common.updater.github_token", return_value=""),
+        ):
+            rc = rollback_now(
+                self.paths,
+                target=None,
+                run=lambda argv, *, check=True: 0,
+                sleep=lambda _s: None,
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual((self.root / "app.py").read_text(encoding="utf-8"), "older\n")
+        self.assertEqual(
+            self.paths.applied_file.read_text(encoding="utf-8").strip(), "111111111111"
+        )
+
+    def test_rollback_already_on_target_is_noop(self):
+        self._seed_live()
+        self._tarball("cccccccccccc", {"app.py": b"same\n"})
+        self.paths.applied_file.write_text("cccccccccccc\n", encoding="utf-8")
+        with (
+            mock.patch("common.updater.load_policy", return_value=_policy()),
+            mock.patch("common.updater.github_token", return_value=""),
+        ):
+            rc = rollback_now(
+                self.paths,
+                target="cccccccccccc",
+                run=mock.Mock(side_effect=AssertionError("must not apply")),
+                sleep=lambda _s: None,
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual((self.root / "app.py").read_text(encoding="utf-8"), "old\n")
+
+    def test_archive_for_sha_accepts_prefix(self):
+        archive = self._tarball("deadbeefcafebabe", {"app.py": b"x\n"})
+        self.assertEqual(archive_for_sha(self.paths.releases_dir, "deadbeef"), archive)
+        self.assertEqual(
+            archive_for_sha(self.paths.releases_dir, "club-deadbeefcafebabe"), archive
+        )
+        self.assertIsNone(archive_for_sha(self.paths.releases_dir, "dead"))
+
+    def test_previous_local_skips_applied(self):
+        a = self._tarball("aaaaaaaaaaaa", {"app.py": b"a\n"})
+        b = self._tarball("bbbbbbbbbbbb", {"app.py": b"b\n"})
+        os.utime(a, (a.stat().st_mtime - 5, a.stat().st_mtime - 5))
+        self.paths.applied_file.write_text("bbbbbbbbbbbb\n", encoding="utf-8")
+        self.assertEqual(previous_local_archive(self.paths), a)
+        self.assertIsNotNone(b)
+
 
 class GithubParseAndRetryTest(SimpleTestCase):
     def test_release_tag_is_not_bare_hex(self):
         sha = "0123456789abcdef0123456789abcdef01234567"
         self.assertEqual(release_tag(sha), f"club-{sha}")
         self.assertEqual(release_tag(f"club-{sha}"), f"club-{sha}")
+        self.assertEqual(normalize_sha(f"club-{sha}"), sha)
+
+    def test_fetch_release_falls_back_to_list_for_short_sha(self):
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        payload = {
+            "tag_name": f"club-{sha}",
+            "assets": [
+                {
+                    "name": f"club-{sha}.tar.gz",
+                    "url": "https://api.github.com/repos/x/y/releases/assets/1",
+                },
+                {
+                    "name": f"club-{sha}.tar.gz.sha256",
+                    "url": "https://api.github.com/repos/x/y/releases/assets/2",
+                },
+            ],
+        }
+
+        def get_json(url, token):
+            if "/releases/tags/" in url:
+                raise UpdaterError("GitHub HTTP 404")
+            if "releases?per_page=30" in url:
+                return [payload]
+            raise AssertionError(url)
+
+        remote = fetch_release("x/y", "tok", tag=sha[:12], get_json=get_json)
+        self.assertIsInstance(remote, RemoteRelease)
+        self.assertEqual(remote.sha, sha)
 
     def test_parse_release_assets(self):
         sha = "0123456789abcdef0123456789abcdef01234567"

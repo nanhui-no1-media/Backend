@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Iterator, Sequence
+from typing import Any, Callable, Iterator, Sequence
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -61,7 +61,7 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 RELEASE_TAG_PREFIX = "club-"
 
 # Live-tree names that must never be replaced or deleted by a release unpack.
-# ``.git`` is extra to the plan's list: deploy.sh still clones once.
+# ``.git`` is extra to the plan's list: a clone-based install still has one.
 SYNC_EXCLUDES = frozenset(
     {
         ".env",
@@ -271,12 +271,17 @@ def write_applied_sha(paths: UpdaterPaths, sha: str) -> None:
     paths.applied_file.write_text(sha.strip() + "\n", encoding="utf-8")
 
 
+def normalize_sha(ref: str) -> str:
+    """Strip ``club-`` prefix from a tag, SHA, or archive stem."""
+    text = ref.strip()
+    if text.startswith(RELEASE_TAG_PREFIX):
+        return text[len(RELEASE_TAG_PREFIX) :]
+    return text
+
+
 def release_tag(sha: str) -> str:
     """GitHub Release tag for a commit SHA (must not be bare 40-hex)."""
-    text = sha.strip()
-    if text.startswith(RELEASE_TAG_PREFIX):
-        return text
-    return f"{RELEASE_TAG_PREFIX}{text}"
+    return f"{RELEASE_TAG_PREFIX}{normalize_sha(sha)}"
 
 
 def complete_archives(releases_dir: Path) -> list[Path]:
@@ -290,8 +295,39 @@ def complete_archives(releases_dir: Path) -> list[Path]:
 
 
 def archive_for_sha(releases_dir: Path, sha: str) -> Path | None:
-    candidate = releases_dir / f"club-{sha}.tar.gz"
-    return candidate if is_complete_archive(candidate) else None
+    """Exact ``club-{sha}.tar.gz``, or a unique prefix match (min 7 hex chars)."""
+    want = normalize_sha(sha)
+    if not want:
+        return None
+    candidate = releases_dir / f"club-{want}.tar.gz"
+    if is_complete_archive(candidate):
+        return candidate
+    if len(want) < 7:
+        return None
+    matches = []
+    for path in complete_archives(releases_dir):
+        got = archive_sha(path)
+        if got and got.startswith(want):
+            matches.append(path)
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+def previous_local_archive(paths: UpdaterPaths) -> Path | None:
+    """Newest complete local tarball that is not the currently applied SHA."""
+    applied = read_applied_sha(paths)
+    newest = None
+    newest_mtime = -1.0
+    for path in complete_archives(paths.releases_dir):
+        sha = archive_sha(path)
+        if sha is None or sha == applied:
+            continue
+        mtime = path.stat().st_mtime
+        if mtime > newest_mtime:
+            newest = path
+            newest_mtime = mtime
+    return newest
 
 
 def pending_archive(paths: UpdaterPaths, remote_sha: str | None = None) -> Path | None:
@@ -574,7 +610,7 @@ def _is_retryable(exc: BaseException) -> bool:
     return isinstance(exc, (urllib.error.URLError, TimeoutError, OSError, ConnectionError))
 
 
-def github_json(url: str, token: str, *, timeout: int = 60, sleep: SleepFn = time.sleep) -> dict:
+def github_json(url: str, token: str, *, timeout: int = 60, sleep: SleepFn = time.sleep) -> Any:
     last_error: Exception | None = None
     for attempt in range(MAX_DOWNLOAD_ATTEMPTS):
         req = urllib.request.Request(
@@ -717,22 +753,62 @@ def github_repo() -> str:
     return raw.strip() or DEFAULT_GITHUB_REPO
 
 
+def fetch_releases(
+    repo: str,
+    token: str,
+    *,
+    get_json: Callable[[str, str], Any] | None = None,
+) -> list[RemoteRelease]:
+    """Newest-first GitHub releases that have a ``club-{sha}.tar.gz`` asset."""
+    fetch = get_json or github_json
+    url = f"{GITHUB_API}/repos/{repo}/releases?per_page=30"
+    try:
+        payload = fetch(url, token)
+    except UpdaterError as exc:
+        log.warning("release list failed: %s", exc)
+        return []
+    if not isinstance(payload, list):
+        return []
+    found: list[RemoteRelease] = []
+    for item in payload:
+        if isinstance(item, dict):
+            parsed = parse_release_assets(item)
+            if parsed is not None:
+                found.append(parsed)
+    return found
+
+
 def fetch_release(
     repo: str,
     token: str,
     *,
     tag: str | None = None,
-    get_json: Callable[[str, str], dict] | None = None,
+    get_json: Callable[[str, str], Any] | None = None,
 ) -> RemoteRelease | None:
     fetch = get_json or github_json
     if tag:
-        url = f"{GITHUB_API}/repos/{repo}/releases/tags/{release_tag(tag)}"
-    else:
-        url = f"{GITHUB_API}/repos/{repo}/releases/latest"
+        want = normalize_sha(tag)
+        url = f"{GITHUB_API}/repos/{repo}/releases/tags/{release_tag(want)}"
+        try:
+            payload = fetch(url, token)
+            if isinstance(payload, dict):
+                parsed = parse_release_assets(payload)
+                if parsed is not None:
+                    return parsed
+        except UpdaterError as exc:
+            log.warning("release tag lookup failed: %s", exc)
+        if len(want) >= 7:
+            for remote in fetch_releases(repo, token, get_json=fetch):
+                if remote.sha.startswith(want):
+                    return remote
+        return None
+    url = f"{GITHUB_API}/repos/{repo}/releases/latest"
     try:
         payload = fetch(url, token)
     except UpdaterError as exc:
         log.warning("release lookup failed: %s", exc)
+        return None
+    if not isinstance(payload, dict):
         return None
     return parse_release_assets(payload)
 
@@ -809,7 +885,7 @@ def poll_and_download(
     token: str,
     repo: str,
     *,
-    get_json: Callable[[str, str], dict] | None = None,
+    get_json: Callable[[str, str], Any] | None = None,
     download: Callable[..., None] | None = None,
     sleep: SleepFn = time.sleep,
 ) -> RemoteRelease | None:
@@ -1217,6 +1293,118 @@ def apply_now(
     return 0
 
 
+def _remote_matches(remote: RemoteRelease, want: str) -> bool:
+    return remote.sha == want or remote.sha.startswith(want)
+
+
+def resolve_rollback_archive(
+    paths: UpdaterPaths,
+    target: str | None,
+    token: str,
+    repo: str,
+    *,
+    get_json: Callable[[str, str], Any] | None = None,
+    download: Callable[..., None] | None = None,
+    sleep: SleepFn = time.sleep,
+) -> Path | None:
+    """Locate a previous release tarball: local first, then GitHub."""
+    if target:
+        want = normalize_sha(target)
+        archive = archive_for_sha(paths.releases_dir, want)
+        if archive is not None:
+            return archive
+        if not token:
+            log.error("no local tarball for %s and UPDATE_GITHUB_TOKEN is empty", want)
+            return None
+        remote = fetch_release(repo, token, tag=want, get_json=get_json)
+        if remote is None:
+            log.error("no GitHub release matching %s", want)
+            return None
+        return download_release(remote, paths, token, download=download, sleep=sleep)
+
+    archive = previous_local_archive(paths)
+    if archive is not None:
+        return archive
+    applied = read_applied_sha(paths)
+    if not token:
+        log.error("no previous local tarball and UPDATE_GITHUB_TOKEN is empty")
+        return None
+    found_current = False
+    for remote in fetch_releases(repo, token, get_json=get_json):
+        if applied and _remote_matches(remote, applied):
+            found_current = True
+            continue
+        if found_current:
+            try:
+                return download_release(
+                    remote, paths, token, download=download, sleep=sleep
+                )
+            except UpdaterError:
+                log.exception("could not download previous release %s", remote.sha)
+                continue
+    log.error("nothing to roll back to (no older complete release)")
+    return None
+
+
+def rollback_now(
+    paths: UpdaterPaths | None = None,
+    *,
+    target: str | None = None,
+    service: str | None = None,
+    run: Runner | None = None,
+    sleep: SleepFn = time.sleep,
+    get_json=None,
+    download=None,
+) -> int:
+    """Apply a previous GitHub release (files + migrate). Does not restore a DB snapshot.
+
+    Failed-apply rollback still restores the pre-apply SQLite copy. This path is an
+    intentional pin to an older runtime tree; site data stays as-is.
+    """
+    from django.conf import settings as dj_settings
+
+    paths = paths or UpdaterPaths.from_root(Path(dj_settings.BASE_DIR))
+    paths.ensure_dirs()
+    service = service or os.environ.get("SERVICE_NAME", "club")
+    policy = load_policy()
+    token = github_token()
+    try:
+        archive = resolve_rollback_archive(
+            paths,
+            target,
+            token,
+            github_repo(),
+            get_json=get_json,
+            download=download,
+            sleep=sleep,
+        )
+    except UpdaterError:
+        log.exception("rollback download failed")
+        return 1
+    if archive is None:
+        return 1
+    sha = archive_sha(archive)
+    applied = read_applied_sha(paths)
+    if sha and sha == applied:
+        log.info("already on %s", applied)
+        return 0
+    try:
+        with update_lock(paths.lock_file, blocking=True):
+            apply_release(
+                paths,
+                archive,
+                policy,
+                run=run,
+                sleep=sleep,
+                respect_window=False,
+                service=service,
+            )
+    except Exception:
+        log.exception("--rollback failed")
+        return 1
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     _configure_logging()
     _ensure_uv_on_path()
@@ -1226,6 +1414,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="download latest if needed and apply immediately (ignore window)",
     )
+    parser.add_argument(
+        "--rollback",
+        nargs="?",
+        const="",
+        metavar="SHA",
+        help=(
+            "apply a previous release immediately (ignore window). "
+            "SHA may be a full hash, 7+ hex prefix, or club-… tag; "
+            "omit SHA to use the newest local tarball that is not current, "
+            "else the GitHub release before the applied one"
+        ),
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     from django.conf import settings as dj_settings
@@ -1234,8 +1434,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     paths.ensure_dirs()
     service = os.environ.get("SERVICE_NAME", "club")
 
+    if args.apply_now and args.rollback is not None:
+        log.error("use either --apply-now or --rollback, not both")
+        return 2
     if args.apply_now:
         return apply_now(paths, service=service)
+    if args.rollback is not None:
+        target = args.rollback.strip() or None
+        return rollback_now(paths, target=target, service=service)
 
     log.info("updater loop starting (root=%s)", paths.root)
     while True:

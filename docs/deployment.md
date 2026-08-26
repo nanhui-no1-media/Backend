@@ -10,7 +10,7 @@
 - React 19 前端
 - SQLite 默认数据库
 - Nginx + Gunicorn + systemd 生产部署方式
-- 一套 `deploy.sh` / `start.sh` 自动化脚本
+- 一套 `scripts/install.sh` / `start.sh` 自动化脚本
 
 这套架构适合中小型社团内部站点、活动管理、内容发布、用户/审核场景。它的优点是：
 
@@ -36,30 +36,65 @@ Nginx
 
 - Django 直接提供前端 `frontend/dist/` 产物
 - `start.sh` 负责拉起 Gunicorn，并一起拉起更新守护进程
-- `deploy.sh` 会处理依赖安装、前端构建、迁移、collectstatic、systemd 和 Nginx 配置
+- `scripts/install.sh` 会处理依赖安装、（必要时）前端构建、SECRET_KEY / FRONTEND_URL / 超管、迁移、collectstatic、systemd 和 Nginx 配置
 
 ## 3. 一次性部署
 
-### 3.1 先准备环境
+支持两条路：**已经 clone 了仓库**，或 **机器上还没有源码**（从 GitHub Release 拉包）。脚本自动识别 `apt` / `dnf` / `yum`，Nginx 同时写 Debian 的 `sites-available` 和 RHEL/阿里云 Linux 的 `conf.d/`。
 
-建议在 Ubuntu 24.04 之类的 Linux 服务器上执行：
+### 3.1 独立安装（无需先 clone）
+
+适合新机器、阿里云 Linux（非 Debian）等。Release 里已带 `frontend/dist`，不需要在服务器上装 Node。
 
 ```bash
-sudo ./deploy.sh
+# 公开仓库；管道必须带 -y（否则 read 会吞掉脚本自身）。私有仓库先 export GITHUB_TOKEN=...
+curl -fsSL https://github.com/nanhui-no1-media/Backend/releases/latest/download/install.sh | sudo bash -s -- -y
+```
+
+或下载后再跑（便于看参数）：
+
+```bash
+curl -fsSL https://github.com/nanhui-no1-media/Backend/releases/latest/download/install.sh -o install.sh
+sudo APP_DIR=/opt/club APP_USER=club SERVER_NAME=club.example.com \
+    FRONTEND_URL=http://club.example.com SUPERUSER_PASSWORD='...' bash install.sh -y
+```
+
+指定历史版本：
+
+```bash
+sudo bash install.sh --from-release club-<sha>
+```
+
+默认安装到 `/opt/club`，服务用户 `club`。
+
+### 3.2 仓库内就地部署
+
+在 Ubuntu / Debian / 阿里云 Linux 上，于 clone 目录执行：
+
+```bash
+sudo ./scripts/install.sh
 ```
 
 该脚本会：
 
-- 安装系统依赖
-- 创建/确认服务用户
-- 执行 `uv sync --frozen`
-- 执行前端 `npm ci && npm run build`
-- 生成 `.env`（如果不存在）
+- 按包管理器安装系统依赖（nginx、编译链、sqlite、curl…）
+- 确认服务用户（仓库属主；独立安装则创建 `club`）
+- 执行 `uv sync --frozen`（uv 会自行准备 Python 3.14）
+- 仅当缺少 `frontend/dist` 时才 `npm ci && npm run build`
+- 写入 `.env`：生成 `SECRET_KEY`、按域名/IP 填 `FRONTEND_URL` 与 `ALLOWED_HOSTS`、`DJANGO_DEBUG=0`
+- 创建第一个超级用户（已有则跳过；密码可交互输入，非交互则随机并打印一次）
 - 执行 `migrate` 和 `collectstatic`
-- 写入 systemd 单元和 Nginx 配置
+- 写入 systemd 单元和 Nginx 配置（Debian 或 conf.d）
+- 在 SELinux 开启时给 static/media/run 打标签，并尝试放行 firewalld 的 http
 - 启动站点
 
-### 3.2 手工启动
+跳过系统包：
+
+```bash
+sudo ./scripts/install.sh --skip-deps
+```
+
+### 3.3 手工启动
 
 如果已经部署过，可以直接用：
 
@@ -116,23 +151,31 @@ UPDATE_GITHUB_REPO=nanhui-no1-media/Backend
 
 - `.env` 需要 `chmod 600`
 - 不要将 `.env` 提交到 Git
-- 服务启动前务必确认 `ALLOWED_HOSTS`、`FRONTEND_URL` 和站点域名一致
+- 服务启动前 `install.sh` 已写入 `SECRET_KEY`、`FRONTEND_URL`、`ALLOWED_HOSTS`；邮箱和 Turnstile 仍按需补。
 
 ## 6. 站点升级流程
 
-建议遵循下面流程：
+生产环境请走 GitHub Release + 更新守护进程，不要在服务器上 `git pull` 再手工构建。
+
+手动立刻升到最新 Release（忽略夜间窗口）：
 
 ```bash
-cd /path/to/project
-git pull
-uv sync --frozen
-cd frontend && npm ci && npm run build && cd ..
-uv run python manage.py migrate
-uv run python manage.py collectstatic --noinput
-sudo systemctl restart club
+cd /opt/club   # 或你的安装目录
+set -a; . ./.env; set +a
+.venv/bin/python scripts/updater.py --apply-now
 ```
 
-如果你使用的是自动更新脚本，更新时也可以让 `start.sh`/updater 自行处理，但仍建议在发布前做一次手动检查：
+回滚到任意一个以往的 Release（代码树；**不**还原 SQLite，以免丢上线后的数据）。SHA 可以是完整 hash、7 位以上前缀、或 `club-…` 标签；省略 SHA 则用本地最新的非当前包，否则用 GitHub 上当前版本的前一个 Release：
+
+```bash
+.venv/bin/python scripts/updater.py --rollback
+.venv/bin/python scripts/updater.py --rollback abc1234
+.venv/bin/python scripts/updater.py --rollback club-<fullsha>
+```
+
+自动更新失败时，守护进程仍会把**这一次** apply 前的文件 + 当时的 DB 快照拉回去（这和上面的主动 `--rollback` 不是同一条路径）。
+
+建议发布后检查：
 
 ```bash
 sudo systemctl status club
@@ -159,21 +202,9 @@ cp db.sqlite3 db.sqlite3.bak.$(date +%Y%m%d-%H%M%S)
 
 ### 7.3 代码回滚
 
-如果上线后出现问题，可使用：
+优先用更新器钉到某个已发布的 runtime 包（见第 6 节 `--rollback`）。不要在生产树里 `git checkout`：独立安装的机器上往往没有 git 历史，Release 包也不含 `.git`。
 
-```bash
-git log --oneline -n 20
-```
-
-再切回稳定版本：
-
-```bash
-git checkout <commit-or-tag>
-uv sync --frozen
-cd frontend && npm ci && npm run build && cd ..
-uv run python manage.py migrate
-sudo systemctl restart club
-```
+若必须手工处理，确认 `backups/releases/club-<sha>.tar.gz` 还在，再执行 `--rollback <sha>`。Django 迁移不会自动反向；主动回滚只换代码与静态文件，数据库保持当前内容。
 
 ## 8. 日常排障
 
