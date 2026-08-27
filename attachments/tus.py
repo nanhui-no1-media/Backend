@@ -13,6 +13,7 @@ import json
 import logging
 import os
 
+from django.core.files import File
 from django.dispatch import receiver
 from django.utils import timezone
 from rest_framework import status
@@ -24,11 +25,9 @@ from rest_framework_tus.signals import finished
 from rest_framework_tus.views import UploadViewSet
 
 from common.policy import format_byte_cap, get_policy
-from news.models import News
-from proposals.models import Proposal
-from tasks.models import Task
 
-from .models import Attachment, TusUpload
+from .create import PARENTS, create_attachment
+from .models import TusUpload
 from .permissions import can_upload_to_parent
 from .validation import classify_file_type, feedback_quota_error
 
@@ -56,19 +55,23 @@ def _request_upload_length(request):
 
 
 def _resolve_parent(meta):
-    """从 tus metadata 解析父级对象；返回 (parent, kind) 或 (None, None)。"""
+    """从 tus metadata 解析父级对象；返回 (parent, kind) 或 (None, None)。
+
+    只认注册表 ``endpoint=True`` 的增量父级（task / proposal / news）；作品 / 展品
+    不走 tus（ADR 0012）。
+    """
     ptype = (meta.get("parent_type") or "").strip()
     raw = meta.get("parent_id")
     try:
         pid = int(raw)
     except (TypeError, ValueError):
         return None, None
-    model = {"task": Task, "proposal": Proposal, "news": News}.get(ptype)
-    if model is None:
+    spec = PARENTS.get(ptype)
+    if spec is None or not spec.endpoint:
         return None, None
     try:
-        return model.objects.get(pk=pid), ptype
-    except model.DoesNotExist:
+        return spec.model.objects.get(pk=pid), ptype
+    except spec.model.DoesNotExist:
         return None, None
 
 
@@ -141,32 +144,23 @@ def create_attachment_from_tus(sender, instance, **kwargs):
     （drf-tus 自身无清理任务）。复核失败（父级状态已变 / 用户已删）则不建附件，仅清理文件。
     """
     meta = _model_metadata(instance)
-    parent, kind = _resolve_parent(meta)
+    parent, _kind = _resolve_parent(meta)
     user = instance.user
     if parent is None or user is None or not can_upload_to_parent(user, parent):
         logger.info("tus 完成但权限复核失败，丢弃 %s", instance.guid)
         _cleanup_tus_files(instance)
         return
 
-    file_type = classify_file_type(meta.get("filetype") or "")
     filename = meta.get("filename") or f"{instance.guid}.bin"
 
     if not instance.uploaded_file:
         logger.warning("tus 完成但无落地文件 %s", instance.guid)
         return
 
-    attachment = Attachment(
-        uploaded_by=user,
-        task=parent if kind == "task" else None,
-        proposal=parent if kind == "proposal" else None,
-        news=parent if kind == "news" else None,
-        file_type=file_type,
-        file_name=filename,
-        file_size=instance.upload_length,
-    )
     with instance.uploaded_file.open("rb") as content:
-        attachment.file.save(filename, content, save=False)
-    attachment.save()
+        wrapped = File(content, name=filename)
+        wrapped.content_type = meta.get("filetype") or ""
+        create_attachment(user=user, parent=parent, file=wrapped)
     _cleanup_tus_files(instance)  # 搬运完成：回收落地副本 + 临时分片（会话行由 sweep 惰性回收）
 
 

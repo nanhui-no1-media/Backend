@@ -4,9 +4,7 @@ import AppShell from "../components/AppShell";
 import { api } from "../api/client";
 import { identityReviewsApi } from "../api/identityReviews";
 import { reviewsApi } from "../api/reviews";
-import ActivityDetailPage from "./ActivityDetailPage";
-import NewsDetailPage from "./NewsDetailPage";
-import TutorialDetailPage from "./TutorialDetailPage";
+import ReviewPreview from "./review/ReviewPreview";
 import {
   IDENTITY_LABELS,
   IDENTITY_STATUS_BADGE,
@@ -18,24 +16,16 @@ import {
   type ReviewItem,
   type ReviewStatus,
   type ReviewTargetType,
-  REVIEW_STATUS_LABELS,
-  REVIEW_STATUS_BADGE,
   TARGET_TYPE_LABELS,
 } from "../types/reviews";
 import "../styles/list.css";
 import "../styles/form.css";
 import "../styles/detail.css";
-import "../styles/news.css";
 
 type DeskKind = "identity" | ReviewTargetType;
 
 const ADVANCE_MS = 900;
 const CONTENT_KINDS: ReviewTargetType[] = ["news", "activity", "tutorial"];
-const TARGET_PATH: Record<string, string> = {
-  news: "/news",
-  activity: "/activity",
-  tutorial: "/tutorials",
-};
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -94,8 +84,6 @@ export default function ReviewQueuePage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [rejectOpen, setRejectOpen] = useState(false);
-  const [rejectComment, setRejectComment] = useState("");
   const [lightboxUrl, setLightboxUrl] = useState("");
   const [flash, setFlash] = useState("");
 
@@ -108,8 +96,6 @@ export default function ReviewQueuePage() {
   ) => {
     setLoading(true);
     setError("");
-    setRejectOpen(false);
-    setRejectComment("");
     setLightboxUrl("");
     try {
       if (nextKind === "identity") {
@@ -215,23 +201,6 @@ export default function ReviewQueuePage() {
     try {
       const updated = await fn();
       setIdentityItem(updated);
-      await afterAction(updated.id, notice);
-    } catch (e: any) {
-      setError(e.message || "操作失败");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const runContent = async (fn: () => Promise<ReviewItem>, notice: string) => {
-    if (!contentRow) return;
-    setBusy(true);
-    setError("");
-    try {
-      const updated = await fn();
-      setContentRow(updated);
-      setRejectOpen(false);
-      setRejectComment("");
       await afterAction(updated.id, notice);
     } catch (e: any) {
       setError(e.message || "操作失败");
@@ -368,70 +337,15 @@ export default function ReviewQueuePage() {
                 </div>
               </div>
             ) : contentRow ? (
-              <div className="desk-pane">
-                <div className="desk-toolbar">
-                  <div className="desk-meta">
-                    <span className="badge badge-neutral">
-                      {TARGET_TYPE_LABELS[contentRow.target_type || ""] || contentRow.target_type}
-                    </span>
-                    <span className={"badge " + REVIEW_STATUS_BADGE[contentRow.status]}>
-                      {REVIEW_STATUS_LABELS[contentRow.status]}
-                    </span>
-                    {flash && <span className="badge badge-brand">{flash}</span>}
-                    {contentRow.comment && <span className="desk-comment">评语：{contentRow.comment}</span>}
-                    {contentRow.target_id && TARGET_PATH[contentRow.target_type || ""] && (
-                      <a className="btn btn-ghost btn-sm" href={`#${TARGET_PATH[contentRow.target_type || ""]}/${contentRow.target_id}`}
-                         target="_blank" rel="noreferrer">新标签打开</a>
-                    )}
-                  </div>
-                  <div className="desk-actions">
-                    {contentRow.status === "pending" && (
-                      <>
-                        <button className="btn btn-primary" disabled={busy}
-                                onClick={() => runContent(
-                                  () => reviewsApi.approve(contentRow.id),
-                                  "已通过",
-                                )}>通过</button>
-                        <button className="btn btn-ghost" disabled={busy}
-                                onClick={() => { setRejectOpen(true); setRejectComment(""); }}>驳回</button>
-                      </>
-                    )}
-                    {contentRow.status === "approved" && (
-                      <button className="btn btn-ghost" disabled={busy}
-                              onClick={() => runContent(
-                                () => reviewsApi.remove(contentRow.id),
-                                "已下架",
-                              )}>下架</button>
-                    )}
-                  </div>
-                  {rejectOpen && contentRow.status === "pending" && (
-                    <div style={{ marginTop: 12 }}>
-                      <textarea className="input" rows={3} placeholder="驳回评语（必填）"
-                                value={rejectComment} onChange={(e) => setRejectComment(e.target.value)} />
-                      <div className="form-actions" style={{ marginTop: 8 }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setRejectOpen(false)}>取消</button>
-                        <button className="btn btn-primary btn-sm"
-                                disabled={!rejectComment.trim() || busy}
-                                onClick={() => runContent(
-                                  () => reviewsApi.reject(contentRow.id, rejectComment.trim()),
-                                  "已驳回",
-                                )}>确认驳回</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="desk-target">
-                  {contentRow.target_type === "news" && (
-                    <NewsDetailPage key={contentRow.target_id} embedded newsId={contentRow.target_id} />
-                  )}
-                  {contentRow.target_type === "activity" && (
-                    <ActivityDetailPage key={contentRow.target_id} embedded activityId={contentRow.target_id} />
-                  )}
-                  {contentRow.target_type === "tutorial" && (
-                    <TutorialDetailPage key={contentRow.target_id} embedded tutorialId={contentRow.target_id} />
-                  )}
-                </div>
-              </div>
+              <ReviewPreview
+                key={`${contentRow.target_type}-${contentRow.target_id}`}
+                review={contentRow}
+                flash={flash}
+                onModerated={async (updated, notice) => {
+                  setContentRow(updated);
+                  await afterAction(updated.id, notice);
+                }}
+              />
             ) : null}
           </>
         )}

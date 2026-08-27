@@ -6,7 +6,7 @@
 from django.utils import timezone
 
 from activities.models import Activity
-from reviews.visibility import public_activity_q, public_news_kwargs
+from reviews.visibility import public_q
 from tasks.models import Task
 
 from .models import News
@@ -99,7 +99,7 @@ def build_feed(*, request, limit=6):
     except (TypeError, ValueError):
         limit = 6
 
-    published = News.objects.filter(**public_news_kwargs())
+    published = News.objects.filter(public_q("news"), is_published=True)
     featured_obj = published.filter(featured=True).first()
     if featured_obj is None:
         featured_obj = published.order_by("-views", "-published_at", "-created_at").first()
@@ -110,7 +110,7 @@ def build_feed(*, request, limit=6):
     for n in news_qs:
         candidates.append(((n.published_at or n.created_at), _news_dict(n, request)))
 
-    activities = Activity.objects.filter(public_activity_q()).exclude(status="archived")
+    activities = Activity.objects.filter(public_q("activity")).exclude(status="archived")
     if not is_authed:
         # 访客不可见仅成员调研；众议/征集/展示标题泄漏保持原样
         activities = activities.exclude(type="survey", audience="members")

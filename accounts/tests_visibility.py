@@ -1,5 +1,8 @@
 from django.contrib.auth.models import Group, Permission, User
+from django.db.models import Q
 from django.test import TestCase
+
+from reviews.visibility import public_q
 
 from .visibility import (
     ContentVisibility,
@@ -107,63 +110,62 @@ class ContentVisibilityTest(TestCase):
     def test_news_owner_sees_all(self):
         self.assertEqual(
             content_visibility(self.owner, self.owner, "news"),
-            ContentVisibility(denied=False, extra_filter={}),
+            ContentVisibility(denied=False, extra_q=Q()),
         )
 
     def test_news_other_only_published(self):
+        vis = content_visibility(self.other, self.owner, "news")
         self.assertEqual(
-            content_visibility(self.other, self.owner, "news"),
-            ContentVisibility(denied=False, extra_filter={"is_published": True, "review__status": "approved"}),
+            vis,
+            ContentVisibility(denied=False, extra_q=public_q("news") & Q(is_published=True)),
         )
 
     def test_proposals_owner_sees_all(self):
         self.assertEqual(
             content_visibility(self.owner, self.owner, "proposals"),
-            ContentVisibility(denied=False, extra_filter={}),
+            ContentVisibility(denied=False, extra_q=Q()),
         )
 
     def test_proposals_other_only_approved(self):
         self.assertEqual(
             content_visibility(self.other, self.owner, "proposals"),
-            ContentVisibility(denied=False, extra_filter={"status": "approved"}),
+            ContentVisibility(denied=False, extra_q=Q(status="approved")),
         )
 
     def test_tasks_owner_ok(self):
         self.assertEqual(
             content_visibility(self.owner, self.owner, "tasks"),
-            ContentVisibility(denied=False, extra_filter={}),
+            ContentVisibility(denied=False, extra_q=Q()),
         )
 
     def test_tasks_other_denied(self):
         # 任务仅本人；他人无权（视图据此 403）
         self.assertEqual(
             content_visibility(self.other, self.owner, "tasks"),
-            ContentVisibility(denied=True, extra_filter={}),
+            ContentVisibility(denied=True, extra_q=Q()),
         )
 
     def test_activities_owner_sees_all(self):
         self.assertEqual(
             content_visibility(self.owner, self.owner, "activities"),
-            ContentVisibility(denied=False, extra_filter={}),
+            ContentVisibility(denied=False, extra_q=Q()),
         )
 
-    def test_activities_other_only_approved(self):
-        self.assertEqual(
-            content_visibility(self.other, self.owner, "activities"),
-            ContentVisibility(denied=False, extra_filter={"publication_review__status": "approved"}),
-        )
+    def test_activities_other_extra_q_matches_public_q(self):
+        vis = content_visibility(self.other, self.owner, "activities")
+        self.assertFalse(vis.denied)
+        self.assertEqual(vis.extra_q, public_q("activity"))
 
     def test_tutorials_owner_sees_all(self):
         self.assertEqual(
             content_visibility(self.owner, self.owner, "tutorials"),
-            ContentVisibility(denied=False, extra_filter={}),
+            ContentVisibility(denied=False, extra_q=Q()),
         )
 
-    def test_tutorials_other_only_approved(self):
-        self.assertEqual(
-            content_visibility(self.other, self.owner, "tutorials"),
-            ContentVisibility(denied=False, extra_filter={"review__status": "approved"}),
-        )
+    def test_tutorials_other_extra_q_matches_public_q(self):
+        vis = content_visibility(self.other, self.owner, "tutorials")
+        self.assertFalse(vis.denied)
+        self.assertEqual(vis.extra_q, public_q("tutorial"))
 
     def test_unknown_type_raises(self):
         with self.assertRaises(ValueError):

@@ -4,7 +4,7 @@ import uuid
 
 from django.contrib.auth.models import User
 from django.core.files.storage import default_storage
-from django.db.models import F
+from django.db.models import F, Q
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import DjangoModelPermissionsOrAnonReadOnly, IsAuthenticated
@@ -12,7 +12,7 @@ from rest_framework.response import Response
 
 from accounts.utils import get_client_ip
 from reviews.lifecycle import open_review
-from reviews.visibility import public_news_kwargs
+from reviews.visibility import public_q, visible_queryset
 from tasks.models import Tag
 
 from .models import News, NewsView
@@ -44,21 +44,22 @@ class NewsViewSet(viewsets.ModelViewSet):
         qs = News.objects.select_related(
             "author", "author__profile", "review",
         ).prefetch_related("tags")
+        user = self.request.user
         if self.action == "mine":
-            user = self.request.user
             if not user.is_authenticated:
                 return qs.none()
             return qs.filter(author=user)
-        # 公开读只返回已发布且过审；写操作可见全部。retrieve 对作者/审核员开放预览。
+        # 审核轴走 visible_queryset；is_published 是新闻生命周期，在公开支相交。
         if self.action in PUBLIC_ACTIONS:
-            public = qs.filter(**public_news_kwargs())
+            vis_action = "retrieve" if self.action == "retrieve" else "list"
+            visible = visible_queryset(qs, user, "news", action=vis_action)
             if self.action == "retrieve":
-                user = self.request.user
-                if user.is_authenticated:
-                    if user.has_perm("reviews.moderate"):
-                        return qs
-                    return (public | qs.filter(author=user)).distinct()
-            return public
+                if not user.is_authenticated:
+                    return visible.filter(is_published=True)
+                if user.has_perm("reviews.moderate"):
+                    return visible
+                return visible.filter(Q(is_published=True) | Q(author=user))
+            return visible.filter(is_published=True)
         return qs
 
     def get_serializer_class(self): # type: ignore
@@ -140,9 +141,7 @@ class NewsViewSet(viewsets.ModelViewSet):
     def tags(self, request):
         """标签云：仅返回被新闻引用过的标签，附新闻数。"""
         qs = Tag.objects.filter(
-            news__isnull=False,
-            news__is_published=True,
-            news__review__status="approved",
+            news__in=News.objects.filter(public_q("news"), is_published=True),
         ).distinct()
         return Response(NewsTagSerializer(qs, many=True, context={"request": request}).data)
 
@@ -151,7 +150,7 @@ class NewsViewSet(viewsets.ModelViewSet):
         """社团概览：成员=活跃用户数，作品=已发布新闻数。匿名可读。"""
         return Response({
             "members": User.objects.filter(is_active=True).count(),
-            "works": News.objects.filter(**public_news_kwargs()).count(),
+            "works": News.objects.filter(public_q("news"), is_published=True).count(),
         })
 
     @action(detail=False, methods=["get"])

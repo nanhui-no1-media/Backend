@@ -1239,6 +1239,7 @@ class SurveyActivityTest(TestCase):
         self.assertEqual(resp.data["schema"], default_survey_schema())
         self.assertEqual(resp.data["response_count"], 0)
         self.assertIsNone(resp.data["my_response"])
+        self.assertTrue(resp.data["schema_editable"])
         self.assertIsNotNone(resp.data["end_at"])  # 默认 +7d
 
     def test_create_survey_with_public_audience(self):
@@ -1355,6 +1356,36 @@ class SurveyActivityTest(TestCase):
         r = _json(self.client, "patch", f"/activities/activities/{aid}/", self.author, {"title": "改"})
         self.assertEqual(r.status_code, 403)
 
+    def test_invalid_schema_rejected(self):
+        aid = self._create(self.author).data["id"]
+        r = _json(self.client, "patch", f"/activities/activities/{aid}/", self.author,
+                  {"schema": {"title": "无 pages"}})
+        self.assertEqual(r.status_code, 400)
+
+    def test_detail_schema_editable_tracks_lifecycle(self):
+        aid = self._create(self.author).data["id"]
+        open_ok = _json(self.client, "get", f"/activities/activities/{aid}/", self.author)
+        self.assertTrue(open_ok.data["schema_editable"])
+        listing = _json(self.client, "get", "/activities/activities/", self.m1)
+        items = listing.data["results"] if isinstance(listing.data, dict) and "results" in listing.data else listing.data
+        self.assertNotIn("schema_editable", items[0])
+        self.assertEqual(self._respond(self.m1, aid).status_code, 201)
+        locked = _json(self.client, "get", f"/activities/activities/{aid}/", self.author)
+        self.assertFalse(locked.data["schema_editable"])
+
+    def test_scheduled_survey_schema_editable(self):
+        start = (timezone.now() + timedelta(days=1)).isoformat()
+        resp = self._create(self.author, start_at=start)
+        self.assertEqual(resp.data["status"], "scheduled")
+        self.assertTrue(resp.data["schema_editable"])
+
+    def test_non_survey_detail_schema_editable_false(self):
+        d = _json(self.client, "post", "/activities/activities/", self.author, {
+            "type": "deliberation", "title": "众议", "body": "<p>x</p>", "option_texts": ["A", "B"],
+        })
+        r = _json(self.client, "get", f"/activities/activities/{d.data['id']}/", self.author)
+        self.assertFalse(r.data["schema_editable"])
+
     # ---- 惰性关闭 ----
 
     def test_end_at_auto_closes_survey_and_blocks_respond(self):
@@ -1363,5 +1394,6 @@ class SurveyActivityTest(TestCase):
         _json(self.client, "get", f"/activities/activities/{aid}/", self.author)  # 触发惰性结算
         resp = _json(self.client, "get", f"/activities/activities/{aid}/", self.author)
         self.assertEqual(resp.data["status"], "closed")
+        self.assertFalse(resp.data["schema_editable"])
         self.assertEqual(self._respond(self.m1, aid).status_code, 400)
         self.assertEqual(self._guest_respond(aid).status_code, 400)

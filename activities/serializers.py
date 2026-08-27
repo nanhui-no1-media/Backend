@@ -3,15 +3,16 @@ from datetime import timedelta
 from django.utils import timezone
 from rest_framework import serializers
 
-from accounts.models import is_verified
 from attachments.serializers import AttachmentSerializer
 from common.rich_text import sanitize_html
-from reviews.visibility import review_comment_for, review_status_of
+from common.survey_schema import InvalidSurveySchema, validate_schema_dict
+from reviews.visibility import comment_for, status_of
 from tasks.serializers import SimpleUserSerializer  # 复用（与申报/新闻一致）
 
-from .debt import activity_debt_reason
-from .lifecycle import initial_status
+from .debt import owed_for
+from .lifecycle import can_edit_schema, initial_status
 from .models import Activity, Ballot, Exhibit, VoteOption, Submission
+from .voting import ballots_visible_to, options_locked, voting_active
 
 
 class VoteOptionSerializer(serializers.ModelSerializer):
@@ -124,24 +125,12 @@ class ActivityListSerializer(serializers.ModelSerializer):
         ]
 
     def get_review_status(self, obj):
-        return review_status_of(obj, related="publication_review")
+        return status_of(obj)
 
     def get_owed(self, obj):
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        if not user or not user.is_authenticated:
-            return None
-        if not (user.is_superuser or is_verified(user)):
-            return None
-        has_ballot = getattr(obj, "_has_ballot", None)
-        if has_ballot is None:
-            has_ballot = any(b.voter_id == user.pk for b in obj.ballots.all())
-        has_submission = getattr(obj, "_has_submission", None)
-        if has_submission is None:
-            has_submission = any(s.submitter_id == user.pk for s in obj.submissions.all())
-        return activity_debt_reason(
-            obj, has_ballot=bool(has_ballot), has_submission=bool(has_submission),
-        )
+        return owed_for(obj, user)
 
 
 def _is_reviewer(activity, user):
@@ -156,17 +145,11 @@ def _is_reviewer(activity, user):
     )
 
 
-def _voting_active(activity):
-    """该活动是否走投票读侧：众议始终；展示仅 voting_enabled 时。纯陈列展示无投票数据。"""
-    if activity.type == "deliberation":
-        return True
-    return activity.type == "exhibition" and activity.voting_enabled
-
-
 class ActivityDetailSerializer(serializers.ModelSerializer):
     creator = SimpleUserSerializer(read_only=True)
     review_status = serializers.SerializerMethodField()
     review_comment = serializers.SerializerMethodField()
+    owed = serializers.SerializerMethodField()
     # 众议读侧（展示的"选项"即展品，走 exhibits，options 返回 None）
     options = serializers.SerializerMethodField()
     ballots = serializers.SerializerMethodField()
@@ -177,9 +160,10 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     submissions = serializers.SerializerMethodField()
     # 展示读侧
     exhibits = serializers.SerializerMethodField()
-    # 调研读侧：问卷 + 我的作答 + 作答总数（不作答列表）
+    # 调研读侧：问卷 + 我的作答 + 作答总数（不作答列表）+ Schema 可否改（生命周期，非权限）
     my_response = serializers.SerializerMethodField()
     response_count = serializers.SerializerMethodField()
+    schema_editable = serializers.SerializerMethodField()
     # 众议写侧：创建时给选项文本（开放即锁定，无后续编辑）
     option_texts = serializers.ListField(
         child=serializers.CharField(max_length=200), write_only=True, required=False,
@@ -189,12 +173,12 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         model = Activity
         fields = [
             "id", "type", "status", "title", "body", "creator",
-            "review_status", "review_comment",
+            "review_status", "review_comment", "owed",
             "start_at", "end_at",
             "max_choices_per_voter", "is_secret_ballot",
             "allowed_extensions", "max_file_size", "max_files_per_submission", "max_submissions",
             "review_enabled", "voting_enabled",
-            "audience", "schema", "my_response", "response_count",
+            "audience", "schema", "my_response", "response_count", "schema_editable",
             "options", "ballots", "my_selections", "total_ballots",
             "my_submission", "submissions",
             "exhibits",
@@ -202,31 +186,33 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = [
-            "creator", "status", "review_status", "review_comment",
-            "my_response", "response_count",
+            "creator", "status", "review_status", "review_comment", "owed",
+            "my_response", "response_count", "schema_editable",
             "created_at", "updated_at",
         ]
 
     def get_review_status(self, obj):
-        return review_status_of(obj, related="publication_review")
+        return status_of(obj)
 
     def get_review_comment(self, obj):
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        return review_comment_for(
-            obj, user, related="publication_review", owner_id=obj.creator_id,
-        )
+        return comment_for(obj, user)
+
+    def get_owed(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return owed_for(obj, user)
 
     def validate_body(self, value):
         # 与新闻同级：写时消毒，存消毒后 HTML，读时原样返回。
         return sanitize_html(value or "")
 
     def validate_schema(self, value):
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("问卷 Schema 须为 JSON 对象")
-        if "pages" not in value:
-            raise serializers.ValidationError("Schema 须包含 pages")
-        return value
+        try:
+            return validate_schema_dict(value)
+        except InvalidSurveySchema as e:
+            raise serializers.ValidationError(str(e))
 
     def validate(self, attrs):
         # 受众创建后不可改（与展示 voting_enabled 同思路）
@@ -293,6 +279,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         if texts is not None and instance.type == "deliberation":
+            if options_locked(instance):
+                raise serializers.ValidationError({"option_texts": "投票开放后选项已锁定"})
             instance.options.all().delete()
             for i, text in enumerate(texts):
                 VoteOption.objects.create(activity=instance, text=text, order=i)
@@ -309,18 +297,16 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     def get_ballots(self, obj):
         # 秘密投票：个人明细仅 is_superuser 可见；其余（含发起人）只见聚合计数。
         # 众议与展示（启用投票时）共用；纯陈列展示（voting_enabled=False）无投票数据。
-        if not _voting_active(obj):
+        if not voting_active(obj):
             return None
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        if obj.is_secret_ballot and not (
-            user and user.is_authenticated and user.is_superuser
-        ):
+        if not ballots_visible_to(obj, user):
             return None
         return BallotSerializer(obj.ballots.all(), many=True, context=self.context).data
 
     def get_my_selections(self, obj):
-        if not _voting_active(obj):
+        if not voting_active(obj):
             return None
         request = self.context.get("request")
         user = getattr(request, "user", None)
@@ -332,7 +318,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         return list(ballot.selections.values_list("option_id", flat=True))
 
     def get_total_ballots(self, obj):
-        if not _voting_active(obj):
+        if not voting_active(obj):
             return None
         return obj.ballots.count()
 
@@ -384,3 +370,6 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
         if obj.type != "survey":
             return None
         return obj.survey_responses.count()
+
+    def get_schema_editable(self, obj):
+        return can_edit_schema(obj)

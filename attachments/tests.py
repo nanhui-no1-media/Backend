@@ -470,9 +470,7 @@ class TusUploadTest(_AttachmentTestCase):
 
     def setUp(self):
         super().setUp()
-        from django.contrib.auth.models import Permission
         self.creator = User.objects.create_user(username="creator", password="x")
-        self.creator.user_permissions.add(Permission.objects.get(codename="change_news"))
         self.outsider = User.objects.create_user(username="outsider", password="x")
         self.president = make_president(User.objects.create_user(username="pres", password="x"))
         self.feedback = Proposal.objects.create(
@@ -658,10 +656,8 @@ class AttachmentNewsParentTest(_AttachmentTestCase):
 class UploadNewsPermissionTest(_AttachmentTestCase):
     def setUp(self):
         super().setUp()
-        from django.contrib.auth.models import Permission
         from news.models import News
         self.author = User.objects.create_user(username="author", password="x")
-        self.author.user_permissions.add(Permission.objects.get(codename="change_news"))
         self.outsider = User.objects.create_user(username="outsider", password="x")
         self.news = News.objects.create(title="n", author=self.author, is_published=True)
         self.client = APIClient()
@@ -684,10 +680,8 @@ class UploadNewsPermissionTest(_AttachmentTestCase):
 class NewsDetailAttachmentsTest(_AttachmentTestCase):
     def setUp(self):
         super().setUp()
-        from django.contrib.auth.models import Permission
         from news.models import News
         self.author = User.objects.create_user(username="author", password="x")
-        self.author.user_permissions.add(Permission.objects.get(codename="change_news"))
         self.news = News.objects.create(title="n", author=self.author, is_published=True)
         self.client = APIClient()
         self.client.force_authenticate(self.author)
@@ -706,4 +700,126 @@ class NewsDetailAttachmentsTest(_AttachmentTestCase):
         self.assertEqual(atts[0]["file_type"], "video")
         self.assertIn("file_url", atts[0])
         self.assertNotIn("uploaded_by", atts[0])
+
+
+# ── 新闻作者即创建者（不依赖 change_news；旧测试靠授权掩盖 author_id）──
+class NewsAuthorIsCreatorTest(_AttachmentTestCase):
+    def setUp(self):
+        super().setUp()
+        from news.models import News
+        self.author = User.objects.create_user(username="author", password="x")
+        self.outsider = User.objects.create_user(username="outsider", password="x")
+        self.news = News.objects.create(title="n", author=self.author, is_published=True)
+        self.client = APIClient()
+
+    def test_author_can_upload_without_change_news(self):
+        self.client.force_authenticate(self.author)  # pyright: ignore[reportAttributeAccessIssue]
+        resp = self.client.post(
+            "/attachments/",
+            {"file": upload("v.mp4", b"x", "video/mp4"), "news_id": self.news.pk},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 201)
+
+    def test_author_can_delete_without_change_news(self):
+        from attachments.create import create_attachment
+        att = create_attachment(user=self.outsider, parent=self.news, file=upload("v.mp4", b"x", "video/mp4"))
+        self.client.force_authenticate(self.author)  # pyright: ignore[reportAttributeAccessIssue]
+        self.assertEqual(self.client.delete(f"/attachments/{att.pk}/").status_code, 204)
+
+    def test_outsider_cannot_delete_news_attachment(self):
+        from attachments.create import create_attachment
+        att = create_attachment(user=self.author, parent=self.news, file=upload("v.mp4", b"x", "video/mp4"))
+        self.client.force_authenticate(self.outsider)  # pyright: ignore[reportAttributeAccessIssue]
+        self.assertEqual(self.client.delete(f"/attachments/{att.pk}/").status_code, 403)
+
+
+# ── 展品父级：策展人可删（destroy 须含 exhibit；策展 = 活动发起人 / change_activity）──
+class ExhibitCuratorDeleteTest(_AttachmentTestCase):
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth.models import Permission
+
+        from activities.models import Activity, Exhibit
+        from attachments.create import create_attachment
+
+        self.curator = User.objects.create_user(username="curator", password="x")
+        self.uploader = User.objects.create_user(username="uploader", password="x")
+        self.outsider = User.objects.create_user(username="outsider", password="x")
+        self.manager = User.objects.create_user(username="manager", password="x")
+        self.manager.user_permissions.add(Permission.objects.get(codename="change_activity"))
+        self.activity = Activity.objects.create(
+            type="exhibition", status="scheduled", title="影展", creator=self.curator,
+        )
+        self.exhibit = Exhibit.objects.create(activity=self.activity, title="作品A")
+        att = create_attachment(user=self.uploader, parent=self.exhibit, file=upload())
+        self.attachment_id = att.pk
+        self.client = APIClient()
+
+    def _delete(self, user):
+        self.client.force_authenticate(user)  # pyright: ignore[reportAttributeAccessIssue]
+        return self.client.delete(f"/attachments/{self.attachment_id}/")
+
+    def test_curator_can_delete_exhibit_attachment(self):
+        self.assertEqual(self._delete(self.curator).status_code, 204)
+
+    def test_change_activity_holder_can_delete_exhibit_attachment(self):
+        self.assertEqual(self._delete(self.manager).status_code, 204)
+
+    def test_outsider_cannot_delete_exhibit_attachment(self):
+        self.assertEqual(self._delete(self.outsider).status_code, 403)
+
+    def test_http_rejects_exhibit_id(self):
+        self.client.force_authenticate(self.curator)  # pyright: ignore[reportAttributeAccessIssue]
+        resp = self.client.post(
+            "/attachments/",
+            {"file": upload(), "exhibit_id": self.exhibit.pk},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+
+# ── 作品父级：create 接缝 + 非 HTTP 父级 + 活动发起人可删──
+class SubmissionParentTest(_AttachmentTestCase):
+    def setUp(self):
+        super().setUp()
+        from activities.models import Activity, Submission
+        from attachments.create import create_attachment, parent_of
+
+        self.creator = User.objects.create_user(username="creator", password="x")
+        self.submitter = User.objects.create_user(username="submitter", password="x")
+        self.outsider = User.objects.create_user(username="outsider", password="x")
+        self.activity = Activity.objects.create(
+            type="collection", status="collecting", title="征 logo", creator=self.creator,
+        )
+        self.submission = Submission.objects.create(
+            activity=self.activity, submitter=self.submitter,
+        )
+        self.att = create_attachment(
+            user=self.submitter, parent=self.submission, file=upload(),
+        )
+        self.parent_of = parent_of
+        self.client = APIClient()
+
+    def test_create_attachment_binds_submission(self):
+        self.assertEqual(self.att.submission_id, self.submission.pk)
+        self.assertEqual(self.parent_of(self.att).pk, self.submission.pk)
+
+    def test_http_rejects_submission_id(self):
+        self.client.force_authenticate(self.submitter)  # pyright: ignore[reportAttributeAccessIssue]
+        resp = self.client.post(
+            "/attachments/",
+            {"file": upload(), "submission_id": self.submission.pk},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_activity_creator_can_delete_submission_attachment(self):
+        self.client.force_authenticate(self.creator)  # pyright: ignore[reportAttributeAccessIssue]
+        self.assertEqual(self.client.delete(f"/attachments/{self.att.pk}/").status_code, 204)
+
+    def test_outsider_cannot_delete_submission_attachment(self):
+        self.client.force_authenticate(self.outsider)  # pyright: ignore[reportAttributeAccessIssue]
+        self.assertEqual(self.client.delete(f"/attachments/{self.att.pk}/").status_code, 403)
+
 

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from common.rich_text import sanitize_html
+from common.survey_schema import InvalidSurveySchema, validate_schema_dict
 
 from .models import JoinQuestionnaire, JoinResponse, RecruitmentNotice
 
@@ -22,11 +23,10 @@ class JoinQuestionnaireSerializer(serializers.ModelSerializer):
         read_only_fields = ["updated_at"]
 
     def validate_schema(self, value):
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("问卷 Schema 须为 JSON 对象")
-        if "pages" not in value:
-            raise serializers.ValidationError("Schema 须包含 pages")
-        return value
+        try:
+            return validate_schema_dict(value)
+        except InvalidSurveySchema as e:
+            raise serializers.ValidationError(str(e))
 
 
 class JoinResponseSerializer(serializers.ModelSerializer):

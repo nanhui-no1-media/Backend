@@ -66,6 +66,12 @@ class SchemaPersistTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(RecruitmentNotice.objects.get_solo().content, "<p>2026 招生</p>")
 
+    def test_invalid_schema_rejected(self):
+        client = APIClient()
+        client.force_authenticate(_editor())
+        resp = client.put("/recruitment/schema/", {"schema": {"title": "无 pages"}}, format="json")
+        self.assertEqual(resp.status_code, 400)
+
     def test_stranger_cannot_edit_schema(self):
         client = APIClient()
         client.force_authenticate(User.objects.create_user(username="u", password="x"))

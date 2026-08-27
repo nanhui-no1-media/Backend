@@ -3,14 +3,11 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from news.models import News
-from proposals.models import Proposal
-from tasks.models import Task
-
+from .create import PARENTS, create_attachment, parent_of
 from .models import Attachment
 from .permissions import can_manage_parent_attachments, can_upload_to_parent
 from .serializers import AttachmentSerializer
-from .validation import classify_file_type, feedback_quota_error, upload_error
+from .validation import feedback_quota_error, upload_error
 
 
 class AttachmentViewSet(
@@ -20,7 +17,11 @@ class AttachmentViewSet(
 ):
     """统一附件：仅提供创建（上传）与删除；列表随父级详情返回。"""
 
-    queryset = Attachment.objects.select_related("uploaded_by", "task", "proposal", "news")
+    queryset = Attachment.objects.select_related(
+        "uploaded_by", "task", "proposal", "news",
+        "submission", "submission__activity",
+        "exhibit", "exhibit__activity",
+    )
     serializer_class = AttachmentSerializer
     permission_classes = [IsAuthenticated]
 
@@ -35,26 +36,24 @@ class AttachmentViewSet(
         err = upload_error(file)
         if err:
             return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
-        file_type = classify_file_type(file.content_type)
 
-        task_id = request.data.get("task_id")
-        proposal_id = request.data.get("proposal_id")
-        news_id = request.data.get("news_id")
-        candidates = [
-            ("task", task_id, Task),
-            ("proposal", proposal_id, Proposal),
-            ("news", news_id, News),
-        ]
-        specified = [(kind, pid, model) for (kind, pid, model) in candidates if pid not in (None, "")]
+        specified = []
+        for spec in PARENTS.values():
+            if not spec.endpoint:
+                continue
+            pid = request.data.get(f"{spec.key}_id")
+            if pid not in (None, ""):
+                specified.append((spec, pid))
+        endpoint_ids = " / ".join(f"{s.key}_id" for s in PARENTS.values() if s.endpoint)
         if len(specified) != 1:
             return Response(
-                {"detail": "必须且只能指定一个父级（task_id / proposal_id / news_id）"},
+                {"detail": f"必须且只能指定一个父级（{endpoint_ids}）"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        kind, pid, parent_model = specified[0]
+        spec, pid = specified[0]
         try:
-            parent = parent_model.objects.get(pk=pid)
-        except (parent_model.DoesNotExist, ValueError, TypeError):
+            parent = spec.model.objects.get(pk=pid)
+        except (spec.model.DoesNotExist, ValueError, TypeError):
             return Response(
                 {"detail": "指定的父级不存在"}, status=status.HTTP_404_NOT_FOUND,
             )
@@ -69,16 +68,7 @@ class AttachmentViewSet(
         if quota_err:
             return Response({"detail": quota_err}, status=status.HTTP_400_BAD_REQUEST)
 
-        attachment = Attachment.objects.create(
-            uploaded_by=request.user,
-            task=parent if isinstance(parent, Task) else None,
-            proposal=parent if isinstance(parent, Proposal) else None,
-            news=parent if isinstance(parent, News) else None,
-            file=file,
-            file_type=file_type,
-            file_name=file.name,
-            file_size=file.size,
-        )
+        attachment = create_attachment(user=request.user, parent=parent, file=file)
         return Response(
             AttachmentSerializer(attachment, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
@@ -87,7 +77,7 @@ class AttachmentViewSet(
     # ── 删除：DELETE /attachments/{id}/ ──
     def destroy(self, request, *args, **kwargs):
         attachment = self.get_object()
-        parent = attachment.task or attachment.proposal or attachment.news or attachment.submission
+        parent = parent_of(attachment)
         # 统一规则；此外附件上传者始终可删自己上传的（用户故事 #12）。
         allowed = (
             can_manage_parent_attachments(request.user, parent)

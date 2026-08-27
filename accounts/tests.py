@@ -793,9 +793,11 @@ class UserContentViewTest(TestCase):
         from activities.models import Activity
         from tutorials.models import Tutorial
         from django.core.files.uploadedfile import SimpleUploadedFile
+        from reviews.models import Review
         pending_act = Activity.objects.create(
             type="deliberation", status="open", title="pending-act", creator=self.owner,
         )
+        Review.objects.create(activity=pending_act, status=Review.STATUS_PENDING)
         approved_act = Activity.objects.create(
             type="deliberation", status="open", title="approved-act", creator=self.owner,
         )

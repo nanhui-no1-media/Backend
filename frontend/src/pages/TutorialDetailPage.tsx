@@ -7,18 +7,10 @@ import { useEmbedMode } from "../embed";
 import AuthorReviewBanner from "../components/AuthorReviewBanner";
 import "../styles/detail.css";
 
-export default function TutorialDetailPage({
-  embedded,
-  tutorialId,
-}: {
-  embedded?: boolean;
-  tutorialId?: number;
-} = {}) {
-  const params = useParams<{ id: string }>();
-  const id = tutorialId != null ? String(tutorialId) : params.id;
+export default function TutorialDetailPage() {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const urlEmbed = useEmbedMode();
-  const embed = Boolean(embedded || urlEmbed);
+  const embed = useEmbedMode();
   const [item, setItem] = useState<TutorialItem | null>(null);
   const [error, setError] = useState("");
   const [authed, setAuthed] = useState(false);
@@ -47,14 +39,14 @@ export default function TutorialDetailPage({
   };
 
   if (error && !item) {
-    return <PageChrome embedded={embed}><div className="container detail-container"><div className="alert alert-danger">{error}</div></div></PageChrome>;
+    return <PageChrome><div className="container detail-container"><div className="alert alert-danger">{error}</div></div></PageChrome>;
   }
   if (!item) {
-    return <PageChrome embedded={embed}><div className="container detail-container"><p className="empty-text">加载中…</p></div></PageChrome>;
+    return <PageChrome><div className="container detail-container"><p className="empty-text">加载中…</p></div></PageChrome>;
   }
 
   return (
-    <PageChrome embedded={embed}>
+    <PageChrome>
       <div className="page-head">
         <div className="container detail-container">
           {!embed && (

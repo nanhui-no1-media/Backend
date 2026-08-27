@@ -811,22 +811,22 @@ def user_content_view(request, id):
     if visibility.denied:
         return JsonResponse({"error": "无权查看他人任务"}, status=403)
 
-    from reviews.visibility import review_status_of
+    from reviews.visibility import status_of
     if type_ == "news":
         from news.models import News
-        qs = News.objects.filter(author=viewed, **visibility.extra_filter).select_related("review").order_by("-created_at", "-id")
+        qs = News.objects.filter(author=viewed).filter(visibility.extra_q).select_related("review").order_by("-created_at", "-id")
     elif type_ == "proposals":
         from proposals.models import Proposal
-        qs = Proposal.objects.filter(creator=viewed, **visibility.extra_filter).order_by("-created_at", "-id")
+        qs = Proposal.objects.filter(creator=viewed).filter(visibility.extra_q).order_by("-created_at", "-id")
     elif type_ == "activities":
         from activities.models import Activity
-        qs = Activity.objects.filter(creator=viewed, **visibility.extra_filter).select_related("publication_review").order_by("-created_at", "-id")
+        qs = Activity.objects.filter(creator=viewed).filter(visibility.extra_q).select_related("publication_review").order_by("-created_at", "-id")
     elif type_ == "tutorials":
         from tutorials.models import Tutorial
-        qs = Tutorial.objects.filter(uploader=viewed, **visibility.extra_filter).select_related("review").order_by("-created_at", "-id")
+        qs = Tutorial.objects.filter(uploader=viewed).filter(visibility.extra_q).select_related("review").order_by("-created_at", "-id")
     else:  # tasks（visibility.denied 已保证仅本人到此）
         from tasks.models import Task
-        qs = Task.objects.filter(assignee=viewed, **visibility.extra_filter).order_by("-created_at", "-id")
+        qs = Task.objects.filter(assignee=viewed).filter(visibility.extra_q).order_by("-created_at", "-id")
 
     paginator = PageNumberPagination()
     paginator.page_size = CONTENT_LIMIT
@@ -841,7 +841,7 @@ def user_content_view(request, id):
             "title": n.title,
             "cover_image": n.cover_image.url if n.cover_image else None,
             "is_published": n.is_published,
-            "review_status": review_status_of(n),
+            "review_status": status_of(n),
             "published_at": (n.published_at or n.created_at).isoformat(),
         } for n in page]
     elif type_ == "proposals":
@@ -858,14 +858,14 @@ def user_content_view(request, id):
             "title": a.title,
             "type": a.type,
             "status": a.status,
-            "review_status": review_status_of(a, related="publication_review"),
+            "review_status": status_of(a),
             "created_at": a.created_at.isoformat(),
         } for a in page]
     elif type_ == "tutorials":
         results = [{
             "id": t.id,
             "title": t.title,
-            "review_status": review_status_of(t),
+            "review_status": status_of(t),
             "created_at": t.created_at.isoformat(),
         } for t in page]
     else:

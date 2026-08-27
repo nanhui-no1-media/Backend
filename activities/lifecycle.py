@@ -136,14 +136,20 @@ def can_edit_exhibit(activity, user):
 
 
 def can_close(activity, user):
-    """提前关闭守卫：发起人，或持 activities.change_activity 权限者。
+    """提前关闭守卫：发起人或持 activities.change_activity，且状态允许关。
 
-    「此刻能否关」的状态机条件（众议须 open、征集须 collecting）由视图的 close 动作
-    在调用前校验；此处只判归属与角色。
+    众议/展示/调研须 open；征集须 collecting。归属与角色仍由 CanModifyActivity 把关；
+    此处把视图曾内联的状态条件收口，供 close 动作调用。
     """
-    return user.is_authenticated and (
-        activity.creator_id == user.pk or user.has_perm("activities.change_activity")
-    )
+    if not user.is_authenticated:
+        return False
+    if not (activity.creator_id == user.pk or user.has_perm("activities.change_activity")):
+        return False
+    if activity.type in ("deliberation", "exhibition", "survey"):
+        return activity.status == OPEN
+    if activity.type == "collection":
+        return activity.status == COLLECTING
+    return False
 
 
 def transition_overdue():
@@ -210,27 +216,5 @@ def maybe_close_collection_on_cap(activity):
     return False
 
 
-def maybe_close_deliberation_on_full_vote(activity):
-    """全员投完即提前结算：众议 open 状态下，若已投票数 ≥ 已验证成员数，翻 closed。
-
-    分母 = 已验证成员数（``accounts.verified_member_count``，纯计算不含超管）。
-    在 vote 动作里调用（只有投票会改变票数）。逐行条件更新保证并发安全。
-    """
-    if activity.type != "deliberation" or activity.status != OPEN:
-        return False
-    from accounts.models import verified_member_count
-
-    total = verified_member_count()
-    if total <= 0:
-        return False
-    # 绕开预取缓存：用 Ballot 模型直接计票。
-    if Ballot.objects.filter(activity_id=activity.pk).count() >= total:
-        changed = Activity.objects.filter(
-            pk=activity.pk, status=OPEN,
-        ).update(status=CLOSED, updated_at=timezone.now())
-        return bool(changed)
-    return False
-
-
 # 延迟导入打破 activities 内部循环（lifecycle ↔ models 同 app，无环；保留供未来跨引用）。
-from .models import Activity, Ballot, Submission, SurveyResponse  # noqa: E402
+from .models import Activity, Submission, SurveyResponse  # noqa: E402

@@ -17,18 +17,10 @@ const fmtDate = (d: string | null) => {
   return `${dt.getFullYear()}.${p(dt.getMonth() + 1)}.${p(dt.getDate())}`;
 };
 
-export default function NewsDetailPage({
-  embedded,
-  newsId,
-}: {
-  embedded?: boolean;
-  newsId?: number;
-} = {}) {
-  const params = useParams<{ id: string }>();
-  const id = newsId != null ? String(newsId) : params.id;
+export default function NewsDetailPage() {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const urlEmbed = useEmbedMode();
-  const embed = Boolean(embedded || urlEmbed);
+  const embed = useEmbedMode();
   const [news, setNews] = useState<NewsDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -49,15 +41,15 @@ export default function NewsDetailPage({
     window.setTimeout(() => setCopied(false), 1500);
   };
 
-  if (loading) return <PageChrome embedded={embed}><div className="container"><p className="news-empty">加载中…</p></div></PageChrome>;
-  if (error && !news) return <PageChrome embedded={embed}><div className="container"><p className="news-empty">{error}</p></div></PageChrome>;
-  if (!news) return <PageChrome embedded={embed}><div className="container"><p className="news-empty">新闻不存在或已下线。</p></div></PageChrome>;
+  if (loading) return <PageChrome><div className="container"><p className="news-empty">加载中…</p></div></PageChrome>;
+  if (error && !news) return <PageChrome><div className="container"><p className="news-empty">{error}</p></div></PageChrome>;
+  if (!news) return <PageChrome><div className="container"><p className="news-empty">新闻不存在或已下线。</p></div></PageChrome>;
 
   const related = news.related || [];
   const prepared = htmlWithHeadingIds(news.content || "");
 
   return (
-    <PageChrome embedded={embed}>
+    <PageChrome>
       <div className="container">
         <div className="detail-layout">
           <article className="article">

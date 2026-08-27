@@ -9,7 +9,7 @@ from accounts.permissions import IsVerified
 from accounts.utils import get_client_ip
 from reviews.lifecycle import open_review
 from reviews.models import Review
-from reviews.visibility import public_tutorial_q, review_status_of
+from reviews.visibility import status_of, visible_queryset
 
 from .models import Tutorial, TutorialFavorite, TutorialView
 from .permissions import CanModifyTutorial, CanViewTutorial
@@ -33,17 +33,12 @@ class TutorialViewSet(viewsets.ModelViewSet):
         qs = Tutorial.objects.select_related(
             "uploader", "uploader__profile", "review",
         ).prefetch_related("favorites")
-        public = qs.filter(public_tutorial_q())
-        if self.action == "list":
-            return public
         user = self.request.user
+        if self.action == "list":
+            return visible_queryset(qs, user, "tutorial", action="list")
         if self.action == "mine" and user.is_authenticated:
             return qs.filter(uploader=user)
-        if user.is_authenticated:
-            if user.has_perm("reviews.moderate"):
-                return qs
-            return (public | qs.filter(uploader=user)).distinct()
-        return public
+        return visible_queryset(qs, user, "tutorial", action="retrieve")
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -85,7 +80,7 @@ class TutorialViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
-        if review_status_of(instance) == Review.STATUS_APPROVED:
+        if status_of(instance) == Review.STATUS_APPROVED:
             if request.user.is_authenticated:
                 reader_key = f"user:{request.user.pk}"
             else:

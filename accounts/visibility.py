@@ -12,7 +12,9 @@
 
 from dataclasses import dataclass
 
-from django.contrib.auth.models import User
+from django.db.models import Q
+
+from reviews.visibility import public_q
 
 
 # 「信息组即管理员」在此单点定义：信息组（持 news.add_news）可窥他人能力清单 / 所属组。
@@ -67,14 +69,16 @@ def profile_view_for(viewer, viewed):
 
 @dataclass(frozen=True)
 class ContentVisibility:
-    """内容可见性裁定：是否无权（403）+ 额外查询过滤。
+    """内容可见性裁定：是否无权（403）+ 额外查询 ``Q``。
 
     ``denied`` 为 True 时视图直接返回 403（任务对他人）；否则视图把
-    ``extra_filter`` 展开到该类内容的查询集上（本人为空字典 = 不过滤）。
+    ``extra_q`` 套到该类内容的查询集上（本人为空 ``Q()`` = 不过滤）。
+    可审核种类的他人过滤与 :func:`reviews.visibility.public_q` 对齐（活动含夹具例外）；
+    新闻另相交 ``is_published``（生命周期轴，非审核轴）。
     """
 
     denied: bool
-    extra_filter: dict
+    extra_q: Q
 
 
 def content_visibility(viewer, viewed, content_type):
@@ -82,8 +86,8 @@ def content_visibility(viewer, viewed, content_type):
 
     - news：他人仅已发布且过审；本人全部。
     - proposals：他人仅已通过；本人全部。
-    - activities：他人仅审核通过；本人全部。
-    - tutorials：他人仅审核通过；本人全部。
+    - activities：他人仅公开审核轴（含无审核行夹具例外）；本人全部。
+    - tutorials：他人仅已过审；本人全部。
     - tasks：仅本人；他人无权（denied）。
 
     未知 ``content_type`` 抛 :class:`ValueError`（视图层先做 type 校验返回 400，
@@ -91,19 +95,17 @@ def content_visibility(viewer, viewed, content_type):
     """
     owner = _is_owner(viewer, viewed)
     if content_type == "news":
-        return ContentVisibility(denied=False, extra_filter={} if owner else {"is_published": True, "review__status": "approved"})
+        extra = Q() if owner else public_q("news") & Q(is_published=True)
+        return ContentVisibility(denied=False, extra_q=extra)
     if content_type == "proposals":
-        return ContentVisibility(denied=False, extra_filter={} if owner else {"status": "approved"})
+        extra = Q() if owner else Q(status="approved")
+        return ContentVisibility(denied=False, extra_q=extra)
     if content_type == "activities":
-        return ContentVisibility(
-            denied=False,
-            extra_filter={} if owner else {"publication_review__status": "approved"},
-        )
+        extra = Q() if owner else public_q("activity")
+        return ContentVisibility(denied=False, extra_q=extra)
     if content_type == "tutorials":
-        return ContentVisibility(
-            denied=False,
-            extra_filter={} if owner else {"review__status": "approved"},
-        )
+        extra = Q() if owner else public_q("tutorial")
+        return ContentVisibility(denied=False, extra_q=extra)
     if content_type == "tasks":
-        return ContentVisibility(denied=not owner, extra_filter={})
+        return ContentVisibility(denied=not owner, extra_q=Q())
     raise ValueError(f"未知内容类型: {content_type!r}")

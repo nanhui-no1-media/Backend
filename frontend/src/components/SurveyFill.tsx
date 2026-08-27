@@ -4,7 +4,7 @@ import "survey-core/survey-core.css";
 import { createSurveyModel } from "../utils/survey";
 import "../styles/survey.css";
 
-/** SurveyJS fill widget shared by 调研 detail (join uses createSurveyModel directly). */
+/** SurveyJS fill widget shared by 调研 detail and 自我介绍问卷. */
 export default function SurveyFill({
   schema,
   onComplete,

@@ -126,6 +126,12 @@ a.prop-card { color: inherit; }
   width: 100%; max-width: none; padding-left: 0; padding-right: 0;
 }
 .desk-target .page-head { padding-top: 0; margin-bottom: var(--s-4); }
+.desk-preview-media { display: grid; gap: var(--s-3); margin-top: var(--s-5); }
+.desk-preview-media img, .desk-preview-media video {
+  width: 100%; max-height: 420px; object-fit: contain; display: block;
+  background: #000; border-radius: var(--r-md);
+}
+.desk-preview-list { margin: var(--s-4) 0 0; padding-left: 1.25em; }
 .desk-lightbox {
   position: fixed; inset: 0; z-index: 210;
   background: oklch(0.27 0.03 255 / .82);

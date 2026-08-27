@@ -5,7 +5,6 @@
 """
 import os
 import uuid
-from datetime import timedelta
 
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
@@ -17,36 +16,33 @@ from rest_framework.response import Response
 
 from accounts.permissions import IsVerified
 
-from attachments.models import Attachment
-from attachments.validation import classify_file_type, upload_error
+from attachments.create import create_attachment
+from attachments.validation import upload_error
 from reviews.lifecycle import open_review
 from reviews.models import Review
-from reviews.visibility import public_activity_q, review_record_of
+from reviews.visibility import status_of, visible_queryset
 
+from . import exhibition, voting
 from .debt import annotate_activity_debt
 from .lifecycle import (
     CLOSED,
     COLLECTING,
     OPEN,
     REVIEWING,
-    SCHEDULED,
-    can_curate,
+    can_close,
     can_edit,
-    can_edit_exhibit,
     can_edit_schema,
     can_rate,
     can_respond,
     can_submit,
-    can_vote,
     collection_close_target,
     maybe_close_collection_on_cap,
-    maybe_close_deliberation_on_full_vote,
     transition_due_starts,
     transition_overdue,
 )
 from .models import (
-    Activity, Ballot, BallotSelection, Exhibit, ExhibitRating,
-    Submission, SurveyResponse, VoteOption,
+    Activity, Exhibit, ExhibitRating,
+    Submission, SurveyResponse,
 )
 from .permissions import (
     CanCreateActivity,
@@ -96,20 +92,19 @@ class ActivityViewSet(viewsets.ModelViewSet):
             "exhibits__vote_option", "exhibits__vote_option__selections",
             "exhibits__ratings",
         )
-        public = qs.filter(public_activity_q())
         user = self.request.user
         if not user.is_authenticated:
             # 访客：仅过审且公开的调研（其他类型标题泄漏只走首页 feed）
-            return public.filter(type="survey", audience="public")
-        if self.action == "list":
-            return annotate_activity_debt(public, user)
-        if self.action == "mine" and user.is_authenticated:
-            return qs.filter(creator=user)
-        if user.is_authenticated:
-            if user.has_perm("reviews.moderate"):
-                return qs
-            return (public | qs.filter(creator=user)).distinct()
-        return public
+            return visible_queryset(qs, user, "activity", action="list").filter(
+                type="survey", audience="public",
+            )
+        if self.action == "mine":
+            qs = qs.filter(creator=user)
+        elif self.action == "list":
+            qs = visible_queryset(qs, user, "activity", action="list")
+        else:
+            qs = visible_queryset(qs, user, "activity", action="retrieve")
+        return annotate_activity_debt(qs, user)
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -160,28 +155,16 @@ class ActivityViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         return Response(serializer.data)
 
+    def _serialized(self, activity, request, status_code=status.HTTP_200_OK):
+        activity = self.get_queryset().get(pk=activity.pk)
+        return Response(
+            ActivityDetailSerializer(activity, context={"request": request}).data,
+            status=status_code,
+        )
+
     def create(self, request, *args, **kwargs):
         # 展示:展品在详情页布展(待开始期),创建只收标量——0 展品可建,走 JSON 通用路径。
         return super().create(request, *args, **kwargs)
-
-    def _build_exhibit(self, activity, title, files, voting_enabled):
-        """建一个展品 + 一束附件;启用投票时另建一个 VoteOption 并绑定。
-
-        供 add_exhibit / import_from_collection 复用。
-        files 已经过 upload_error 校验(调用方负责)。
-        """
-        option = None
-        if voting_enabled:
-            order = activity.options.count()
-            option = VoteOption.objects.create(activity=activity, text=title or "", order=order)
-        exhibit = Exhibit.objects.create(activity=activity, title=title, vote_option=option)
-        for f in files:
-            Attachment.objects.create(
-                uploaded_by=self.request.user, exhibit=exhibit, file=f,
-                file_type=classify_file_type(f.content_type),
-                file_name=f.name, file_size=f.size,
-            )
-        return exhibit
 
     def perform_update(self, serializer):
         # 标题/正文/时间：仅待开始（scheduled）可改。
@@ -207,53 +190,20 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def vote(self, request, pk=None):
         activity = self.get_object()  # 触发惰性结算（若已到点则已 closed）
-        # 守卫（类型∈{众议,展示}、展示须 voting_enabled、状态=open、已认证）统一走
-        # lifecycle.can_vote，与 rate/submit 同模式——单一事实源。
-        if not can_vote(activity, request.user):
-            # can_vote 已排除未认证（IsVerified 另把关）与非众议/展示类型；此处仅可能是
-            # 展示未启用投票（纯陈列）或状态非 open。
-            if activity.type == "exhibition" and not activity.voting_enabled:
-                return Response({"detail": "该展示未启用投票"}, status=status.HTTP_400_BAD_REQUEST)
-            if activity.status != OPEN:
-                return Response({"detail": "投票已结束"}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"detail": "仅众议/展示可以投票"}, status=status.HTTP_400_BAD_REQUEST)
-        if Ballot.objects.filter(activity=activity, voter=request.user).exists():
-            return Response({"detail": "你已经投过票了，不能修改"}, status=status.HTTP_400_BAD_REQUEST)
-
-        option_ids = request.data.get("option_ids") or []
-        if not isinstance(option_ids, list) or len(option_ids) < 1:
-            return Response({"detail": "请至少选择一个选项"}, status=status.HTTP_400_BAD_REQUEST)
-        if len(set(option_ids)) != len(option_ids):
-            return Response({"detail": "不能重复选择同一选项"}, status=status.HTTP_400_BAD_REQUEST)
-        if len(option_ids) > activity.max_choices_per_voter:
-            return Response(
-                {"detail": f"最多选择 {activity.max_choices_per_voter} 项"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        valid_ids = set(activity.options.values_list("id", flat=True))
         try:
-            ids = [int(x) for x in option_ids]
-        except (TypeError, ValueError):
-            return Response({"detail": "无效的选项"}, status=status.HTTP_400_BAD_REQUEST)
-        if not set(ids).issubset(valid_ids):
-            return Response({"detail": "存在不属于本活动的选项"}, status=status.HTTP_400_BAD_REQUEST)
-
-        with transaction.atomic():
-            ballot = Ballot.objects.create(activity=activity, voter=request.user)
-            BallotSelection.objects.bulk_create(
-                [BallotSelection(ballot=ballot, option_id=oid) for oid in ids]
+            voting.cast_ballot(
+                activity=activity, user=request.user,
+                option_ids=request.data.get("option_ids") or [],
             )
-            maybe_close_deliberation_on_full_vote(activity)  # 全员投完即提前结算
-
-        activity = self.get_queryset().get(pk=activity.pk)  # 刷新聚合计数
-        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+        except voting.BallotError as exc:
+            return Response({"detail": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+        return self._serialized(activity, request)
 
     # ── 调研作答（公开受众任何人；仅成员须登录；已登录一人一次）──
     @action(detail=True, methods=["post"])
     def respond(self, request, pk=None):
         activity = self.get_object()
-        review = review_record_of(activity, related="publication_review")
-        if review is not None and review.status != Review.STATUS_APPROVED:
+        if status_of(activity) not in (None, Review.STATUS_APPROVED):
             return Response({"detail": "调研尚未公开"}, status=status.HTTP_400_BAD_REQUEST)
         if not can_respond(activity, request.user):
             if activity.type != "survey":
@@ -284,10 +234,12 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def submit(self, request, pk=None):
         activity = self.get_object()
-        if activity.type != "collection":
-            return Response({"detail": "仅征集可以投稿"}, status=status.HTTP_400_BAD_REQUEST)
-        if activity.status != COLLECTING:
-            return Response({"detail": "征集已结束收件"}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_submit(activity, request.user):
+            if activity.type != "collection":
+                return Response({"detail": "仅征集可以投稿"}, status=status.HTTP_400_BAD_REQUEST)
+            if activity.status != COLLECTING:
+                return Response({"detail": "征集已结束收件"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "当前不可投稿"}, status=status.HTTP_400_BAD_REQUEST)
         if Submission.objects.filter(activity=activity, submitter=request.user).exists():
             return Response({"detail": "你已经提交过作品了（一人一作品）"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -301,41 +253,34 @@ class ActivityViewSet(viewsets.ModelViewSet):
             )
 
         allowed = _parse_extensions(activity.allowed_extensions)
+
+        def extra_validate(f):
+            if activity.max_file_size and f.size > activity.max_file_size:
+                return f"文件「{f.name}」超过征集规定的单文件大小上限"
+            if allowed:
+                ext = os.path.splitext(f.name)[1].lower()
+                if ext not in allowed:
+                    return f"文件「{f.name}」的后缀不在允许范围"
+            return None
+
         for f in files:
             err = upload_error(f)  # 全局禁用扩展名 + 同步上传上限
             if err:
                 return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
-            if activity.max_file_size and f.size > activity.max_file_size:
-                return Response(
-                    {"detail": f"文件「{f.name}」超过征集规定的单文件大小上限"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if allowed:
-                ext = os.path.splitext(f.name)[1].lower()
-                if ext not in allowed:
-                    return Response(
-                        {"detail": f"文件「{f.name}」的后缀不在允许范围"},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+            err = extra_validate(f)
+            if err:
+                return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             submission = Submission.objects.create(activity=activity, submitter=request.user)
             for f in files:
-                Attachment.objects.create(
-                    uploaded_by=request.user,
-                    submission=submission,
-                    file=f,
-                    file_type=classify_file_type(f.content_type),
-                    file_name=f.name,
-                    file_size=f.size,
+                create_attachment(
+                    user=request.user, parent=submission, file=f,
+                    extra_validate=extra_validate,
                 )
             maybe_close_collection_on_cap(activity)  # 满额自动 collecting→reviewing
 
-        activity = self.get_queryset().get(pk=activity.pk)
-        return Response(
-            ActivityDetailSerializer(activity, context={"request": request}).data,
-            status=status.HTTP_201_CREATED,
-        )
+        return self._serialized(activity, request, status.HTTP_201_CREATED)
 
     # ── 征集复审（录用/退稿；collecting 与 reviewing 阶段均可滚动复审）──
     @action(detail=True, methods=["post"], url_path="review_submission")
@@ -372,119 +317,73 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def close(self, request, pk=None):
         activity = self.get_object()
+        if activity.type not in ("deliberation", "exhibition", "survey", "collection"):
+            return Response({"detail": "不支持"}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_close(activity, request.user):
+            return Response({"detail": "当前不可关闭"}, status=status.HTTP_400_BAD_REQUEST)
         now = timezone.now()
-        if activity.type in ("deliberation", "exhibition", "survey"):
-            if activity.status != OPEN:
-                return Response({"detail": "当前不可关闭"}, status=status.HTTP_400_BAD_REQUEST)
-            Activity.objects.filter(pk=activity.pk, status=OPEN).update(
-                status=CLOSED, updated_at=now,
-            )
-        elif activity.type == "collection":
-            if activity.status != COLLECTING:
-                return Response({"detail": "当前不可关闭"}, status=status.HTTP_400_BAD_REQUEST)
+        if activity.type == "collection":
             Activity.objects.filter(pk=activity.pk, status=COLLECTING).update(
                 status=collection_close_target(activity), updated_at=now,
             )
         else:
-            return Response({"detail": "不支持"}, status=status.HTTP_400_BAD_REQUEST)
-        activity = self.get_queryset().get(pk=activity.pk)
-        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+            Activity.objects.filter(pk=activity.pk, status=OPEN).update(
+                status=CLOSED, updated_at=now,
+            )
+        return self._serialized(activity, request)
 
     # ── 展示:详情页布展(待开始/展示中加/删/导入;改标题限待开始)──
     @action(detail=True, methods=["post"], url_path="add_exhibit")
     def add_exhibit(self, request, pk=None):
         activity = self.get_object()
-        if not can_curate(activity, request.user):
-            return Response({"detail": "仅展示可在待开始/展示中加展品"}, status=status.HTTP_400_BAD_REQUEST)
-        files = request.FILES.getlist("files")
-        if not files:
-            return Response({"detail": "展品至少需要 1 个文件"}, status=status.HTTP_400_BAD_REQUEST)
-        for f in files:
-            err = upload_error(f)
-            if err:
-                return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
-        title = (request.data.get("title") or "").strip()
-        with transaction.atomic():
-            self._build_exhibit(activity, title, files, activity.voting_enabled)
-        activity = self.get_queryset().get(pk=activity.pk)
-        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+        try:
+            exhibition.create_exhibit(
+                activity=activity, user=request.user,
+                title=(request.data.get("title") or "").strip(),
+                files=request.FILES.getlist("files"),
+            )
+        except exhibition.ExhibitionError as exc:
+            return Response({"detail": exc.detail}, status=exc.http_status)
+        return self._serialized(activity, request)
 
     @action(detail=True, methods=["post"], url_path="delete_exhibit")
     def delete_exhibit(self, request, pk=None):
         activity = self.get_object()
-        if not can_curate(activity, request.user):
-            return Response({"detail": "仅展示可在待开始/展示中删展品"}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            exhibit = activity.exhibits.get(pk=request.data.get("exhibit_id"))
-        except (Exhibit.DoesNotExist, ValueError, TypeError):
-            return Response({"detail": "展品不存在"}, status=status.HTTP_404_NOT_FOUND)
-        with transaction.atomic():
-            if exhibit.vote_option_id:
-                VoteOption.objects.filter(pk=exhibit.vote_option_id).delete()
-            exhibit.delete()  # 连带删附件(CASCADE)+ 回收文件(post_delete 信号)
-        activity = self.get_queryset().get(pk=activity.pk)
-        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+            exhibition.delete_exhibit(
+                activity=activity, user=request.user,
+                exhibit_id=request.data.get("exhibit_id"),
+            )
+        except exhibition.ExhibitionError as exc:
+            return Response({"detail": exc.detail}, status=exc.http_status)
+        return self._serialized(activity, request)
 
     @action(detail=True, methods=["post"], url_path="update_exhibit")
     def update_exhibit(self, request, pk=None):
         activity = self.get_object()
-        if not can_edit_exhibit(activity, request.user):
-            return Response({"detail": "仅展示可在待开始期改展品"}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            exhibit = activity.exhibits.get(pk=request.data.get("exhibit_id"))
-        except (Exhibit.DoesNotExist, ValueError, TypeError):
-            return Response({"detail": "展品不存在"}, status=status.HTTP_404_NOT_FOUND)
-        files = request.FILES.getlist("files")
-        for f in files:
-            err = upload_error(f)
-            if err:
-                return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
-        title = request.data.get("title")
-        with transaction.atomic():
-            if title is not None:
-                exhibit.title = title.strip()
-                if exhibit.vote_option_id:
-                    VoteOption.objects.filter(pk=exhibit.vote_option_id).update(text=exhibit.title)
-            if files:
-                exhibit.attachments.all().delete()  # 旧文件回收(CASCADE + post_delete 信号)
-                for f in files:
-                    Attachment.objects.create(
-                        uploaded_by=request.user, exhibit=exhibit, file=f,
-                        file_type=classify_file_type(f.content_type),
-                        file_name=f.name, file_size=f.size,
-                    )
-            if title is not None:
-                exhibit.save(update_fields=["title"])
-        activity = self.get_queryset().get(pk=activity.pk)
-        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+            exhibition.update_exhibit(
+                activity=activity, user=request.user,
+                exhibit_id=request.data.get("exhibit_id"),
+                title=request.data.get("title"),
+                files=request.FILES.getlist("files"),
+            )
+        except exhibition.ExhibitionError as exc:
+            return Response({"detail": exc.detail}, status=exc.http_status)
+        return self._serialized(activity, request)
 
     @action(detail=True, methods=["post"], url_path="import_from_collection")
     def import_from_collection(self, request, pk=None):
-        from django.core.files.base import ContentFile
-
         activity = self.get_object()
-        if not can_curate(activity, request.user):
-            return Response({"detail": "仅展示可在待开始/展示中导入展品"}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            source = Activity.objects.get(pk=request.data.get("collection_id"), type="collection")
-        except (Activity.DoesNotExist, ValueError, TypeError):
-            return Response({"detail": "征集不存在"}, status=status.HTTP_404_NOT_FOUND)
-        submission_ids = request.data.get("submission_ids") or []
-        subs = source.submissions.filter(pk__in=submission_ids)
-        if not subs:
-            return Response({"detail": "未选择任何作品"}, status=status.HTTP_400_BAD_REQUEST)
-        with transaction.atomic():
-            for sub in subs:
-                exhibit = self._build_exhibit(activity, "", [], activity.voting_enabled)
-                for a in sub.attachments.all():
-                    new_att = Attachment(
-                        uploaded_by=request.user, exhibit=exhibit,
-                        file_type=a.file_type, file_name=a.file_name, file_size=a.file_size,
-                    )
-                    new_att.file.save(a.file.name, ContentFile(a.file.read()))
-                    # file.save(save=True) 已持久化 Attachment 行,无需再 save()
-        activity = self.get_queryset().get(pk=activity.pk)
-        return Response(ActivityDetailSerializer(activity, context={"request": request}).data)
+            exhibition.import_submissions(
+                activity=activity, user=request.user,
+                collection_id=request.data.get("collection_id"),
+                submission_ids=request.data.get("submission_ids") or [],
+            )
+        except exhibition.ExhibitionError as exc:
+            return Response({"detail": exc.detail}, status=exc.http_status)
+        return self._serialized(activity, request)
 
     # ── 展示：点赞 / 点踩（三态切换：none/like/dislike）──
     @action(detail=True, methods=["post"], url_path="rate")

@@ -2,7 +2,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from common.rich_text import sanitize_html
-from reviews.visibility import public_news_kwargs, review_comment_for, review_status_of
+from reviews.visibility import comment_for, public_q, status_of
 from tasks.models import Tag
 from tasks.serializers import SimpleUserSerializer
 
@@ -55,7 +55,7 @@ class NewsListSerializer(serializers.ModelSerializer):
         ]
 
     def get_review_status(self, obj):
-        return review_status_of(obj)
+        return status_of(obj)
 
     def get_cover_image_url(self, obj):
         return _absolute_cover_url(obj, self.context.get("request"))
@@ -100,17 +100,17 @@ class NewsDetailSerializer(serializers.ModelSerializer):
         return _absolute_cover_url(obj, self.context.get("request"))
 
     def get_review_status(self, obj):
-        return review_status_of(obj)
+        return status_of(obj)
 
     def get_review_comment(self, obj):
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        return review_comment_for(obj, user, owner_id=obj.author_id)
+        return comment_for(obj, user)
 
     def get_related(self, obj):
         """已发布且过审、按发布时间最新 3 条（排除自身）。"""
         qs = (
-            News.objects.filter(**public_news_kwargs())
+            News.objects.filter(public_q("news"), is_published=True)
             .exclude(pk=obj.pk)
             .select_related("author", "author__profile")
             .prefetch_related("tags")

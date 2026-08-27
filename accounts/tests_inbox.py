@@ -443,3 +443,47 @@ class ActivityListOwedTest(TestCase):
         self.assertIsNotNone(row)
         self.assertEqual(row["type"], "exhibition")
         self.assertIsNone(row["owed"])
+
+    def _detail(self, user, activity_id):
+        self.client.force_authenticate(user)
+        resp = self.client.get(f"{ACTIVITIES}{activity_id}/")
+        self.assertEqual(resp.status_code, 200)
+        return resp.json()
+
+    def test_detail_owed_matches_list_vote(self):
+        a = self._create_open_delib()
+        list_row = self._list_row(self.member, a.pk)
+        detail = self._detail(self.member, a.pk)
+        self.assertEqual(list_row["owed"], "vote")
+        self.assertEqual(detail["owed"], list_row["owed"])
+
+    def test_detail_owed_matches_list_after_vote(self):
+        a = self._create_open_delib()
+        self.client.force_authenticate(self.member)
+        opt = a.options.order_by("order").first()
+        self.assertEqual(
+            self.client.post(
+                f"{ACTIVITIES}{a.pk}/vote/", {"option_ids": [opt.pk]}, format="json",
+            ).status_code,
+            200,
+        )
+        list_row = self._list_row(self.member, a.pk)
+        detail = self._detail(self.member, a.pk)
+        self.assertIsNone(list_row["owed"])
+        self.assertEqual(detail["owed"], list_row["owed"])
+
+    def test_detail_owed_matches_list_submit(self):
+        a = approve_activity(Activity.objects.create(
+            type="collection", status="collecting", title="详情征集", creator=self.author,
+        ))
+        list_row = self._list_row(self.member, a.pk)
+        detail = self._detail(self.member, a.pk)
+        self.assertEqual(list_row["owed"], "submit")
+        self.assertEqual(detail["owed"], list_row["owed"])
+
+    def test_detail_visitor_owed_null_matches_list(self):
+        a = self._create_open_delib()
+        list_row = self._list_row(self.visitor, a.pk)
+        detail = self._detail(self.visitor, a.pk)
+        self.assertIsNone(list_row["owed"])
+        self.assertEqual(detail["owed"], list_row["owed"])
