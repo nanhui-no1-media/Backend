@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import Avatar from "./Avatar";
+import "./UserSearchSelect.css";
 
 // 用户搜索选择器的最小用户形状（来自 /auth/users/ 与任务详情的 assignee/collaborators）
 export interface SelectUser {
@@ -20,11 +21,13 @@ export default function UserSearchSelect({
   onChange,
   single = false,
   placeholder = "搜索用户…",
+  excludeIds = [],
 }: {
   selected: SelectUser[];
   onChange: (users: SelectUser[]) => void;
   single?: boolean;
   placeholder?: string;
+  excludeIds?: number[];
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SelectUser[]>([]);
@@ -32,16 +35,19 @@ export default function UserSearchSelect({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // 防抖搜索：输入 300ms 后查询；已选用户从候选中剔除
+  const skipKey = [...excludeIds, ...selected.map((s) => s.id)].join(",");
+
+  // 防抖搜索：输入 300ms 后查询；已选用户与 excludeIds 从候选中剔除
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    const skip = new Set(skipKey ? skipKey.split(",").map(Number) : []);
     const t = setTimeout(() => {
       api
         .searchUsers(query.trim())
         .then((d) => {
           if (cancelled) return;
-          setResults((d.results || []).filter((u) => !selected.some((s) => s.id === u.id)));
+          setResults((d.results || []).filter((u) => !skip.has(u.id)));
         })
         .catch(() => {
           if (cancelled) return;
@@ -55,7 +61,7 @@ export default function UserSearchSelect({
       cancelled = true;
       clearTimeout(t);
     };
-  }, [query, selected]);
+  }, [query, skipKey]);
 
   // 点击组件外部时收起下拉
   useEffect(() => {

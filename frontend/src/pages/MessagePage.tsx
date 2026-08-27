@@ -11,6 +11,7 @@ import Pagination from "../components/Pagination";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
 import MessageThread from "../components/MessageThread";
+import UserSearchSelect, { type SelectUser } from "../components/UserSearchSelect";
 import { useLoginModal } from "../components/LoginModalProvider";
 import "../styles/messages.css";
 
@@ -28,7 +29,11 @@ export default function MessagePage() {
   const navigate = useNavigate();
   const { openLogin } = useLoginModal();
   const [user, setUser] = useState<TaskUser | null>(null);
+  const [verified, setVerified] = useState(false);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
+  const [composing, setComposing] = useState(false);
+  const [startError, setStartError] = useState("");
+  const [starting, setStarting] = useState(false);
 
   const { data: conversations, page, setPage, totalPages, loading: convLoading, refetch } = usePagedList<Conversation>(
     (params) => messagingApi.listConversations(params) as Promise<Paginated<Conversation>>,
@@ -41,7 +46,10 @@ export default function MessagePage() {
 
   useEffect(() => {
     api.me()
-      .then((d) => setUser({ ...d.user, avatar: d.profile.avatar, nickname: d.profile.nickname }))
+      .then((d) => {
+        setUser({ ...d.user, avatar: d.profile.avatar, nickname: d.profile.nickname });
+        setVerified(!!d.profile?.is_verified);
+      })
       .catch(() => openLogin());
   }, [openLogin]);
 
@@ -66,6 +74,23 @@ export default function MessagePage() {
     return () => { offOpen(); offEv(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const startWith = async (u: SelectUser) => {
+    if (starting) return;
+    setStarting(true);
+    setStartError("");
+    try {
+      const conv = await messagingApi.startPrivate(u.id);
+      setComposing(false);
+      await refetch();
+      setActiveConv(conv);
+      navigate(`/messages/${conv.id}`, { replace: true });
+    } catch (e: any) {
+      setStartError(e?.message || "无法发起私信");
+    } finally {
+      setStarting(false);
+    }
+  };
 
   const selectConversation = (conv: Conversation) => {
     setActiveConv(conv);
@@ -97,7 +122,34 @@ export default function MessagePage() {
       <div className="container">
         <div className="msg-layout">
           <div className="msg-side">
-            <div className="msg-side-head">会话</div>
+            <div className="msg-side-head">
+              <span>会话</span>
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                disabled={!verified}
+                title={verified ? "搜索用户发起私信" : "验证后才能发私信"}
+                onClick={() => { setComposing((v) => !v); setStartError(""); }}
+              >
+                {composing ? "取消" : "写私信"}
+              </button>
+            </div>
+            {composing && (
+              <div className="msg-compose">
+                {verified ? (
+                  <UserSearchSelect
+                    selected={[]}
+                    single
+                    excludeIds={user ? [user.id] : []}
+                    placeholder={starting ? "正在打开…" : "搜索用户发起私信…"}
+                    onChange={(users) => { if (users[0]) startWith(users[0]); }}
+                  />
+                ) : (
+                  <p className="msg-compose-hint">验证后才能发私信</p>
+                )}
+                {startError && <p className="msg-compose-error">{startError}</p>}
+              </div>
+            )}
             <div className="msg-list">
               {convLoading ? (
                 <div className="msg-list-empty">加载中…</div>
@@ -143,7 +195,7 @@ export default function MessagePage() {
                 {user && <MessageThread conversationId={activeConv.id} currentUser={user} />}
               </>
             ) : (
-              <div className="msg-empty">选择一个会话开始聊天</div>
+              <div className="msg-empty">选择一个会话，或点「写私信」搜索用户开始聊天</div>
             )}
           </div>
         </div>

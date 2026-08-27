@@ -6,6 +6,7 @@ import type { DirectMessage } from "../types/messaging";
 import { withinRetractWindow } from "../types/messaging";
 import type { TaskUser } from "../types/tasks";
 import Avatar from "./Avatar";
+import { highlightMentions, MentionInput } from "./MentionField";
 import "../styles/messages.css";
 
 /**
@@ -177,7 +178,7 @@ export default function MessageThread({
                         {m.sender.nickname || m.sender.username}
                       </div>
                     )}
-                    <div className="mb-content">{retracted ? "该消息已撤回" : m.content}</div>
+                    <div className="mb-content">{retracted ? "该消息已撤回" : highlightMentions(m.content)}</div>
                     <div className="mb-time">
                       {new Date(m.created_at).toLocaleString("zh-CN")}
                       {canRetract && (
@@ -193,14 +194,14 @@ export default function MessageThread({
       </div>
       {error && <div className="msg-error">{error}</div>}
       <div className="msg-input">
-        <input
+        <MentionInput
           className="input"
-          type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={siteMuted ? "你已被全站禁言，暂时不能发言" : "输入消息，@用户名 提及他人..."}
+          onChange={setInput}
+          placeholder={siteMuted ? "你已被全站禁言，暂时不能发言" : "输入消息，@ 可搜索并提及他人"}
           disabled={siteMuted}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+          excludeIds={[currentUser.id]}
+          onSubmit={handleSend}
         />
         <button className="btn btn-primary" onClick={handleSend} disabled={siteMuted || !input.trim() || sending}>
           {sending ? "..." : "发送"}

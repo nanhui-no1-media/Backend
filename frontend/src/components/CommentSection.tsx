@@ -6,6 +6,7 @@ import { api } from "../api/client";
 import { useSitePolicy } from "../api/sitePolicy";
 import { useEmbedMode } from "../embed";
 import { useLoginModal } from "./LoginModalProvider";
+import { highlightMentions, MentionTextarea } from "./MentionField";
 import Avatar from "./Avatar";
 import type { Comment, CommentHost, CommentThread, ThreadStatus } from "../types/messaging";
 import { THREAD_STATUS_LABELS, hostQuery, withinRetractWindow } from "../types/messaging";
@@ -28,10 +29,7 @@ function insertComment(roots: Comment[], comment: Comment): Comment[] {
 }
 
 function renderBody(text: string) {
-  const parts = text.split(/(@\w+)/g);
-  return parts.map((p, i) => (
-    p.startsWith("@") ? <span key={i} className="comment-mention">{p}</span> : <span key={i}>{p}</span>
-  ));
+  return highlightMentions(text);
 }
 
 function CommentItem({
@@ -238,7 +236,7 @@ export default function CommentSection({ host }: { host: CommentHost }) {
           ? "评论区已禁言"
           : thread?.status === "closed"
             ? "评论区已彻底关闭"
-            : "写下评论，@用户名 可提及他人";
+            : "写下评论，@ 可搜索并提及他人";
 
   const submit = async () => {
     if (!thread || !draft.trim() || sending || !canPost) return;
@@ -369,13 +367,14 @@ export default function CommentSection({ host }: { host: CommentHost }) {
             <button className="btn btn-ghost btn-sm" type="button" onClick={() => setReplyTo(null)}>取消</button>
           </div>
         )}
-        <textarea
+        <MentionTextarea
           className="textarea"
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={setDraft}
           placeholder={composerHint}
           disabled={!canPost}
           rows={3}
+          excludeIds={currentUser ? [currentUser.id] : []}
         />
         <div className="comment-composer-row">
           {!loggedIn && (
