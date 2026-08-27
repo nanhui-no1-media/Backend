@@ -40,7 +40,7 @@ export default function TutorialFormPage() {
 
   return (
     <AppShell>
-      <div className="page-head">
+      <div className="page-head page-head-gap">
         <div className="container detail-container">
           <nav className="breadcrumb">
             <a href="#" onClick={(e) => { e.preventDefault(); navigate("/tutorials"); }}>教程集锦</a>
@@ -50,7 +50,7 @@ export default function TutorialFormPage() {
           <h1>上传教程</h1>
         </div>
       </div>
-      <div className="container detail-container">
+      <div className="container detail-container page-body-gap">
         <div className="card card-pad form-card">
           <div className="form-stack">
             <label className="field"><span className="label">标题</span>

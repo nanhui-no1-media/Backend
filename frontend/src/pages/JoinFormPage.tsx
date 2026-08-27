@@ -25,7 +25,7 @@ export default function JoinFormPage() {
 
   return (
     <AppShell>
-      <div className="page-head">
+      <div className="page-head page-head-gap">
         <div className="container">
           <nav className="breadcrumb">
             <a href="#" onClick={(e) => { e.preventDefault(); navigate("/join"); }}>加入社团</a>
@@ -35,7 +35,7 @@ export default function JoinFormPage() {
           <h1>自我介绍问卷</h1>
         </div>
       </div>
-      <div className="container">
+      <div className="container page-body-gap">
         {already || done ? (
           <div className="card card-pad"><p>{done || "你已经提交过了。"}</p>
             <button className="btn btn-primary" onClick={() => navigate("/")}>返回首页</button>

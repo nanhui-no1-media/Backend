@@ -42,7 +42,7 @@ export default function JoinPage() {
 
   return (
     <AppShell>
-      <div className="page-head">
+      <div className="page-head page-head-gap">
         <div className="container detail-container">
           <nav className="breadcrumb">
             <a href="#" onClick={(e) => { e.preventDefault(); navigate("/"); }}>主页</a>
@@ -60,7 +60,7 @@ export default function JoinPage() {
           </div>
         </div>
       </div>
-      <div className="container detail-container">
+      <div className="container detail-container page-body-gap">
         <div className="card card-pad">
           {!editing ? (
             content ? (

@@ -3,6 +3,10 @@
 .tutorial-media { max-width: 1120px; padding-bottom: var(--s-4); }
 .detail-body { display: flex; flex-direction: column; gap: var(--s-5); padding: var(--s-8) var(--s-6) var(--s-16); }
 .page-head .detail-container { padding-top: var(--s-10); }
+/* page-head 与下方 container 分开，避免贴死（关于我们 / 加入社团 / 上传教程）。 */
+.page-head-gap { padding-top: var(--s-16); padding-bottom: var(--s-12); }
+.page-head-gap .detail-container { padding-top: var(--s-4); }
+.page-body-gap { padding-top: var(--s-16); padding-bottom: var(--s-16); }
 
 .detail-head-row { display:flex; align-items:center; justify-content:space-between; gap: var(--s-4); flex-wrap:wrap; }
 .detail-head-main { display:flex; align-items:center; gap: var(--s-3); min-width:0; }
