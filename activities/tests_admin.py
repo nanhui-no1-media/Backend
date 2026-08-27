@@ -98,13 +98,63 @@ class QuestionnaireAdminDashboardTest(TestCase):
         listing = c.get("/admin/activities/questionnaireresponse/")
         self.assertEqual(listing.status_code, 200)
         self.assertContains(listing, "统计")
+        self.assertContains(listing, "查看作答")
+        self.assertContains(
+            listing,
+            f"/admin/activities/questionnaireresponse/{row.pk}/survey-view/",
+        )
         change = c.get(f"/admin/activities/questionnaireresponse/{row.pk}/change/")
         self.assertEqual(change.status_code, 200)
         self.assertContains(change, "统计")
+        self.assertContains(change, "查看作答")
         self.assertContains(
             change,
             f"/admin/activities/questionnaire/{q.pk}/survey-results/",
         )
+        self.assertContains(
+            change,
+            f"/admin/activities/questionnaireresponse/{row.pk}/survey-view/",
+        )
+
+    def test_single_response_view_renders_surveyjs_display(self):
+        q = self.survey.questionnaire
+        row = QuestionnaireResponse.objects.create(
+            questionnaire=q, user=self.admin, answers={"q": "hello"},
+        )
+        c = self._client()
+        page = c.get(f"/admin/activities/questionnaireresponse/{row.pk}/survey-view/")
+        self.assertEqual(page.status_code, 200)
+        html = page.content.decode()
+        self.assertIn("survey-js-ui.min.js", html)
+        self.assertIn("survey.core.min.js", html)
+        self.assertIn("survey-core.min.css", html)
+        self.assertIn("admin/surveyjs/response.js", html)
+        self.assertIn("查看作答", html)
+        self.assertIn("hello", html)
+        self.assertIn(self.admin.username, html)
+        self.assertIn(f"/admin/activities/questionnaire/{q.pk}/survey-results/", html)
+
+        results = c.get(f"/admin/activities/questionnaire/{q.pk}/survey-results/")
+        self.assertEqual(results.status_code, 200)
+        rhtml = results.content.decode()
+        self.assertIn("查看作答", rhtml)
+        self.assertIn(
+            f"/admin/activities/questionnaireresponse/{row.pk}/survey-view/",
+            rhtml,
+        )
+        self.assertNotIn(
+            f"/admin/activities/questionnaireresponse/{row.pk}/change/",
+            rhtml,
+        )
+
+    def test_staff_without_response_perm_cannot_view_single_response(self):
+        q = self.survey.questionnaire
+        row = QuestionnaireResponse.objects.create(
+            questionnaire=q, user=self.admin, answers={"q": "a"},
+        )
+        c = self._client(self.staff)
+        resp = c.get(f"/admin/activities/questionnaireresponse/{row.pk}/survey-view/")
+        self.assertEqual(resp.status_code, 403)
 
     def test_join_questionnaire_admin_editor(self):
         c = self._client()

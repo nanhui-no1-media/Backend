@@ -45,22 +45,22 @@
     <tr>
       <th>作答者</th>
       <th>提交时间</th>
+      <th></th>
     </tr>
   </thead>
   <tbody>
     {% for row in response_rows %}
     <tr>
+      <td>{{ row.user_label }}</td>
+      <td>{{ row.submitted_at|date:"Y-m-d H:i:s" }}</td>
       <td>
         {% if row.admin_url %}
-        <a href="{{ row.admin_url }}">{{ row.user_label }}</a>
-        {% else %}
-        {{ row.user_label }}
+        <a href="{{ row.admin_url }}">查看作答</a>
         {% endif %}
       </td>
-      <td>{{ row.submitted_at|date:"Y-m-d H:i:s" }}</td>
     </tr>
     {% empty %}
-    <tr><td colspan="2">暂无作答。</td></tr>
+    <tr><td colspan="3">暂无作答。</td></tr>
     {% endfor %}
   </tbody>
 </table>

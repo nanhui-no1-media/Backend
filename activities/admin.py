@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
 
-from common.surveyjs_admin import SurveyJSAdminMixin
+from common.surveyjs_admin import SurveyJSAdminMixin, SurveyJSResponseViewMixin
 
 from .lifecycle import can_edit_schema
 from .models import (
@@ -69,7 +69,9 @@ class QuestionnaireAdmin(SurveyJSAdminMixin, admin.ModelAdmin):
                     else (f"访客 · {row.device_id[:8]}" if row.device_id else "访客")
                 ),
                 "submitted_at": row.submitted_at,
-                "admin_url": reverse("admin:activities_questionnaireresponse_change", args=[row.pk]),
+                "admin_url": reverse(
+                    "admin:activities_questionnaireresponse_survey_view", args=[row.pk],
+                ),
             }
 
     def has_add_permission(self, request):
@@ -83,14 +85,19 @@ class QuestionnaireAdmin(SurveyJSAdminMixin, admin.ModelAdmin):
 
 
 @admin.register(QuestionnaireResponse)
-class QuestionnaireResponseAdmin(admin.ModelAdmin):
-    list_display = ["questionnaire", "user", "device_id", "submitted_at", "dashboard_link"]
+class QuestionnaireResponseAdmin(SurveyJSResponseViewMixin, admin.ModelAdmin):
+    list_display = [
+        "questionnaire", "user", "device_id", "submitted_at",
+        "response_link", "dashboard_link",
+    ]
     list_filter = ["questionnaire__kind"]
     search_fields = ["questionnaire__schema", "user__username", "device_id"]
     autocomplete_fields = ["questionnaire", "user"]
     readonly_fields = ["answers", "submitted_at", "device_id"]
     date_hierarchy = "submitted_at"
-    change_form_template = "admin/surveyjs/change_form.html"
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("questionnaire", "user")
 
     def _results_url(self, obj):
         if not obj or not obj.questionnaire_id:
@@ -99,20 +106,20 @@ class QuestionnaireResponseAdmin(admin.ModelAdmin):
             "admin:activities_questionnaire_survey_results", args=[obj.questionnaire_id],
         )
 
+    def get_response_stats_url(self, obj):
+        return self._results_url(obj)
+
+    @admin.display(description="查看作答")
+    def response_link(self, obj):
+        url = reverse("admin:activities_questionnaireresponse_survey_view", args=[obj.pk])
+        return format_html('<a href="{}">查看作答</a>', url)
+
     @admin.display(description="统计")
     def dashboard_link(self, obj):
         url = self._results_url(obj)
         if not url:
             return "—"
         return format_html('<a href="{}">统计</a>', url)
-
-    def change_view(self, request, object_id, form_url="", extra_context=None):
-        extra_context = extra_context or {}
-        obj = self.get_object(request, object_id)
-        url = self._results_url(obj)
-        if url:
-            extra_context["survey_results_url"] = url
-        return super().change_view(request, object_id, form_url, extra_context=extra_context)
 
 
 @admin.register(VoteOption)

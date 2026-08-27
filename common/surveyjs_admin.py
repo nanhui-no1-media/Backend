@@ -1,7 +1,7 @@
-"""Shared Django-admin SurveyJS editor + VisualizationPanel views.
+"""Shared Django-admin SurveyJS editor, VisualizationPanel, and single-response views.
 
 Vanilla SurveyJS (not the SPA) under admin auth + model perms. Schema JSON is
-the same field the portal edits; results stay admin-only (ADR 0011).
+the same field the portal edits; results stay admin-only (ADR 0011 / 0014).
 """
 from __future__ import annotations
 
@@ -143,6 +143,89 @@ class SurveyJSAdminMixin:
             extra_context["survey_results_url"] = reverse(
                 "admin:%s_%s_survey_results" % info, args=[obj.pk],
             )
+        return cast(ModelAdmin, super()).change_view(
+            request, object_id, form_url, extra_context=extra_context,
+        )
+
+
+class SurveyJSResponseViewMixin:
+    """Adds ``<object_id>/survey-view/`` — one filled questionnaire in display mode.
+
+    Expects a response object with ``answers`` and a related questionnaire that
+    exposes ``schema``. Override the hooks below when the shape differs.
+    """
+
+    change_form_template = "admin/surveyjs/change_form.html"
+    admin_site: AdminSite
+    opts: Options
+
+    def get_response_schema(self, obj):
+        questionnaire = getattr(obj, "questionnaire", None)
+        if questionnaire is None:
+            return {}
+        return questionnaire.schema or {}
+
+    def get_response_answers(self, obj):
+        return obj.answers or {}
+
+    def get_response_user_label(self, obj):
+        user = getattr(obj, "user", None)
+        if user is not None:
+            return user.get_username()
+        device_id = getattr(obj, "device_id", "") or ""
+        if device_id:
+            return f"访客 · {device_id[:8]}"
+        return "访客"
+
+    def get_response_submitted_at(self, obj):
+        return getattr(obj, "submitted_at", None)
+
+    def get_response_stats_url(self, obj):
+        return None
+
+    def get_urls(self):
+        info = self.opts.app_label, self.opts.model_name
+        extra = [
+            path(
+                "<path:object_id>/survey-view/",
+                self.admin_site.admin_view(self.survey_response_view),
+                name="%s_%s_survey_view" % info,
+            ),
+        ]
+        return extra + cast(ModelAdmin, super()).get_urls()
+
+    def survey_response_view(self, request, object_id):
+        obj = cast(ModelAdmin, self).get_object(request, object_id)
+        if obj is None:
+            raise Http404
+        if not self.has_view_or_change_permission(request, obj):  # pyright: ignore[reportAttributeAccessIssue]
+            raise PermissionDenied
+        info = self.opts.app_label, self.opts.model_name
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.opts,
+            "original": obj,
+            "title": "查看作答",
+            "schema_json": self.get_response_schema(obj),
+            "answers_json": self.get_response_answers(obj),
+            "user_label": self.get_response_user_label(obj),
+            "submitted_at": self.get_response_submitted_at(obj),
+            "back_url": reverse("admin:%s_%s_change" % info, args=[obj.pk]),
+            "survey_results_url": self.get_response_stats_url(obj),
+        }
+        return TemplateResponse(request, "admin/surveyjs/response.html", context)
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        extra_context = extra_context or {}
+        obj = cast(ModelAdmin, self).get_object(request, object_id)
+        if obj is not None:
+            info = self.opts.app_label, self.opts.model_name
+            extra_context["survey_response_url"] = reverse(
+                "admin:%s_%s_survey_view" % info, args=[obj.pk],
+            )
+            stats_url = self.get_response_stats_url(obj)
+            if stats_url:
+                extra_context["survey_results_url"] = stats_url
         return cast(ModelAdmin, super()).change_view(
             request, object_id, form_url, extra_context=extra_context,
         )

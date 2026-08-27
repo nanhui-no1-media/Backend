@@ -7,7 +7,7 @@
 ## 决策
 
 1. **`Questionnaire` + `QuestionnaireResponse` 落在 `activities` app**（不另起 app）。调研活动 `OneToOne` 指向一份 `kind=survey` 问卷；自我介绍是 `kind=join` 单例。门户调研页与加入页只投影 Schema / 收作答。
-2. **编辑问卷与查看统计只挂问卷后台**（及问卷结果行上的统计链），不再出现在活动 change form。加入后台同样不再托管 Creator / 看板。
+2. **编辑问卷与查看统计只挂问卷后台**（及问卷结果行上的统计链），不再出现在活动 change form。加入后台同样不再托管 Creator / 看板。单份作答在问卷结果后台用 SurveyJS display mode 阅读，不另做门户页。
 3. **未登录作答绑定设备标识。** 门户生成 UUID 写入 localStorage，请求带 `X-Device-Id`。部分唯一约束 `(questionnaire, device_id)` where `user` is null。已登录仍按用户一行。浏览器清存储或换浏览器仍可再交——这是 Web 能做到的上限，不是硬件 ID。
 4. **Schema 可改窗口不变**：待开始，或开放且该问卷尚无作答。
 
