@@ -1,7 +1,7 @@
 """活动债谓词（#82）：收件箱活动行与列表/详情 ``owed`` 的单一事实源。
 
 ``activity_debts_for`` 的 queryset 由调用方先过滤身份；序列化 ``owed_for``
-在此判定已验证/超管（访客与未验证得到 None）。
+在此判定已验证（访客与未验证得到 None；超管经后台委任通道计入）。
 """
 from django.db.models import Exists, OuterRef, Q
 
@@ -35,7 +35,7 @@ def owed_for(activity, user):
     """序列化 ``owed``：``vote`` / ``submit`` / None。优先用 annotate 的 Exists。"""
     if not user or not getattr(user, "is_authenticated", False):
         return None
-    if not (user.is_superuser or is_verified(user)):
+    if not is_verified(user):
         return None
     has_ballot = getattr(activity, "_has_ballot", None)
     if has_ballot is None:

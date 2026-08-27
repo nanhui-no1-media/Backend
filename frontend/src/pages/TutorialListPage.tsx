@@ -20,7 +20,7 @@ export default function TutorialListPage() {
     document.title = "教程集锦 · 南汇一中传媒社";
     api.me()
       .then((d: any) => {
-        setCanUpload(!!d.profile?.is_verified || d.role?.variant === "superadmin");
+        setCanUpload(!!d.profile?.is_verified);
       })
       .catch(() => setCanUpload(false));
   }, []);

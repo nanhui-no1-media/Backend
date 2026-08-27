@@ -1,6 +1,9 @@
+from django.contrib.auth.models import User
 from django.contrib.auth.signals import user_logged_in
+from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+from .models import sync_appointment_channel
 from .utils import record_user_session
 
 
@@ -14,3 +17,11 @@ def on_user_logged_in(sender, request, user, **kwargs):
     session_key = request.session.session_key
     if session_key:
         record_user_session(request, user, session_key)
+
+
+@receiver(post_save, sender=User)
+def on_user_saved(sender, instance, raw=False, **kwargs):
+    # 后台委任通道随 is_staff / is_superuser 同步（ADR-0013）。loaddata raw 跳过。
+    if raw:
+        return
+    sync_appointment_channel(instance)

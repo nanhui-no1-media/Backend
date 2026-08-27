@@ -2,9 +2,10 @@ import os
 import uuid
 
 from django.conf import settings
+from django.contrib.auth.models import User
 from django.core.files.storage import FileSystemStorage
 from django.db import models
-from django.contrib.auth.models import User
+from django.utils import timezone
 
 
 def avatar_upload_path(instance, filename):
@@ -58,15 +59,19 @@ class Verification(models.Model):
     """验证通道当前状态（ADR-0006）：每 (user, channel) 一行，in-place 更新。
 
     账号「已验证」⇔ 任一通道 ``status=approved``（见 :func:`is_verified`）。通道是一等公民：
-    邮箱、人工审批是通道；加通道 = 加 choices + 实现该通道流程，核心判定（任一 approved）不动。
+    邮箱、人工审批、后台委任是通道；加通道 = 加 choices + 实现该通道流程，核心判定（任一
+    approved）不动。
 
-    - ``identifier`` 是通道主体：邮箱=待验地址（验证前住此、不进 ``User.email``）；人工=空。
+    - ``identifier`` 是通道主体：邮箱=待验地址（验证前住此、不进 ``User.email``）；人工=空；
+      后台委任=``staff`` / ``superuser``。
     - 审计走 ``IdentityProof``（人工通道证据，永久留底）；本表不留尝试历史。
     """
 
+    CHANNEL_APPOINTMENT = "appointment"
     CHANNEL_EMAIL = "email"
     CHANNEL_MANUAL = "manual"
     CHANNELS = [
+        (CHANNEL_APPOINTMENT, "后台委任"),
         (CHANNEL_EMAIL, "邮箱"),
         (CHANNEL_MANUAL, "人工审批"),
     ]
@@ -111,17 +116,60 @@ def is_verified(user):
     驱动 写操作门禁 / 徽章 / 邮箱登录前提 / 密码重置前提 / 验证面板。无 Verification 行 ⇒
     未验证（访客）——不再有「无 profile 视为已审核」后备（ADR-0006 决策 7）。
 
-    纯计算：不含超级用户逃生舱（那是访问控制轴，由 ``IsVerified`` 门禁承担，ADR-0005 决策 9）。
+    纯计算：不读 ``is_staff`` / ``is_superuser``。后台委任走通道行（ADR-0013）；
+    权限轴逃生舱仍是 ``has_perm`` 对超管恒真（ADR-0005 决策 9），不在本函数。
     """
     if user is None or not getattr(user, "is_authenticated", False):
         return False
     return user.verifications.filter(status=Verification.STATUS_APPROVED).exists()
 
 
+def sync_appointment_channel(user):
+    """后台委任通道（ADR-0013）：管理员或超级管理员 ⇒ approved 行；否则删行。
+
+    委任是后台副作用，不是用户走通道，故不受站点「验证通道开/关」约束。
+    ``identifier`` 记委任档（``superuser`` 优先于 ``staff``）。``verified_by`` 空（系统）。
+    """
+    if user is None or not getattr(user, "pk", None):
+        return
+    appointed = bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+    if not appointed:
+        Verification.objects.filter(
+            user=user, channel=Verification.CHANNEL_APPOINTMENT,
+        ).delete()
+        return
+
+    ident = "superuser" if user.is_superuser else "staff"
+    row, created = Verification.objects.get_or_create(
+        user=user,
+        channel=Verification.CHANNEL_APPOINTMENT,
+        defaults={
+            "status": Verification.STATUS_APPROVED,
+            "identifier": ident,
+            "verified_at": timezone.now(),
+        },
+    )
+    if created:
+        return
+    fields = []
+    if row.status != Verification.STATUS_APPROVED:
+        row.status = Verification.STATUS_APPROVED
+        fields.append("status")
+    if row.identifier != ident:
+        row.identifier = ident
+        fields.append("identifier")
+    if row.verified_at is None:
+        row.verified_at = timezone.now()
+        fields.append("verified_at")
+    if fields:
+        row.save(update_fields=fields)
+
+
 def verified_member_count():
     """已验证成员数（任一通道 approved 的活跃用户）——众议「全员投完即结算」的分母。
 
-    distinct：一个用户可能有多条 approved 通道，按用户去重。纯计算，不含超管。
+    distinct：一个用户可能有多条 approved 通道，按用户去重。后台委任会使管理员/超管计入
+    （他们有 appointment 行）；本函数不另读 ``is_staff`` / ``is_superuser``。
     """
     return (
         User.objects.filter(is_active=True, verifications__status=Verification.STATUS_APPROVED)

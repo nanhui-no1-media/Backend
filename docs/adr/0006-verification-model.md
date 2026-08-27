@@ -23,14 +23,14 @@
 
 ```python
 class Verification(models.Model):
-    CHANNEL = [("email", "邮箱"), ("manual", "人工审批")]  # 以后加 phone / sso / ...
+    CHANNEL = [("appointment", "后台委任"), ("email", "邮箱"), ("manual", "人工审批")]  # 以后加 phone / sso / ...
     STATUS  = [("pending", "待验证"), ("approved", "已通过"), ("rejected", "已驳回")]
     user        = FK(User, related_name="verifications")
     channel     = CharField(choices=CHANNEL)
     status      = CharField(choices=STATUS, default="pending")
-    identifier  = CharField(blank=True)   # 通道主体：邮箱=待验地址；人工=空；电话=号码
+    identifier  = CharField(blank=True)   # 邮箱=待验地址；人工=空；后台委任=staff/superuser
     verified_at = DateTimeField(null=True)
-    verified_by = FK(User, null=True)     # 人工=admin；邮箱=空
+    verified_by = FK(User, null=True)     # 人工=admin；邮箱/委任=空
     unique_together = ("user", "channel") # 每(user,channel)一行，当前状态 in-place
 ```
 
@@ -63,6 +63,11 @@ class Verification(models.Model):
 - **验证**（点链接）：email 行 `approved` → `identifier` 晋升写入 `User.email`。绑定生效。
 - **改邮箱** = 重新绑：email 行回 pending + 新 identifier；未验证前 `User.email` 保留旧值；验证后才换。
 - **唯一性**：绑定时校验该邮箱未被他账号有效持有。
+
+### 后台委任通道
+
+- **委任**：后台将账号标为管理员或超级管理员 → `appointment` 行 `approved`（`identifier`=`staff` / `superuser`）。只读，无自助申请。
+- **撤销委任**：删 `appointment` 行；若无其它 approved 通道则回到未验证。与站点「验证通道开/关」无关（不是用户走通道，是委任副作用）。见 ADR-0013。
 
 ### 人工通道
 

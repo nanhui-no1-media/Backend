@@ -1,7 +1,8 @@
-"""验证模型单元 + 迁移默认信任（ADR-0006）。
+"""验证模型单元 + 迁移默认信任（ADR-0006）+ 后台委任通道（ADR-0013）。
 
 - ``is_verified``：纯计算（任一通道 approved 即真；匿名 / 无行 / pending / rejected ⇒ 假）。
-- ``IsVerified`` 门禁：超级用户逃生舱（无 approved 行也放行）。
+  不读 ``is_staff`` / ``is_superuser``；委任走通道行。
+- ``IsVerified`` 门禁：只读 ``is_verified``；超管无委任行亦不放行（验证轴无逃生舱）。
 - 迁移：存量账号默认信任（旧布尔为真或无 profile ⇒ 造 manual approved 行）。
 """
 from django.contrib.auth.models import AnonymousUser, User
@@ -62,19 +63,31 @@ class IsVerifiedComputationTest(TestCase):
         self.assertTrue(is_verified(self.user))
 
     def test_is_verified_pure_no_superuser_special_case(self):
-        # 纯计算不含逃生舱：超级用户无 approved 行 ⇒ 未验证（门禁 IsVerified 另行放行）
+        # 纯计算不读标志位：超级用户若无 approved 行 ⇒ 未验证
+        # 委任通道会在 save 时自动建行，这里删掉以钉死「函数不读 is_superuser」。
         self.user.is_superuser = True
         self.user.save()
+        Verification.objects.filter(
+            user=self.user, channel=Verification.CHANNEL_APPOINTMENT,
+        ).delete()
         self.assertFalse(is_verified(self.user))
 
 
-class IsVerifiedGateSuperuserBypassTest(TestCase):
-    """超级用户是唯一应用访问逃生舱（ADR-0005 决策 9）：无 approved 行也放行写动作。"""
+class IsVerifiedGateTest(TestCase):
+    """写门禁只读 is_verified（ADR-0013）：委任通道使职员/超管通过；无行则拒，无标志位逃生舱。"""
 
-    def test_superuser_allowed_without_verification(self):
+    def test_superuser_blocked_without_appointment_row(self):
+        u = User.objects.create_superuser(username="root", password="p")
+        Verification.objects.filter(user=u, channel=Verification.CHANNEL_APPOINTMENT).delete()
+        req = RequestFactory().post("/")
+        req.user = u
+        self.assertFalse(IsVerified().has_permission(req, None))
+
+    def test_superuser_allowed_via_appointment_channel(self):
         u = User.objects.create_superuser(username="root", password="p")
         req = RequestFactory().post("/")
         req.user = u
+        self.assertTrue(is_verified(u))
         self.assertTrue(IsVerified().has_permission(req, None))
 
     def test_normal_user_blocked_without_verification(self):
@@ -90,6 +103,21 @@ class IsVerifiedGateSuperuserBypassTest(TestCase):
         )
         req = RequestFactory().post("/")
         req.user = u
+        self.assertTrue(IsVerified().has_permission(req, None))
+
+    def test_staff_blocked_without_appointment_row(self):
+        # 标志位不是验证逃生舱：删委任行后写动作仍拒（ADR-0013）
+        u = User.objects.create_user(username="st", password="p", is_staff=True)
+        Verification.objects.filter(user=u, channel=Verification.CHANNEL_APPOINTMENT).delete()
+        req = RequestFactory().post("/")
+        req.user = u
+        self.assertFalse(IsVerified().has_permission(req, None))
+
+    def test_staff_allowed_via_appointment_channel(self):
+        u = User.objects.create_user(username="st", password="p", is_staff=True)
+        req = RequestFactory().post("/")
+        req.user = u
+        self.assertTrue(is_verified(u))
         self.assertTrue(IsVerified().has_permission(req, None))
 
 
@@ -169,7 +197,8 @@ class VerificationStatusEndpointTest(TestCase):
         data = self._get(u).json()
         self.assertFalse(data["is_verified"])
         channels = {c["channel"]: c for c in data["channels"]}
-        self.assertEqual(set(channels), {"email", "manual"})  # 每定义通道一卡
+        self.assertEqual(set(channels), {"appointment", "email", "manual"})  # 每定义通道一卡
+        self.assertEqual(channels["appointment"]["status"], "none")
         self.assertEqual(channels["email"]["status"], "none")
         self.assertEqual(channels["manual"]["status"], "none")
 
@@ -210,7 +239,7 @@ class VerificationStatusEndpointTest(TestCase):
     def test_channels_in_defined_order(self):
         u = User.objects.create_user(username="u", password="p")
         channels = [c["channel"] for c in self._get(u).json()["channels"]]
-        self.assertEqual(channels, ["email", "manual"])  # CHANNELS 定义序
+        self.assertEqual(channels, ["appointment", "email", "manual"])  # CHANNELS 定义序
 
     def test_channel_object_keyset(self):
         # 钉死通道对象键集（前后端契约的「后端半」；前端半见 VerificationPanelContractTest）
@@ -233,7 +262,7 @@ class VerificationPanelContractTest(TestCase):
         )
         src = ts_path.read_text(encoding="utf-8")
 
-        # 前端 VERIFICATION_CHANNELS = ["email", "manual"]
+        # 前端 VERIFICATION_CHANNELS = ["appointment", "email", "manual"]
         ch_match = re.search(r"VERIFICATION_CHANNELS\s*=\s*\[([^\]]*)\]", src)
         self.assertIsNotNone(ch_match, "前端未定义 VERIFICATION_CHANNELS")
         fe_channels = set(re.findall(r'"([a-z]+)"', ch_match.group(1)))
@@ -252,3 +281,97 @@ class VerificationPanelContractTest(TestCase):
 
         self.assertEqual(fe_channels, be_channels, f"通道集漂移：后端={sorted(be_channels)} 前端={sorted(fe_channels)}")
         self.assertEqual(fe_fields, be_fields, f"通道对象键集漂移：后端={sorted(be_fields)} 前端={sorted(fe_fields)}")
+
+
+class AppointmentChannelTest(TestCase):
+    """后台委任通道（ADR-0013）：is_staff / is_superuser ⇒ approved 行；撤销则删行。"""
+
+    def test_ordinary_user_has_no_appointment_row(self):
+        u = User.objects.create_user(username="u", password="p")
+        self.assertFalse(
+            Verification.objects.filter(user=u, channel=Verification.CHANNEL_APPOINTMENT).exists()
+        )
+        self.assertFalse(is_verified(u))
+
+    def test_staff_save_grants_approved_appointment(self):
+        u = User.objects.create_user(username="st", password="p")
+        u.is_staff = True
+        u.save()
+        row = Verification.objects.get(user=u, channel=Verification.CHANNEL_APPOINTMENT)
+        self.assertEqual(row.status, Verification.STATUS_APPROVED)
+        self.assertEqual(row.identifier, "staff")
+        self.assertIsNotNone(row.verified_at)
+        self.assertIsNone(row.verified_by_id)
+        self.assertTrue(is_verified(u))
+
+    def test_superuser_save_grants_superuser_identifier(self):
+        u = User.objects.create_superuser(username="root", password="p")
+        row = Verification.objects.get(user=u, channel=Verification.CHANNEL_APPOINTMENT)
+        self.assertEqual(row.status, Verification.STATUS_APPROVED)
+        self.assertEqual(row.identifier, "superuser")
+        self.assertTrue(is_verified(u))
+
+    def test_demote_superuser_to_staff_keeps_appointment(self):
+        u = User.objects.create_superuser(username="root", password="p")
+        u.is_superuser = False
+        u.save()  # create_superuser 默认 is_staff=True，仍算委任
+        row = Verification.objects.get(user=u, channel=Verification.CHANNEL_APPOINTMENT)
+        self.assertEqual(row.identifier, "staff")
+        self.assertTrue(is_verified(u))
+
+    def test_revoke_staff_deletes_appointment_unverified(self):
+        u = User.objects.create_user(username="st", password="p", is_staff=True)
+        u.is_staff = False
+        u.save()
+        self.assertFalse(
+            Verification.objects.filter(user=u, channel=Verification.CHANNEL_APPOINTMENT).exists()
+        )
+        self.assertFalse(is_verified(u))
+
+    def test_revoke_keeps_other_approved_channels(self):
+        u = User.objects.create_user(username="st", password="p", is_staff=True)
+        Verification.objects.create(
+            user=u, channel=Verification.CHANNEL_EMAIL,
+            status=Verification.STATUS_APPROVED, identifier="st@e.com",
+        )
+        u.is_staff = False
+        u.save()
+        self.assertFalse(
+            Verification.objects.filter(user=u, channel=Verification.CHANNEL_APPOINTMENT).exists()
+        )
+        self.assertTrue(is_verified(u))  # email 仍 approved
+
+    def test_idempotent_resave_does_not_reset_verified_at(self):
+        u = User.objects.create_user(username="st", password="p", is_staff=True)
+        row = Verification.objects.get(user=u, channel=Verification.CHANNEL_APPOINTMENT)
+        first_at = row.verified_at
+        u.save()
+        row.refresh_from_db()
+        self.assertEqual(row.verified_at, first_at)
+
+
+class AppointmentStatusEndpointTest(TestCase):
+    """GET /auth/verification/ 对委任通道：普通人 none；委任后 approved + identifier。"""
+
+    URL = "/auth/verification/"
+
+    def _get(self, user):
+        c = Client()
+        c.force_login(user)
+        return c.get(self.URL)
+
+    def test_staff_appointment_approved(self):
+        u = User.objects.create_user(username="st", password="p", is_staff=True)
+        data = self._get(u).json()
+        self.assertTrue(data["is_verified"])
+        card = {c["channel"]: c for c in data["channels"]}["appointment"]
+        self.assertEqual(card["status"], "approved")
+        self.assertEqual(card["identifier"], "staff")
+        self.assertIsNotNone(card["verified_at"])
+
+    def test_superuser_appointment_identifier(self):
+        u = User.objects.create_superuser(username="root", password="p")
+        card = {c["channel"]: c for c in self._get(u).json()["channels"]}["appointment"]
+        self.assertEqual(card["status"], "approved")
+        self.assertEqual(card["identifier"], "superuser")
+

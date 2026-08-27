@@ -27,7 +27,7 @@ def _file(name="a.png"):
 
 
 class InboxGateTest(TestCase):
-    """门禁与 IsVerified 对齐：匿名/访客/未验证职员 403；已验证与超管放行。"""
+    """门禁与 IsVerified 对齐：匿名/访客 403；已验证（含后台委任）放行。"""
 
     def setUp(self):
         self.client = APIClient()
@@ -41,8 +41,16 @@ class InboxGateTest(TestCase):
         self.client.force_authenticate(visitor)
         self.assertEqual(self.client.get(INBOX).status_code, 403)
 
-    def test_unverified_staff_denied(self):
+    def test_staff_allowed_via_appointment(self):
         staff = User.objects.create_user(username="staff", password="x", is_staff=True)
+        self.client.force_authenticate(staff)
+        self.assertEqual(self.client.get(INBOX).status_code, 200)
+
+    def test_staff_without_appointment_row_denied(self):
+        # 标志位不是验证逃生舱：无委任行仍 403（ADR-0013）
+        from accounts.models import Verification
+        staff = User.objects.create_user(username="staff", password="x", is_staff=True)
+        Verification.objects.filter(user=staff, channel=Verification.CHANNEL_APPOINTMENT).delete()
         self.client.force_authenticate(staff)
         self.assertEqual(self.client.get(INBOX).status_code, 403)
 
@@ -58,12 +66,19 @@ class InboxGateTest(TestCase):
         self.assertEqual(body["count"], 0)
         self.assertEqual(body["results"], [])
 
-    def test_unverified_superuser_allowed(self):
+    def test_superuser_allowed_via_appointment(self):
         root = User.objects.create_superuser(username="root", password="x")
         self.client.force_authenticate(root)
         resp = self.client.get(INBOX)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["count"], 0)
+
+    def test_superuser_without_appointment_row_denied(self):
+        from accounts.models import Verification
+        root = User.objects.create_superuser(username="root", password="x")
+        Verification.objects.filter(user=root, channel=Verification.CHANNEL_APPOINTMENT).delete()
+        self.client.force_authenticate(root)
+        self.assertEqual(self.client.get(INBOX).status_code, 403)
 
 
 class InboxActivityDebtTest(TestCase):

@@ -44,10 +44,8 @@ export default function InboxPage() {
     document.title = "待办 · 传媒社";
     api.me()
       .then((d: any) => {
-        const variant = d.role?.variant;
         const verified = !!d.profile?.is_verified;
-        const allowed = variant === "superadmin" || variant === "user" || (variant === "admin" && verified);
-        if (!allowed) {
+        if (!verified) {
           navigate("/profile?tab=verification", { replace: true });
           return;
         }

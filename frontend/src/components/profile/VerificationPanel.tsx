@@ -5,7 +5,7 @@ import "../../styles/profile.css";
 
 // 前后端契约（#36）：通道集 + 通道对象键集，与后端 /auth/verification/ 对齐
 // （accounts.tests_verification.VerificationPanelContractTest 钉死，防漂移）。
-export const VERIFICATION_CHANNELS = ["email", "manual"];
+export const VERIFICATION_CHANNELS = ["appointment", "email", "manual"];
 export const VERIFICATION_CARD_FIELDS = ["channel", "status", "identifier", "verified_at"];
 
 type ChannelStatus = "none" | "pending" | "approved" | "rejected";
@@ -22,13 +22,28 @@ interface VerificationStatus {
   channels: ChannelCard[];
 }
 
+// 后台委任对普通人不可申请：status=none 不铺卡，避免空通道占位。委任通过后才显示。
+function visibleChannel(card: ChannelCard) {
+  return !(card.channel === "appointment" && card.status === "none");
+}
+
 const CHANNEL_META: Record<string, { label: string; desc: string }> = {
+  appointment: {
+    label: "后台委任",
+    desc: "后台将账号委任为管理员或超级管理员时，身份即视为已验证，无需再走邮箱或人工通道。",
+  },
   email: { label: "邮箱验证", desc: "绑定并验证一个邮箱即可成为已验证用户。" },
   manual: { label: "人工审批", desc: "提交身份证明，由管理员审核通过即成为已验证用户。" },
 };
 
 // 各通道各状态 → 展示文案 + 徽章 + 提示（数据驱动：加状态只改此处）。
 const STATE: Record<string, Record<ChannelStatus, { label: string; badge: string; hint: string }>> = {
+  appointment: {
+    none: { label: "未委任", badge: "badge-ghost", hint: "此通道由后台委任，无法自行申请。" },
+    pending: { label: "待委任", badge: "badge-warning", hint: "" },
+    approved: { label: "已委任", badge: "badge-success", hint: "身份已由后台委任确认，无需再验证。" },
+    rejected: { label: "已撤销", badge: "badge-danger", hint: "" },
+  },
   email: {
     none: { label: "未绑定", badge: "badge-ghost", hint: "绑定邮箱后可用邮箱登录、找回密码。" },
     pending: { label: "待验证", badge: "badge-warning", hint: "验证邮件已发送，请查收并点击验证链接。" },
@@ -48,6 +63,8 @@ function CardShell({ card, children }: { card: ChannelCard; children?: React.Rea
   const st = (STATE[card.channel] ?? STATE.manual)[card.status];
   const showPendingId = card.channel === "email" && card.status === "pending" && card.identifier;
   const showBoundId = card.channel === "email" && card.status === "approved" && card.identifier;
+  const appointmentLabel = card.identifier === "superuser" ? "超级管理员" : "管理员";
+  const showAppointmentId = card.channel === "appointment" && card.status === "approved" && card.identifier;
   return (
     <div className={"verify-card verify-card-" + card.status}>
       <div className="verify-card-head">
@@ -57,6 +74,7 @@ function CardShell({ card, children }: { card: ChannelCard; children?: React.Rea
       {meta.desc && <p className="muted verify-card-desc">{meta.desc}</p>}
       {showPendingId && <p className="muted verify-card-id">待验证邮箱：{card.identifier}</p>}
       {showBoundId && <p className="muted verify-card-id">已绑定：{card.identifier}</p>}
+      {showAppointmentId && <p className="muted verify-card-id">委任身份：{appointmentLabel}</p>}
       {st.hint && <p className="muted verify-card-hint">{st.hint}</p>}
       {children}
     </div>
@@ -215,20 +233,22 @@ export default function VerificationPanel() {
       <h2 className="profile-panel-title">账号验证</h2>
       <p className="muted verify-overview">
         {data.is_verified
-          ? "你的账号已验证（用户）。"
+          ? "你的账号已验证。"
           : "你的账号尚未验证（访客）——完成下列任一通道即成为已验证用户，解锁发帖 / 发消息 / 建申报等。"}
       </p>
       {!policy.verification_enabled && (
         <p className="muted verify-overview">验证通道已关闭</p>
       )}
       <div className="verify-cards">
-        {data.channels.map((c) =>
-          c.channel === "email" ? (
-            <EmailCard key={c.channel} card={c} onChanged={load} closed={!policy.verification_enabled} />
-          ) : (
-            <ManualCard key={c.channel} card={c} onChanged={load} closed={!policy.verification_enabled} />
-          )
-        )}
+        {data.channels.filter(visibleChannel).map((c) => {
+          if (c.channel === "email") {
+            return <EmailCard key={c.channel} card={c} onChanged={load} closed={!policy.verification_enabled} />;
+          }
+          if (c.channel === "manual") {
+            return <ManualCard key={c.channel} card={c} onChanged={load} closed={!policy.verification_enabled} />;
+          }
+          return <CardShell key={c.channel} card={c} />;
+        })}
       </div>
     </div>
   );

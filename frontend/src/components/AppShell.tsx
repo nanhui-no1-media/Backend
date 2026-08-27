@@ -69,7 +69,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       .catch(() => { setUser(null); setRoleVariant(""); });
   }, [authNonce]);
 
-  const showInbox = !!user && roleVariant !== "visitor" && !(roleVariant === "admin" && !profile.is_verified);
+  const showInbox = !!user && !!profile.is_verified;
 
   // 待办角标：与原先未读同一节奏——登录态、路由跳转时刷新，不轮询。
   useEffect(() => {
@@ -221,8 +221,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      {/* 未验证提示（ADR-0006 / ADR-0005）：仅访客（未验证普通成员）提示，超管 / 管理员 /
-          已验证用户不打扰。点击去验证面板。 */}
+      {/* 未验证提示（ADR-0006）：仅访客（未验证普通成员）提示。超管 / 管理员徽章
+          不挡提示逻辑——他们经后台委任已是 is_verified，不会落到 visitor。 */}
       {user && roleVariant === "visitor" && (
         <button className="identity-banner" type="button" role="status"
                 onClick={() => go("/profile?tab=verification")}>

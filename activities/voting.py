@@ -46,7 +46,7 @@ def ballots_visible_to(activity, user):
 def maybe_close_deliberation_on_full_vote(activity):
     """全员投完即提前结算：众议 open 状态下，若已投票数 ≥ 已验证成员数，翻 closed。
 
-    分母 = 已验证成员数（``accounts.verified_member_count``，纯计算不含超管）。
+    分母 = 已验证成员数（``accounts.verified_member_count``）。
     在 ``cast_ballot`` 里调用（只有投票会改变票数）。逐行条件更新保证并发安全。
     """
     if activity.type != "deliberation" or activity.status != OPEN:

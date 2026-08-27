@@ -178,7 +178,8 @@ def verification_status_view(request):
     """账号验证状态（#36）：总 is_verified + 各通道当前状态，数据驱动面板铺卡。
 
     每个已定义通道一卡，按 CHANNELS 序。无 Verification 行的通道 status="none"（前端映射
-    「未绑定 / 未提交」）。通道对象键集与前端 VerificationPanel 契约（见契约测试）。
+    「未绑定 / 未提交」；后台委任 none 不铺卡）。通道对象键集与前端 VerificationPanel 契约
+    （见契约测试）。
     """
     user = request.user
     rows = {v.channel: v for v in user.verifications.all()}
