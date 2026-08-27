@@ -37,7 +37,9 @@ from common.updater import (
     before_apply_cutoff,
     can_start_apply,
     decide_interrupt,
+    download_release,
     fetch_release,
+    github_download,
     in_apply_window,
     is_complete_archive,
     load_policy,
@@ -853,3 +855,136 @@ class LoadPolicyCacheTest(TestCase):
         SiteSettings.objects.filter(pk=1).update(auto_update_enabled=False)
         self.assertTrue(get_policy().auto_update_enabled)
         self.assertFalse(load_policy().auto_update_enabled)
+
+
+class _FakeHttp:
+    def __init__(self, *, status=200, body=b"", headers=None):
+        self.status = status
+        self.headers = headers or {}
+        self._buf = io.BytesIO(body)
+
+    def read(self, n=-1):
+        return self._buf.read(n)
+
+    def getcode(self):
+        return self.status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def _patch_opener(handler):
+    opener = mock.Mock()
+    opener.open.side_effect = handler
+    return mock.patch("common.updater._opener", return_value=opener)
+
+
+class GithubDownloadResumeTest(SimpleTestCase):
+    def setUp(self):
+        super().setUp()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dest = Path(self._tmp.name) / "club-deadbeef.tar.gz.part"
+
+    def test_premature_eof_keeps_partial_and_raises(self):
+        payload = b"x" * 100
+
+        def open_req(req, timeout=None):
+            return _FakeHttp(
+                status=200,
+                body=payload[:50],
+                headers={"Content-Length": "100"},
+            )
+
+        with _patch_opener(open_req), self.assertLogs("updater", level="INFO") as cm:
+            with self.assertRaises(UpdaterError) as ctx:
+                github_download("https://api.github.com/asset", self.dest, "tok")
+        self.assertIn("incomplete", str(ctx.exception).lower())
+        self.assertEqual(self.dest.read_bytes(), payload[:50])
+        self.assertTrue(any("keeping partial for resume" in line for line in cm.output))
+
+    def test_resume_sends_range_and_appends_206(self):
+        payload = b"abcdefghij"
+        self.dest.write_bytes(payload[:6])
+        captured = {}
+
+        def open_req(req, timeout=None):
+            captured["range"] = req.get_header("Range")
+            return _FakeHttp(
+                status=206,
+                body=payload[6:],
+                headers={
+                    "Content-Length": "4",
+                    "Content-Range": "bytes 6-9/10",
+                },
+            )
+
+        with _patch_opener(open_req), self.assertLogs("updater", level="INFO") as cm:
+            github_download("https://api.github.com/asset", self.dest, "tok")
+        self.assertEqual(captured["range"], "bytes=6-")
+        self.assertEqual(self.dest.read_bytes(), payload)
+        joined = "\n".join(cm.output)
+        self.assertIn("requesting Range: bytes=6-", joined)
+        self.assertIn("resume accepted: HTTP 206", joined)
+        self.assertIn("resume finished:", joined)
+
+    def test_server_ignoring_range_overwrites_partial(self):
+        payload = b"abcdefghij"
+        self.dest.write_bytes(b"XXXXXX")
+
+        def open_req(req, timeout=None):
+            return _FakeHttp(
+                status=200,
+                body=payload,
+                headers={"Content-Length": "10"},
+            )
+
+        with _patch_opener(open_req), self.assertLogs("updater", level="INFO") as cm:
+            github_download("https://api.github.com/asset", self.dest, "tok")
+        self.assertEqual(self.dest.read_bytes(), payload)
+        self.assertTrue(any("resume rejected: HTTP 200" in line for line in cm.output))
+
+    def test_network_error_keeps_partial(self):
+        self.dest.write_bytes(b"already")
+
+        def open_req(req, timeout=None):
+            raise urllib.error.URLError("connection reset")
+
+        with _patch_opener(open_req), self.assertLogs("updater", level="INFO") as cm:
+            with self.assertRaises(UpdaterError):
+                github_download("https://api.github.com/asset", self.dest, "tok")
+        self.assertEqual(self.dest.read_bytes(), b"already")
+        self.assertTrue(any("keeping partial for resume" in line for line in cm.output))
+
+    def test_download_release_resumes_partial_across_retries(self):
+        payload = b"complete-archive-bytes"
+        digest = hashlib.sha256(payload).hexdigest()
+        sidecar = f"{digest}  club-aaaaaaaa.tar.gz\n"
+        paths = UpdaterPaths.from_root(Path(self._tmp.name))
+        paths.ensure_dirs()
+        remote = RemoteRelease(
+            sha="aaaaaaaa",
+            tarball_name="club-aaaaaaaa.tar.gz",
+            tarball_api_url="https://api.github.com/tarball",
+            checksum_api_url="https://api.github.com/sidecar",
+        )
+        tarball_calls = []
+
+        def save(url, dest, token):
+            if url.endswith("/sidecar"):
+                dest.write_text(sidecar, encoding="utf-8")
+                return
+            tarball_calls.append(dest.stat().st_size if dest.is_file() else 0)
+            if not dest.is_file() or dest.stat().st_size == 0:
+                dest.write_bytes(payload[:10])
+                raise urllib.error.URLError("reset after 10 bytes")
+            with dest.open("ab") as fh:
+                fh.write(payload[10:])
+
+        dest = download_release(remote, paths, "tok", download=save, sleep=lambda _s: None)
+        self.assertEqual(dest.read_bytes(), payload)
+        self.assertEqual(tarball_calls, [0, 10])
+        self.assertFalse(Path(str(dest) + ".part").exists())

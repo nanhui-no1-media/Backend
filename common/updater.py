@@ -49,6 +49,7 @@ MAX_DOWNLOAD_ATTEMPTS = 8
 PROGRESS_LOG_SECONDS = 2.0
 PROGRESS_LOG_BYTES = 8 * 1024 * 1024
 RETRYABLE_HTTP = frozenset({408, 425, 429, 500, 502, 503, 504})
+_CONTENT_RANGE_RE = re.compile(r"bytes\s+(\d+)-(\d+)/(\d+|\*)", re.I)
 # POSIX hangup; production is Linux. Windows tests have no signal.SIGHUP.
 SIGHUP = getattr(signal, "SIGHUP", 1)
 # Set by start.sh so apply can SIGHUP Gunicorn (the parent) instead of
@@ -844,6 +845,34 @@ def github_json(url: str, token: str, *, timeout: int = 60, sleep: SleepFn = tim
     raise last_error  # type: ignore # pragma: no cover
 
 
+def _resp_header(resp, name: str) -> str | None:
+    headers = getattr(resp, "headers", None)
+    if headers is None:
+        return None
+    value = headers.get(name)
+    if value is None:
+        value = headers.get(name.lower())
+    return None if value is None else str(value)
+
+
+def _header_int(resp, name: str) -> int | None:
+    raw = _resp_header(resp, name)
+    if raw is None:
+        return None
+    text = raw.strip()
+    return int(text) if text.isdigit() else None
+
+
+def _parse_content_range(header: str | None) -> tuple[int, int, int | None] | None:
+    if not header:
+        return None
+    matched = _CONTENT_RANGE_RE.match(header.strip())
+    if not matched:
+        return None
+    start, end, total_s = int(matched.group(1)), int(matched.group(2)), matched.group(3)
+    return start, end, (None if total_s == "*" else int(total_s))
+
+
 def github_download(
     url: str,
     dest: Path,
@@ -851,49 +880,140 @@ def github_download(
     *,
     timeout: int = 300,
 ) -> None:
+    """Stream ``url`` to ``dest``, resuming with ``Range`` when a partial file exists."""
     dest.parent.mkdir(parents=True, exist_ok=True)
-    req = urllib.request.Request(
-        url,
-        headers=_github_headers(token, accept="application/octet-stream"),
-    )
+    existing = dest.stat().st_size if dest.is_file() else 0
+    headers = _github_headers(token, accept="application/octet-stream")
+    if existing > 0:
+        headers["Range"] = f"bytes={existing}-"
+        log.info(
+            "resume: %s has %s on disk; requesting Range: bytes=%s-",
+            dest.name,
+            _format_bytes(existing),
+            existing,
+        )
+    req = urllib.request.Request(url, headers=headers)
     try:
-        with _opener().open(req, timeout=timeout) as resp, open(dest, "wb") as out:
-            raw_len = resp.headers.get("Content-Length")
-            total = int(raw_len) if raw_len and str(raw_len).isdigit() else None
-            copied = 0
+        with _opener().open(req, timeout=timeout) as resp:
+            status = int(getattr(resp, "status", None) or resp.getcode() or 200)
+            mode = "wb"
+            if existing > 0 and status == 200:
+                log.info(
+                    "resume rejected: HTTP 200 (server ignored Range) for %s; restarting from 0",
+                    dest.name,
+                )
+                existing = 0
+            elif existing > 0 and status == 206:
+                parsed = _parse_content_range(_resp_header(resp, "Content-Range"))
+                if parsed is None or parsed[0] != existing:
+                    dest.unlink(missing_ok=True)
+                    raise UpdaterError(
+                        f"unexpected Content-Range for {url}: {_resp_header(resp, 'Content-Range')}"
+                    )
+                remaining = (
+                    parsed[2] - parsed[0] if parsed[2] is not None
+                    else parsed[1] - parsed[0] + 1
+                )
+                log.info(
+                    "resume accepted: HTTP 206 Content-Range %s; appending %s to %s",
+                    _resp_header(resp, "Content-Range"),
+                    _format_bytes(remaining),
+                    dest.name,
+                )
+                mode = "ab"
+            elif existing > 0:
+                raise UpdaterError(f"GitHub HTTP {status} downloading {url}")
+
+            total: int | None = None
+            if status == 206:
+                parsed = _parse_content_range(_resp_header(resp, "Content-Range"))
+                if parsed is not None and parsed[2] is not None:
+                    total = parsed[2]
+                else:
+                    remaining = _header_int(resp, "Content-Length")
+                    if remaining is not None:
+                        total = existing + remaining
+            else:
+                total = _header_int(resp, "Content-Length")
+
+            copied = existing if mode == "ab" else 0
             last_log = time.monotonic()
-            last_copied = 0
+            last_copied = copied
             started = last_log
             log.info(
                 "downloading %s (%s)",
                 dest.name,
                 _format_bytes(total) if total else "unknown size",
             )
-            while True:
-                chunk = resp.read(1024 * 1024)
-                if not chunk:
-                    break
-                out.write(chunk)
-                copied += len(chunk)
-                now = time.monotonic()
-                if now - last_log >= PROGRESS_LOG_SECONDS or copied - last_copied >= PROGRESS_LOG_BYTES:
-                    speed = (copied - last_copied) / max(now - last_log, 1e-6)
-                    log.info("%s", _format_progress(dest.name, copied, total, speed))
-                    last_log = now
-                    last_copied = copied
+            with open(dest, mode) as out:
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    copied += len(chunk)
+                    now = time.monotonic()
+                    if now - last_log >= PROGRESS_LOG_SECONDS or copied - last_copied >= PROGRESS_LOG_BYTES:
+                        speed = (copied - last_copied) / max(now - last_log, 1e-6)
+                        log.info("%s", _format_progress(dest.name, copied, total, speed))
+                        last_log = now
+                        last_copied = copied
+            if total is not None and copied < total:
+                log.warning(
+                    "incomplete download of %s: %s != %s; keeping partial for resume",
+                    dest.name,
+                    _format_bytes(copied),
+                    _format_bytes(total),
+                )
+                raise UpdaterError(
+                    f"incomplete download of {dest.name}: "
+                    f"{_format_bytes(copied)} != {_format_bytes(total)}; "
+                    "keeping partial for resume"
+                )
+            if total is not None and copied > total:
+                dest.unlink(missing_ok=True)
+                raise UpdaterError(
+                    f"download of {dest.name} exceeded Content-Length: "
+                    f"{_format_bytes(copied)} > {_format_bytes(total)}"
+                )
             elapsed = max(time.monotonic() - started, 1e-6)
-            log.info(
-                "downloaded %s %s in %.1fs (%s/s)",
-                dest.name,
-                _format_bytes(copied),
-                elapsed,
-                _format_bytes(copied / elapsed),
-            )
+            if mode == "ab" and existing > 0:
+                log.info(
+                    "resume finished: %s now %s (appended %s in %.1fs)",
+                    dest.name,
+                    _format_bytes(copied),
+                    _format_bytes(copied - existing),
+                    elapsed,
+                )
+            else:
+                log.info(
+                    "downloaded %s %s in %.1fs (%s/s)",
+                    dest.name,
+                    _format_bytes(copied),
+                    elapsed,
+                    _format_bytes(copied / elapsed),
+                )
     except urllib.error.HTTPError as exc:
-        dest.unlink(missing_ok=True)
+        if existing > 0:
+            log.warning(
+                "resume: HTTP %s for %s after %s on disk%s",
+                exc.code,
+                dest.name,
+                _format_bytes(existing),
+                "; discarding partial" if exc.code in {401, 403, 404, 410, 416} else "; keeping partial for retry",
+            )
+        if exc.code in {401, 403, 404, 410, 416}:
+            dest.unlink(missing_ok=True)
         raise UpdaterError(f"GitHub HTTP {exc.code} downloading {url}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        dest.unlink(missing_ok=True)
+        kept = dest.stat().st_size if dest.is_file() else 0
+        if kept:
+            log.warning(
+                "download failed for %s after %s; keeping partial for resume: %s",
+                dest.name,
+                _format_bytes(kept),
+                exc,
+            )
         raise UpdaterError(f"download failed for {url}: {exc}") from exc
 
 
@@ -1024,7 +1144,11 @@ def download_release(
     download: Callable[..., None] | None = None,
     sleep: SleepFn = time.sleep,
 ) -> Path:
-    """Download tarball + sidecar to ``.part``, verify, then rename. Never leaves a usable ``.part``."""
+    """Download tarball + sidecar to ``.part``, verify, then rename.
+
+    Incomplete ``.part`` files are kept and resumed with HTTP Range. Apply never
+    unpacks a ``.part``; only a checksum-ok rename becomes a usable archive.
+    """
     dest = paths.releases_dir / remote.tarball_name
     if is_complete_archive(dest):
         sidecar = Path(str(dest) + ".sha256")
@@ -1053,8 +1177,14 @@ def download_release(
             attempt + 1,
             MAX_DOWNLOAD_ATTEMPTS,
         )
-        part.unlink(missing_ok=True)
         sidecar_part.unlink(missing_ok=True)
+        already = part.stat().st_size if part.is_file() else 0
+        if already:
+            log.info(
+                "resume: %s already has %s from a previous attempt",
+                part.name,
+                _format_bytes(already),
+            )
         try:
             save(remote.checksum_api_url, sidecar_part, token)
             save(remote.tarball_api_url, part, token)
@@ -1076,8 +1206,16 @@ def download_release(
                 exc,
                 f"; retry in {delay:.0f}s" if delay else "",
             )
-            part.unlink(missing_ok=True)
             sidecar_part.unlink(missing_ok=True)
+            if isinstance(exc, ApplyError):
+                log.warning("checksum failed; discarding %s to restart from 0", part.name)
+                part.unlink(missing_ok=True)
+            elif part.is_file() and part.stat().st_size > 0:
+                log.info(
+                    "keeping %s (%s) to resume on the next attempt",
+                    part.name,
+                    _format_bytes(part.stat().st_size),
+                )
             if delay:
                 sleep(delay)
     raise UpdaterError(f"download failed after {MAX_DOWNLOAD_ATTEMPTS} attempts: {last_error}")
