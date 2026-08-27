@@ -8,16 +8,13 @@ export default function SurveyPanel({
   a, setActivity, user, busy, setBusy, setError, canManage,
 }: ActivityPanelProps & { canManage: boolean }) {
   const navigate = useNavigate();
-  const [guestSubmitted, setGuestSubmitted] = useState(false);
-  const [fillKey, setFillKey] = useState(0);
   const canEditSchema = canManage && a.schema_editable;
   const surveyApproved = !a.review_status || a.review_status === "approved";
-  const alreadySubmitted = !!user && a.my_response != null;
+  const alreadySubmitted = a.my_response != null;
   const canFillSurvey =
     a.status === "open" &&
     surveyApproved &&
     !alreadySubmitted &&
-    !guestSubmitted &&
     (a.audience === "public" || !!user);
 
   return (
@@ -37,27 +34,14 @@ export default function SurveyPanel({
       {a.status === "open" && surveyApproved && alreadySubmitted && (
         <p className="muted">你已经提交过了。</p>
       )}
-      {a.status === "open" && surveyApproved && guestSubmitted && (
-        <div>
-          <p>感谢作答。</p>
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => { setGuestSubmitted(false); setFillKey((k) => k + 1); }}
-          >
-            再填一份
-          </button>
-        </div>
-      )}
       {canFillSurvey && (
         <SurveyFill
-          key={fillKey}
           schema={a.schema || { pages: [{ name: "page1", elements: [] }] }}
           onComplete={async (answers) => {
             setBusy(true); setError("");
             try {
               const updated = await activityApi.respond(a.id, answers);
               setActivity(updated);
-              if (!updated.my_response) setGuestSubmitted(true);
             } catch (e: unknown) {
               setError(e instanceof Error ? e.message : String(e));
             } finally {

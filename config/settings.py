@@ -202,11 +202,17 @@ STATICFILES_DIRS = [
     p for p in (BASE_DIR / 'frontend' / 'dist', BASE_DIR / 'static') if p.is_dir()
 ]
 
+from corsheaders.defaults import default_headers
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = (
+    *default_headers,
+    "x-device-id",
+)
 
 # Django default is DENY, which makes Chrome render same-origin admin preview
 # iframes as "127.0.0.1 refused to connect". SAMEORIGIN still blocks third-party

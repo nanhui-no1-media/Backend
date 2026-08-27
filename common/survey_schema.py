@@ -1,4 +1,4 @@
-"""门户 SurveyJS Schema 校验。自我介绍问卷与调研共用同一规则（ADR 0011）。"""
+"""门户 SurveyJS Schema 校验。自我介绍问卷与调研共用同一规则（ADR 0011 / 0014）。"""
 
 
 class InvalidSurveySchema(ValueError):

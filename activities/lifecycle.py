@@ -66,7 +66,10 @@ def can_edit_schema(activity):
     if activity.status == SCHEDULED:
         return True
     if activity.status == OPEN:
-        return not SurveyResponse.objects.filter(activity_id=activity.pk).exists()
+        qid = activity.questionnaire_id
+        if not qid:
+            return True
+        return not QuestionnaireResponse.objects.filter(questionnaire_id=qid).exists()
     return False
 
 
@@ -217,4 +220,4 @@ def maybe_close_collection_on_cap(activity):
 
 
 # 延迟导入打破 activities 内部循环（lifecycle ↔ models 同 app，无环；保留供未来跨引用）。
-from .models import Activity, Submission, SurveyResponse  # noqa: E402
+from .models import Activity, QuestionnaireResponse, Submission  # noqa: E402

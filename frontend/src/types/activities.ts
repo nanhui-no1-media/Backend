@@ -97,7 +97,7 @@ export interface ActivityDetail {
   // 调研
   audience: SurveyAudience;
   schema: Record<string, unknown>;
-  my_response: Record<string, unknown> | null; // 已登录用户的作答；访客 / 未答为 null
+  my_response: Record<string, unknown> | null; // 当前身份（登录用户或访客设备）的作答；未答为 null
   response_count: number | null; // 作答总数（不作答列表；非调研为 null）
   schema_editable: boolean; // 调研 Schema 可否改（生命周期；非调研为 false）
   created_at: string;

@@ -1,9 +1,10 @@
 from rest_framework import serializers
 
+from activities.models import Questionnaire, QuestionnaireResponse
 from common.rich_text import sanitize_html
 from common.survey_schema import InvalidSurveySchema, validate_schema_dict
 
-from .models import JoinQuestionnaire, JoinResponse, RecruitmentNotice
+from .models import RecruitmentNotice
 
 
 class RecruitmentNoticeSerializer(serializers.ModelSerializer):
@@ -18,7 +19,7 @@ class RecruitmentNoticeSerializer(serializers.ModelSerializer):
 
 class JoinQuestionnaireSerializer(serializers.ModelSerializer):
     class Meta:
-        model = JoinQuestionnaire
+        model = Questionnaire
         fields = ["schema", "updated_at"]
         read_only_fields = ["updated_at"]
 
@@ -33,7 +34,7 @@ class JoinResponseSerializer(serializers.ModelSerializer):
     notice_acknowledged = serializers.BooleanField(write_only=True)
 
     class Meta:
-        model = JoinResponse
+        model = QuestionnaireResponse
         fields = ["id", "answers", "notice_acknowledged", "submitted_at"]
         read_only_fields = ["id", "submitted_at"]
 

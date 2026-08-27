@@ -131,6 +131,8 @@ export function getCSRFToken(): string {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
+import { getDeviceId } from "../utils/deviceId";
+
 // ---- 适配器：独占 fetch / 头 / CSRF / 响应映射 ----
 export function createRequest(base: string) {
   return async function request<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -142,6 +144,7 @@ export function createRequest(base: string) {
         headers: {
           ...(isFormData ? {} : { "Content-Type": "application/json" }),
           "X-CSRFToken": getCSRFToken(),
+          "X-Device-Id": getDeviceId(),
           ...options.headers,
         },
         credentials: "include",

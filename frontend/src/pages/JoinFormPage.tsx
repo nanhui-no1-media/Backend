@@ -9,6 +9,7 @@ export default function JoinFormPage() {
   const navigate = useNavigate();
   const [schema, setSchema] = useState<Record<string, unknown> | null>(null);
   const [done, setDone] = useState("");
+  const [already, setAlready] = useState(false);
 
   useEffect(() => {
     document.title = "自我介绍问卷";
@@ -16,7 +17,10 @@ export default function JoinFormPage() {
       navigate("/join", { replace: true });
       return;
     }
-    recruitmentApi.landing().then((d) => setSchema(d.schema));
+    recruitmentApi.landing().then((d) => {
+      setSchema(d.schema);
+      if (d.already_responded) setAlready(true);
+    });
   }, [navigate]);
 
   return (
@@ -32,8 +36,8 @@ export default function JoinFormPage() {
         </div>
       </div>
       <div className="container">
-        {done ? (
-          <div className="card card-pad"><p>{done}</p>
+        {already || done ? (
+          <div className="card card-pad"><p>{done || "你已经提交过了。"}</p>
             <button className="btn btn-primary" onClick={() => navigate("/")}>返回首页</button>
           </div>
         ) : schema ? (

@@ -34,6 +34,7 @@ class RecruitmentNotice(models.Model):
 
 
 def default_schema():
+    """历史迁移 / 种子仍引用此形状；运行时代码走 activities.models.default_join_schema。"""
     return {
         "title": "自我介绍问卷",
         "pages": [
@@ -82,47 +83,3 @@ def default_schema():
             }
         ],
     }
-
-
-class JoinQuestionnaire(models.Model):
-    """自我介绍问卷 Schema（单例，SurveyJS JSON，落本库）。"""
-
-    schema = models.JSONField("问卷 Schema", default=default_schema)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    objects = SingletonManager()
-
-    class Meta:
-        verbose_name = verbose_name_plural = "自我介绍问卷"
-
-    def save(self, *args, **kwargs):
-        self.pk = 1
-        if self._state.adding and JoinQuestionnaire.objects.filter(pk=1).exists():
-            self._state.adding = False
-            kwargs.pop("force_insert", None)
-        super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        pass
-
-    def __str__(self):
-        return "自我介绍问卷"
-
-
-class JoinResponse(models.Model):
-    """一次问卷作答。"""
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name="join_responses", verbose_name="作答者",
-    )
-    answers = models.JSONField("作答", default=dict)
-    submitted_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = "加入作答"
-        verbose_name_plural = "加入作答"
-        ordering = ["-submitted_at"]
-
-    def __str__(self):
-        return f"作答 {self.pk}"

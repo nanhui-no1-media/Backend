@@ -37,7 +37,7 @@ export const activityApi = {
       body: JSON.stringify({ option_ids: optionIds }),
     }),
 
-  // 调研作答（公开受众任何人；仅成员须登录；已登录一人一次）
+  // 调研作答（公开受众任何人；仅成员须登录；已登录一人一次；访客按设备一次）
   respond: (id: number, answers: Record<string, unknown>): Promise<ActivityDetail> =>
     request(`/activities/${id}/respond/`, {
       method: "POST",

@@ -15,7 +15,7 @@ from rest_framework.test import APIClient
 from accounts.test_helpers import grant_verification
 from reviews.test_helpers import approve_activity
 
-from .models import Activity, SurveyResponse, default_survey_schema
+from .models import Activity, QuestionnaireResponse, default_survey_schema
 
 
 def _publish_created(resp):
@@ -1220,12 +1220,16 @@ class SurveyActivityTest(TestCase):
         self.client.force_authenticate(None)
         return self.client.get(path)
 
-    def _guest_respond(self, aid, answers=None):
+    def _guest_respond(self, aid, answers=None, device_id="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"):
         self.client.force_authenticate(None)
+        extra = {}
+        if device_id:
+            extra["HTTP_X_DEVICE_ID"] = device_id
         return self.client.post(
             f"/activities/activities/{aid}/respond/",
             data=json.dumps({"answers": answers if answers is not None else {"q1": "ok"}}),
             content_type="application/json",
+            **extra,
         )
 
     # ---- 创建 ----
@@ -1311,13 +1315,40 @@ class SurveyActivityTest(TestCase):
         self.assertEqual(first.data["my_response"], {"q1": "一次"})
         self.assertEqual(first.data["response_count"], 1)
         self.assertEqual(self._respond(self.m1, aid, {"q1": "二次"}).status_code, 400)
-        self.assertEqual(SurveyResponse.objects.filter(activity_id=aid, user=self.m1).count(), 1)
+        q = Activity.objects.get(pk=aid).questionnaire
+        self.assertEqual(QuestionnaireResponse.objects.filter(questionnaire=q, user=self.m1).count(), 1)
 
-    def test_guest_multiple_responses_allowed(self):
+    def test_guest_same_device_second_post_400(self):
         aid = self._create(self.author, audience="public").data["id"]
-        self.assertEqual(self._guest_respond(aid, {"q1": "a"}).status_code, 201)
-        self.assertEqual(self._guest_respond(aid, {"q1": "b"}).status_code, 201)
-        self.assertEqual(SurveyResponse.objects.filter(activity_id=aid, user__isnull=True).count(), 2)
+        device = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        self.assertEqual(self._guest_respond(aid, {"q1": "a"}, device).status_code, 201)
+        again = self._guest_respond(aid, {"q1": "b"}, device)
+        self.assertEqual(again.status_code, 400)
+        q = Activity.objects.get(pk=aid).questionnaire
+        self.assertEqual(QuestionnaireResponse.objects.filter(questionnaire=q, user__isnull=True).count(), 1)
+
+    def test_guest_different_devices_each_once(self):
+        aid = self._create(self.author, audience="public").data["id"]
+        self.assertEqual(self._guest_respond(aid, {"q1": "a"}, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee").status_code, 201)
+        self.assertEqual(self._guest_respond(aid, {"q1": "b"}, "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff").status_code, 201)
+        q = Activity.objects.get(pk=aid).questionnaire
+        self.assertEqual(QuestionnaireResponse.objects.filter(questionnaire=q, user__isnull=True).count(), 2)
+
+    def test_guest_respond_requires_device_id(self):
+        aid = self._create(self.author, audience="public").data["id"]
+        r = self._guest_respond(aid, {"q1": "a"}, device_id="")
+        self.assertEqual(r.status_code, 400)
+
+    def test_guest_my_response_follows_device(self):
+        aid = self._create(self.author, audience="public").data["id"]
+        device = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        self.assertEqual(self._guest_respond(aid, {"q1": "访客"}, device).status_code, 201)
+        self.client.force_authenticate(None)
+        retrieve = self.client.get(
+            f"/activities/activities/{aid}/",
+            HTTP_X_DEVICE_ID=device,
+        )
+        self.assertEqual(retrieve.data["my_response"], {"q1": "访客"})
 
     def test_member_can_respond_to_members_survey(self):
         aid = self._create(self.author).data["id"]

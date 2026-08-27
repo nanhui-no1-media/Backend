@@ -24,6 +24,7 @@ from reviews.visibility import status_of, visible_queryset
 
 from . import exhibition, voting
 from .debt import annotate_activity_debt
+from .device import device_id_from_request
 from .lifecycle import (
     CLOSED,
     COLLECTING,
@@ -42,7 +43,7 @@ from .lifecycle import (
 )
 from .models import (
     Activity, Exhibit, ExhibitRating,
-    Submission, SurveyResponse,
+    QuestionnaireResponse, Submission,
 )
 from .permissions import (
     CanCreateActivity,
@@ -82,7 +83,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
         transition_due_starts()
         transition_overdue()
         qs = Activity.objects.select_related(
-            "creator", "creator__profile", "publication_review",
+            "creator", "creator__profile", "publication_review", "questionnaire",
         ).prefetch_related(
             "options", "options__selections",
             "ballots", "ballots__selections", "ballots__voter__profile",
@@ -199,7 +200,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
             return Response({"detail": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
         return self._serialized(activity, request)
 
-    # ── 调研作答（公开受众任何人；仅成员须登录；已登录一人一次）──
+    # ── 调研作答（公开受众任何人；仅成员须登录；已登录一人一次；访客按设备一次）──
     @action(detail=True, methods=["post"])
     def respond(self, request, pk=None):
         activity = self.get_object()
@@ -214,14 +215,29 @@ class ActivityViewSet(viewsets.ModelViewSet):
         answers = request.data.get("answers")
         if not isinstance(answers, dict):
             return Response({"detail": "answers 须为 JSON 对象"}, status=status.HTTP_400_BAD_REQUEST)
+        questionnaire = activity.questionnaire
+        if questionnaire is None:
+            return Response({"detail": "问卷不存在"}, status=status.HTTP_400_BAD_REQUEST)
         user = request.user if request.user.is_authenticated else None
-        if user is not None and SurveyResponse.objects.filter(
-            activity=activity, user=user,
+        device_id = device_id_from_request(request)
+        if user is None:
+            if not device_id:
+                return Response({"detail": "缺少设备标识"}, status=status.HTTP_400_BAD_REQUEST)
+            if QuestionnaireResponse.objects.filter(
+                questionnaire=questionnaire, user__isnull=True, device_id=device_id,
+            ).exists():
+                return Response({"detail": "你已经提交过了"}, status=status.HTTP_400_BAD_REQUEST)
+        elif QuestionnaireResponse.objects.filter(
+            questionnaire=questionnaire, user=user,
         ).exists():
             return Response({"detail": "你已经提交过了"}, status=status.HTTP_400_BAD_REQUEST)
         try:
             with transaction.atomic():
-                SurveyResponse.objects.create(activity=activity, user=user, answers=answers)
+                QuestionnaireResponse.objects.create(
+                    questionnaire=questionnaire, user=user,
+                    device_id=device_id if user is None else "",
+                    answers=answers,
+                )
         except IntegrityError:
             return Response({"detail": "你已经提交过了"}, status=status.HTTP_400_BAD_REQUEST)
         activity = self.get_queryset().get(pk=activity.pk)

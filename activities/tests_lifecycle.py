@@ -25,7 +25,7 @@ from .lifecycle import (
     initial_status,
     transition_overdue,
 )
-from .models import Activity, SurveyResponse
+from .models import Activity, QuestionnaireResponse
 
 
 class InitialStatusTest(TestCase):
@@ -186,7 +186,9 @@ class CanEditSchemaTest(TestCase):
         self.assertTrue(can_edit_schema(self.open))
 
     def test_open_survey_with_response_blocks_schema_edit(self):
-        SurveyResponse.objects.create(activity=self.open, user=self.user, answers={"q": "a"})
+        QuestionnaireResponse.objects.create(
+            questionnaire=self.open.questionnaire, user=self.user, answers={"q": "a"},
+        )
         self.assertFalse(can_edit_schema(self.open))
 
     def test_closed_survey_blocks_schema_edit(self):

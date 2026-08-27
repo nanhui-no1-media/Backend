@@ -10,6 +10,7 @@ from reviews.visibility import comment_for, status_of
 from tasks.serializers import SimpleUserSerializer  # 复用（与申报/新闻一致）
 
 from .debt import owed_for
+from .device import device_id_from_request
 from .lifecycle import can_edit_schema, initial_status
 from .models import Activity, Ballot, Exhibit, VoteOption, Submission
 from .voting import ballots_visible_to, options_locked, voting_active
@@ -164,6 +165,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     my_response = serializers.SerializerMethodField()
     response_count = serializers.SerializerMethodField()
     schema_editable = serializers.SerializerMethodField()
+    schema = serializers.JSONField(required=False)
     # 众议写侧：创建时给选项文本（开放即锁定，无后续编辑）
     option_texts = serializers.ListField(
         child=serializers.CharField(max_length=200), write_only=True, required=False,
@@ -259,6 +261,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         texts = validated_data.pop("option_texts", [])
+        schema = validated_data.pop("schema", None)
         activity_type = validated_data["type"]
         # 截止默认相对开始时间：有 start_at 则从其起算，否则从现在；众议 +3 天 / 其余（含调研）+7 天。
         start_at = validated_data.get("start_at")
@@ -268,6 +271,8 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             validated_data["end_at"] = base + timedelta(days=days)
         validated_data["status"] = initial_status(activity_type, start_at)
         activity = Activity.objects.create(**validated_data)
+        if activity_type == "survey" and schema is not None:
+            activity.schema = schema
         for i, text in enumerate(texts):
             VoteOption.objects.create(activity=activity, text=text, order=i)
         return activity
@@ -275,9 +280,12 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         # 视图层 gate：标题/正文/时间须 scheduled；调研 schema 可在开放且零作答时改。
         texts = validated_data.pop("option_texts", None)
+        schema = validated_data.pop("schema", None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+        if schema is not None and instance.type == "survey":
+            instance.schema = schema
         if texts is not None and instance.type == "deliberation":
             if options_locked(instance):
                 raise serializers.ValidationError({"option_texts": "投票开放后选项已锁定"})
@@ -357,19 +365,26 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
     # ---- 调研读侧 ----
 
     def get_my_response(self, obj):
-        if obj.type != "survey":
+        if obj.type != "survey" or not obj.questionnaire_id:
             return None
         request = self.context.get("request")
-        user = getattr(request, "user", None)
-        if not user or not user.is_authenticated:
+        if request is None:
             return None
-        resp = obj.survey_responses.filter(user=user).first()
+        user = getattr(request, "user", None)
+        qs = obj.questionnaire.responses.all()
+        if user and user.is_authenticated:
+            resp = qs.filter(user=user).first()
+        else:
+            device_id = device_id_from_request(request)
+            if not device_id:
+                return None
+            resp = qs.filter(user__isnull=True, device_id=device_id).first()
         return resp.answers if resp else None
 
     def get_response_count(self, obj):
-        if obj.type != "survey":
+        if obj.type != "survey" or not obj.questionnaire_id:
             return None
-        return obj.survey_responses.count()
+        return obj.questionnaire.responses.count()
 
     def get_schema_editable(self, obj):
         return can_edit_schema(obj)

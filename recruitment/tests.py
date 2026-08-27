@@ -2,7 +2,8 @@ from django.contrib.auth.models import Permission, User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from recruitment.models import JoinQuestionnaire, JoinResponse, RecruitmentNotice
+from activities.models import Questionnaire, QuestionnaireResponse
+from recruitment.models import RecruitmentNotice
 
 
 def _editor():
@@ -11,12 +12,16 @@ def _editor():
     return user
 
 
+DEVICE = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+
+
 class RecruitmentLandingTest(TestCase):
     def test_anon_reads_notice_and_schema(self):
-        resp = APIClient().get("/recruitment/")
+        resp = APIClient().get("/recruitment/", HTTP_X_DEVICE_ID=DEVICE)
         self.assertEqual(resp.status_code, 200)
         self.assertIn("notice", resp.data)
         self.assertIn("schema", resp.data)
+        self.assertFalse(resp.data["already_responded"])
         self.assertIn("pages", resp.data["schema"])
         self.assertTrue(any(t.get("type") == "skip" for t in resp.data["schema"].get("triggers") or []))
 
@@ -27,6 +32,7 @@ class NoticeAckGateTest(TestCase):
             "/recruitment/responses/",
             {"answers": {"grade": "高一"}, "notice_acknowledged": False},
             format="json",
+            HTTP_X_DEVICE_ID=DEVICE,
         )
         self.assertEqual(resp.status_code, 400)
 
@@ -35,17 +41,36 @@ class NoticeAckGateTest(TestCase):
             "/recruitment/responses/",
             {"answers": {"grade": "高一", "intro": "你好"}, "notice_acknowledged": True},
             format="json",
+            HTTP_X_DEVICE_ID=DEVICE,
         )
         self.assertEqual(resp.status_code, 201)
         self.assertTrue(resp.data["ok"])
-        self.assertEqual(JoinResponse.objects.count(), 1)
-        self.assertEqual(JoinResponse.objects.get().answers["grade"], "高一")
+        q = Questionnaire.get_join()
+        self.assertEqual(q.responses.count(), 1)
+        self.assertEqual(q.responses.get().answers["grade"], "高一")
+
+    def test_guest_same_device_second_post_400(self):
+        payload = {"answers": {"grade": "高一", "intro": "你好"}, "notice_acknowledged": True}
+        client = APIClient()
+        self.assertEqual(client.post("/recruitment/responses/", payload, format="json", HTTP_X_DEVICE_ID=DEVICE).status_code, 201)
+        again = client.post("/recruitment/responses/", payload, format="json", HTTP_X_DEVICE_ID=DEVICE)
+        self.assertEqual(again.status_code, 400)
+        self.assertEqual(Questionnaire.get_join().responses.count(), 1)
+
+    def test_guest_missing_device_id_rejected(self):
+        resp = APIClient().post(
+            "/recruitment/responses/",
+            {"answers": {"grade": "高一", "intro": "你好"}, "notice_acknowledged": True},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
 
     def test_empty_answers_rejected(self):
         resp = APIClient().post(
             "/recruitment/responses/",
             {"answers": {}, "notice_acknowledged": True},
             format="json",
+            HTTP_X_DEVICE_ID=DEVICE,
         )
         self.assertEqual(resp.status_code, 400)
 
@@ -57,7 +82,7 @@ class SchemaPersistTest(TestCase):
         schema = {"title": "新问卷", "pages": [{"name": "p", "elements": [{"type": "text", "name": "n"}]}]}
         resp = client.put("/recruitment/schema/", {"schema": schema}, format="json")
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(JoinQuestionnaire.objects.get_solo().schema["title"], "新问卷")
+        self.assertEqual(Questionnaire.get_join().schema["title"], "新问卷")
 
     def test_editor_updates_notice(self):
         client = APIClient()

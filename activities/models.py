@@ -1,10 +1,15 @@
-"""活动模型（ADR 0007 / 0011）：活动独立于申报，分众议 / 征集 / 展示 / 调研。
+"""活动模型（ADR 0007 / 0011 / 0014）：活动独立于申报，分众议 / 征集 / 展示 / 调研。
 
 与申报(proposals)分离——申报退化为纯反馈容器。状态机与守卫集中在 lifecycle.py
 （遵循 ADR 0003），此处只给 DB 枚举与字段。
+
+问卷 Schema 与作答是独立模型（``Questionnaire`` / ``QuestionnaireResponse``）；
+调研活动以外键指向问卷，门户调研页与加入页只作投影入口。
 """
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 
 
 def default_survey_schema():
@@ -13,6 +18,137 @@ def default_survey_schema():
         "title": "",
         "pages": [{"name": "page1", "elements": []}],
     }
+
+
+def default_join_schema():
+    """自我介绍问卷默认 Schema（与历史 recruitment.default_schema 同形）。"""
+    return {
+        "title": "自我介绍问卷",
+        "pages": [
+            {
+                "name": "page1",
+                "elements": [
+                    {
+                        "type": "radiogroup",
+                        "name": "grade",
+                        "title": "年级",
+                        "isRequired": True,
+                        "choices": ["高一", "高二", "高三"],
+                    },
+                    {
+                        "type": "checkbox",
+                        "name": "skills",
+                        "title": "擅长方向（可多选）",
+                        "choices": ["摄影", "剪辑", "平面设计", "撰稿"],
+                    },
+                    {
+                        "type": "dropdown",
+                        "name": "source",
+                        "title": "你如何得知本社团？",
+                        "choices": ["同学介绍", "海报", "其他"],
+                    },
+                    {
+                        "type": "text",
+                        "name": "other_source",
+                        "title": "其他来源",
+                        "visibleIf": "{source} = '其他'",
+                    },
+                    {
+                        "type": "comment",
+                        "name": "intro",
+                        "title": "自我介绍",
+                        "isRequired": True,
+                    },
+                ],
+            }
+        ],
+        "triggers": [
+            {
+                "type": "skip",
+                "expression": "{grade} = '高三'",
+                "gotoName": "intro",
+            }
+        ],
+    }
+
+
+class Questionnaire(models.Model):
+    """问卷：独立于活动窗口的 SurveyJS Schema。调研活动外键指向一份；加入为 kind=join 单例。"""
+
+    KIND_SURVEY = "survey"
+    KIND_JOIN = "join"
+    KIND_CHOICES = [
+        (KIND_SURVEY, "调研"),
+        (KIND_JOIN, "自我介绍"),
+    ]
+
+    kind = models.CharField("用途", max_length=12, choices=KIND_CHOICES)
+    schema = models.JSONField("问卷 Schema", default=default_survey_schema)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "问卷"
+        verbose_name_plural = "问卷"
+        ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["kind"],
+                condition=models.Q(kind="join"),
+                name="unique_join_questionnaire",
+            ),
+        ]
+
+    def __str__(self):
+        title = (self.schema or {}).get("title") or ""
+        label = self.get_kind_display()  # type: ignore[attr-defined]
+        return f"{label}: {title}" if title else label
+
+    @classmethod
+    def get_join(cls):
+        obj, _ = cls.objects.get_or_create(
+            kind=cls.KIND_JOIN,
+            defaults={"schema": default_join_schema()},
+        )
+        return obj
+
+
+class QuestionnaireResponse(models.Model):
+    """问卷结果：一份问卷上的一次提交。已登录一人一行；访客按设备标识一行。"""
+
+    questionnaire = models.ForeignKey(
+        Questionnaire, on_delete=models.CASCADE,
+        related_name="responses", verbose_name="问卷",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="questionnaire_responses", verbose_name="作答者",
+    )
+    device_id = models.CharField("设备标识", max_length=36, blank=True, default="")
+    answers = models.JSONField("作答", default=dict)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "问卷结果"
+        verbose_name_plural = "问卷结果"
+        ordering = ["-submitted_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["questionnaire", "user"],
+                condition=models.Q(user__isnull=False),
+                name="unique_questionnaire_response_per_user",
+            ),
+            models.UniqueConstraint(
+                fields=["questionnaire", "device_id"],
+                condition=models.Q(user__isnull=True) & ~models.Q(device_id=""),
+                name="unique_questionnaire_response_per_device",
+            ),
+        ]
+
+    def __str__(self):
+        who = self.user_id if self.user_id else (self.device_id or "guest")
+        return f"{who} -> {self.questionnaire_id}"  # type: ignore
 
 
 class Activity(models.Model):
@@ -87,8 +223,12 @@ class Activity(models.Model):
     audience = models.CharField(
         "受众", max_length=8, choices=AUDIENCE_CHOICES, default="members",
     )
-    # 调研专属：SurveyJS Schema。其他类型忽略。
-    schema = models.JSONField("问卷 Schema", default=default_survey_schema)
+    # 调研专属：指向独立问卷。其他类型为空。删除活动时级联删调研问卷（见 post_delete）。
+    questionnaire = models.OneToOneField(
+        Questionnaire, on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="survey_activity", verbose_name="问卷",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -103,6 +243,30 @@ class Activity(models.Model):
 
     def __str__(self):
         return f"{self.get_type_display()}: {self.title}" # type: ignore
+
+    @property
+    def schema(self):
+        """门户投影：调研读关联问卷 Schema；无问卷时给默认空表。"""
+        if self.questionnaire_id:
+            return self.questionnaire.schema
+        return default_survey_schema()
+
+    @schema.setter
+    def schema(self, value):
+        if not self.questionnaire_id:
+            return
+        self.questionnaire.schema = value
+        self.questionnaire.save(update_fields=["schema", "updated_at"])
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.type == "survey" and self.questionnaire_id is None:
+            q = Questionnaire.objects.create(
+                kind=Questionnaire.KIND_SURVEY, schema=default_survey_schema(),
+            )
+            type(self).objects.filter(pk=self.pk).update(questionnaire=q)
+            self.questionnaire_id = q.pk
+            self.questionnaire = q
 
 
 class VoteOption(models.Model):
@@ -278,36 +442,9 @@ class ExhibitRating(models.Model):
         return f"{self.user_id} -> {self.exhibit_id} ({self.choice})" # type: ignore
 
 
-class SurveyResponse(models.Model):
-    """调研作答：一份调研上的一次提交。
-
-    已登录用户一人一行（部分唯一约束）；访客 user=null，不限次数。
-    """
-
-    activity = models.ForeignKey(
-        Activity, on_delete=models.CASCADE,
-        related_name="survey_responses", verbose_name="活动",
-    )
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name="survey_responses", verbose_name="作答者",
-    )
-    answers = models.JSONField("作答", default=dict)
-    submitted_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = "调研作答"
-        verbose_name_plural = "调研作答"
-        ordering = ["-submitted_at"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["activity", "user"],
-                condition=models.Q(user__isnull=False),
-                name="unique_survey_response_per_user",
-            ),
-        ]
-
-    def __str__(self):
-        who = self.user_id if self.user_id else "guest"
-        return f"{who} -> {self.activity_id}" # type: ignore
+@receiver(post_delete, sender=Activity)
+def _delete_survey_questionnaire(sender, instance, **kwargs):
+    """调研活动删除后收回其问卷（加入单例问卷不挂 activity，不受影响）。"""
+    qid = getattr(instance, "questionnaire_id", None)
+    if qid:
+        Questionnaire.objects.filter(pk=qid, kind=Questionnaire.KIND_SURVEY).delete()
