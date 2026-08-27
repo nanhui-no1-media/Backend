@@ -26,11 +26,13 @@
 
 ```text
 浏览器
-  ↓
-Nginx（HTTP/1.1，转发 Upgrade / Connection）
+  ↓  HTTP/1.1，有证书后可 HTTP/2（HTTP/3 可选）
+Nginx
   ├── /static/ → Django staticfiles
   ├── /media/ → 用户上传文件
-  └── 其他请求（含 /ws/）→ Gunicorn UvicornWorker × 1 → Django ASGI
+  └── 其他（含 /ws/messaging/）
+        ↓  一律 HTTP/1.1 + Upgrade（unix socket）
+      Gunicorn UvicornWorker × 1 → Django ASGI
 ```
 
 关键特征：
@@ -38,9 +40,79 @@ Nginx（HTTP/1.1，转发 Upgrade / Connection）
 - Django 直接提供前端 `frontend/dist/` 产物
 - `start.sh` 负责拉起 Gunicorn（**1 个** ASGI worker，`config.asgi:application`），并一起拉起更新守护进程
 - WebSocket 走 `/ws/messaging/`，只推送私信 / 通知 / 当前评论区；挤号仍走 HTTP 中间件（[ADR 0015](adr/0015-channels-without-redis.md)）
-- Nginx 须 `proxy_http_version 1.1` 并设置 `Upgrade` / `Connection` 头，否则浏览器连不上 socket
+- Nginx **对上游**须 HTTP/1.1 并转发 `Upgrade` / `Connection`；对外协议见下节
 - `scripts/install.sh` 会处理依赖安装、（必要时）前端构建、SECRET_KEY / FRONTEND_URL / 超管、迁移、collectstatic、systemd 和 Nginx 配置
 - **不要**在未引入 Redis 之前把 `--workers` 调到 >1：内存 channel layer 无法跨进程扇出，SQLite 也怕多写者
+- **更新器不会改 Nginx**。已装过的机器要手改站点配置后 `nginx -t && systemctl reload nginx`
+
+### Nginx 两段协议
+
+两段连接协议可以不一样，**不要**按路径拆成「`/ws/` 走 1.1、别的走 HTTP/2」两套 `location`。一个 `location /` 反代到 unix socket 即可。
+
+| 段 | 协议 |
+|---|---|
+| 浏览器 → nginx | HTTP/1.1；有 TLS 后开 HTTP/2；HTTP/3 可选 |
+| nginx → Gunicorn | **一律 HTTP/1.1**（页面、API、WebSocket 的 `Upgrade` 都在这里） |
+
+Uvicorn 在 unix socket 上只说 HTTP/1.1。`proxy_http_version` 管的是这一段；nginx 1.29.7 之前默认还是 HTTP/1.0，不写 `1.1` 则 WebSocket 握手失败。不要写 `proxy_http_version 2`。
+
+安装脚本写入的站点文件（Debian：`/etc/nginx/sites-available/<服务名>`；阿里云/RHEL：`/etc/nginx/conf.d/<服务名>.conf`）已经是下面这份。已有 HTTPS 的 `server` **两边都要**带同一套反代头，不要只改 80。
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name club.example.com;
+    client_max_body_size 20M;
+
+    location /static/ { alias /opt/club/staticfiles/; }
+    location /media/   { alias /opt/club/media/; }
+
+    location / {
+        proxy_pass http://unix:/opt/club/run/gunicorn.sock;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host       $host;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # 空闲 WebSocket 否则约 60s 被掐；前端会重连，但会抖
+        proxy_read_timeout 7d;
+        proxy_send_timeout 7d;
+    }
+}
+```
+
+有证书后对外开 HTTP/2：在 **443 的 `server`** 上开，反代段仍是上面的 1.1。nginx 1.25.1+ 可把 `http2` 从 `listen` 挪到指令 `http2 on;`。
+
+```nginx
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name club.example.com;
+    ssl_certificate     /etc/letsencrypt/live/club.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/club.example.com/privkey.pem;
+    client_max_body_size 20M;
+    # location /static/ /media/ 与 location / 与 80 相同
+}
+```
+
+HTTP/3 同样只在 nginx 对外终结，对内仍 1.1。需模块支持，并放行 **UDP/443**：
+
+```nginx
+listen 443 quic reuseport;
+listen 443 ssl;
+http2 on;
+http3 on;
+add_header Alt-Svc 'h3=":443"; ma=86400' always;
+```
+
+发行版自带的 nginx（尤其阿里云）往往没有 HTTP/3 模块；没有就不要开，HTTP/2 已经够用。
 
 ## 3. 一次性部署
 
@@ -266,6 +338,15 @@ uv run python manage.py collectstatic --noinput
 - 避免大量热点写操作同步发生
 - 生产契约是 **`--workers 1`**（[ADR 0015](adr/0015-channels-without-redis.md)）；加 worker 须先上 Redis channel layer，另开 ADR
 
+### 8.5 WebSocket 连不上 / 约一分钟断一次
+
+页面还能用（评论、私信、通知走 HTTP），只是不实时推。
+
+- 站点配置缺 `proxy_http_version 1.1` 或 `Upgrade` / `Connection`（更新器不会改 Nginx）
+- 只改了 `listen 80` 的 `server`，HTTPS 的 443 块没有同一套反代头
+- `start.sh` 仍是旧的 WSGI / 多 worker：须为 `UvicornWorker`、`--workers 1`、`config.asgi:application`
+- 约 60 秒断一次：补 `proxy_read_timeout 7d;`（见第 2 节）
+
 ## 9. 监控和可观测性
 
 建议至少留意下面几类日志：
@@ -292,8 +373,8 @@ sudo tail -f /var/log/nginx/error.log
 - `SECRET_KEY` 是否有效
 - 迁移是否已执行
 - 前端是否已构建
-- Nginx + systemd 配置是否生效
-- 关键页面是否能正常打开
+- Nginx + systemd 配置是否生效（上游 HTTP/1.1 + Upgrade；有 TLS 的 443 块同样要有）
+- 关键页面是否能正常打开；登录后 `/ws/messaging/` 能握手
 
 ## 11. 结论
 

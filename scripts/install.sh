@@ -269,6 +269,12 @@ write_nginx_site() {
   layout="$(nginx_layout)"
   local body
   body=$(cat <<NGINX
+# 两段协议（docs/deployment.md、ADR 0015）：
+#   浏览器 → nginx：HTTP/1.1；有证书后在 listen 上开 HTTP/2（HTTP/3 可选）
+#   nginx → gunicorn unix socket：一律 HTTP/1.1（WebSocket Upgrade 也在这一段）
+# 不要按路径把 /ws/ 拆成另一种上游协议，也不要对 unix socket 写 proxy_http_version 2。
+# 更新器不会改本文件。改完：nginx -t && systemctl reload nginx。
+
 map \$http_upgrade \$connection_upgrade {
     default upgrade;
     ''      close;
@@ -299,8 +305,21 @@ server {
         proxy_set_header Host              \$host;
         proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 7d;
+        proxy_send_timeout 7d;
     }
 }
+
+# --- 有证书后启用 HTTP/2：取消注释，并把上面的 location /static/ /media/、error_page 和 location / 拷进本 server。
+#     nginx 1.25.1+ 也可写成 listen 443 ssl; 然后 http2 on;
+# server {
+#     listen 443 ssl http2;
+#     listen [::]:443 ssl http2;
+#     server_name $SERVER_NAME;
+#     ssl_certificate     /etc/letsencrypt/live/$SERVER_NAME/fullchain.pem;
+#     ssl_certificate_key /etc/letsencrypt/live/$SERVER_NAME/privkey.pem;
+#     client_max_body_size 20M;
+# }
 NGINX
 )
   case "$layout" in

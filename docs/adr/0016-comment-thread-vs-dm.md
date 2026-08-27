@@ -11,7 +11,7 @@
 3. **私信会话只剩 1:1。** `Conversation` 去掉 `conversation_type` / `task` / `proposal`。数据迁移：删除非私信会话及其消息，私信保留。任务讨论改走该任务的评论区。
 4. **申报与审核事件改走通知，不建会话。** `Notification` 按收件人落库（类别 `comment` | `review` | `discipline`），不把私信再克隆一行。署名反馈处理结果、审核通过/驳回/下架 → `notify(..., category=review)`。待办收件箱去掉 `kind=conversation`（私信自己有未读）。
 5. **横幅公告是全站单槽运营短讯**，不是新闻，也不是**招生公告**。全站同一时刻至多一条生效；访客可读；写入只走 Django admin。
-6. **全站禁言 ≠ 评论区禁言。** 前者罚账号（不能发评论/私信，仍可登录、阅读、接收）；后者关某一宿主的评论区。访问控制仍走 [ADR 0005](0005-access-control-principle.md)：`manage_comment_thread`（评论区协管）、`mute_user`（全站禁言）、`manage_announcement`（横幅）。改评论区状态 = 宿主主人 **或** 宿主管理权限 **或** `manage_comment_thread`，不为此再拆第四个权限。
+6. **全站禁言 ≠ 评论区禁言。** 前者罚账号（不能发评论/私信，仍可登录、阅读、接收）；后者关某一宿主的评论区。访问控制仍走 [ADR 0005](0005-access-control-principle.md)：`manage_comment_thread`（评论区协管）、`mute_user`（全站禁言）、`manage_announcement`（横幅）。改评论区状态 / 墓碑删评论 = 宿主主人 **或** `manage_comment_thread`。**不**随 `news.add_news` / `activities.change_activity` / `tasks.manage_tasks` 自动获得——管正文和管评论是两条权限，组策略分开授。
 
 ## 被否的方案
 

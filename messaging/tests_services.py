@@ -11,6 +11,7 @@ from accounts.models import Profile
 from accounts.test_helpers import grant_verification
 from common.models import SiteSettings
 from common.policy import invalidate_policy_cache
+from activities.models import Activity
 from news.models import News
 from reviews.test_helpers import approve_news
 from tasks.models import Task
@@ -158,6 +159,51 @@ class ThreadAndCommentRulesTest(TestCase):
         thread = thread_for(task)
         self.assertTrue(can_manage_thread(creator, thread))
         self.assertFalse(can_manage_thread(assignee, thread))
+
+    def test_host_manage_perms_do_not_grant_comment_thread(self):
+        """管理新闻 / 活动 / 任务 与 管理评论正交：持宿主管理权限不能管别人的评论区。"""
+        owner = User.objects.create_user(username="host_owner", password="x")
+        news = News.objects.create(title="n2", author=owner, is_published=True)
+        activity = Activity.objects.create(
+            type="deliberation", status="open", title="a", creator=owner,
+        )
+        task = Task.objects.create(title="t2", creator=owner)
+        cases = [
+            (thread_for(news), "news", "add_news"),
+            (thread_for(activity), "activities", "change_activity"),
+            (thread_for(task), "tasks", "manage_tasks"),
+        ]
+        for thread, app, codename in cases:
+            with self.subTest(perm=f"{app}.{codename}"):
+                holder = User.objects.create_user(
+                    username=f"{codename}_holder", password="x",
+                )
+                holder.user_permissions.add(
+                    Permission.objects.get(
+                        content_type__app_label=app, codename=codename,
+                    ),
+                )
+                self.assertTrue(can_manage_thread(owner, thread))
+                self.assertFalse(can_manage_thread(holder, thread))
+        editor = User.objects.create_user(username="editor", password="x")
+        editor.user_permissions.add(
+            Permission.objects.get(content_type__app_label="news", codename="add_news"),
+        )
+        with self.assertRaises(MessagingForbidden):
+            delete_comment(post_comment(self.thread, self.author, "x"), editor)
+
+    def test_comment_thread_perm_can_manage_others_thread(self):
+        mod = User.objects.create_user(username="cmod", password="x")
+        mod.user_permissions.add(
+            Permission.objects.get(
+                content_type__app_label="messaging", codename="manage_comment_thread",
+            ),
+        )
+        self.assertTrue(can_manage_thread(mod, self.thread))
+        comment = post_comment(self.thread, self.author, "x")
+        delete_comment(comment, mod)
+        comment.refresh_from_db()
+        self.assertIsNotNone(comment.deleted_at)
 
 
 class MuteAndNotifyTest(TestCase):

@@ -15,7 +15,7 @@
 5. **横幅公告不靠 socket。** 访客无连接；AppShell 在加载 / 聚焦 / 导航时轮询 `GET /messaging/banners/current/`。
 6. **挤号继续 HTTP。** `SingleSessionMiddleware` + 401 `session_superseded` 仍是唯一挤号通道；本 socket 不发下线事件。
 
-Nginx 须 `proxy_http_version 1.1` 并转发 `Upgrade` / `Connection`。开发代理给 `/ws` 开 `ws: true`。
+Nginx **对上游**须 `proxy_http_version 1.1` 并转发 `Upgrade` / `Connection`（Uvicorn unix socket 只说 HTTP/1.1；WebSocket 的 Upgrade 也在这一段）。浏览器到 nginx 可以是 HTTP/2 或 HTTP/3，写在 `listen` 上，不要按路径拆 `location`，也不要对 unix socket 写 `proxy_http_version 2`。开发代理给 `/ws` 开 `ws: true`。完整站点配置见 [deployment.md](../deployment.md#nginx-两段协议)。
 
 ## 被否的方案
 

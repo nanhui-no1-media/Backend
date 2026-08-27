@@ -286,6 +286,18 @@ class CommentTombstoneHttpTest(TestCase):
         self.assertEqual(tombstone["content"], "该评论已删除")
         self.assertEqual(tombstone["replies"][0]["content"], "child")
 
+    def test_news_editor_cannot_delete_on_others_thread(self):
+        editor = grant_verification(User.objects.create_user(username="editor", password="x"))
+        editor.user_permissions.add(
+            Permission.objects.get(content_type__app_label="news", codename="add_news"),
+        )
+        commenter = grant_verification(User.objects.create_user(username="c", password="x"))
+        comment = post_comment(self.thread, commenter, "hi")
+        other = APIClient()
+        other.force_authenticate(editor)
+        resp = other.post(f"/messaging/comments/{comment.pk}/delete/")
+        self.assertEqual(resp.status_code, 403)
+
 
 class MuteHttpTest(TestCase):
     """全站禁言拦评论和私信，不拦登录、阅读、接收。"""

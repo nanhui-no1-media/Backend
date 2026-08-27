@@ -35,11 +35,6 @@ logger = logging.getLogger(__name__)
 RETRACT_WINDOW = timedelta(minutes=3)
 MENTION_RE = re.compile(r"@(\w+)")
 
-_HOST_MANAGE_PERM = {
-    "news": "news.add_news",
-    "activity": "activities.change_activity",
-    "task": "tasks.manage_tasks",
-}
 _EMAIL_PREF = {
     Notification.CATEGORY_COMMENT: "email_notify_comment",
     Notification.CATEGORY_REVIEW: "email_notify_review",
@@ -123,9 +118,9 @@ def can_see_host(user, host) -> bool:
 
 
 def can_manage_thread(user, thread: CommentThread) -> bool:
-    """宿主主人 **或** 宿主管理权限 **或** ``messaging.manage_comment_thread``。
+    """改评论区状态 / 墓碑删评论：宿主主人（所有权）**或** ``messaging.manage_comment_thread``。
 
-    任务协管不含负责人/协作者——他们不能改任务评论区状态。
+    不继承「管理新闻 / 活动 / 任务」——发稿和管评论是两条权限，组策略分开授。
     """
     if not user or not getattr(user, "is_authenticated", False):
         return False
@@ -133,10 +128,7 @@ def can_manage_thread(user, thread: CommentThread) -> bool:
         return True
     host = host_of(thread)
     owner_id = _host_owner_id(host)
-    if owner_id is not None and owner_id == user.pk:
-        return True
-    perm = _HOST_MANAGE_PERM.get(host._meta.model_name)
-    return bool(perm and user.has_perm(perm))
+    return owner_id is not None and owner_id == user.pk
 
 
 def can_see_thread(user, thread: CommentThread) -> bool:

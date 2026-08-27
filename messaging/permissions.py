@@ -32,7 +32,7 @@ class IsNotMuted(permissions.BasePermission):
 
 
 class CanManageThread(permissions.BasePermission):
-    """改评论区状态 / 墓碑删除评论：主人或宿主管理权限或 ``manage_comment_thread``。"""
+    """改评论区状态 / 墓碑删除评论：主人或 ``manage_comment_thread``。不随管理新闻等继承。"""
 
     message = "没有管理该评论区的权限。"
 
