@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 from django.contrib.auth import login, logout as auth_logout
+from django.contrib.auth.signals import user_login_failed
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
@@ -30,7 +31,7 @@ from common.policy import get_policy
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .models import Profile, IdentityProof, UserSession, Verification, is_verified
 from .tokens import email_verification_token
-from .throttles import RegisterThrottle, ResendVerificationThrottle
+from .throttles import RegisterThrottle, ResendVerificationThrottle, login_blocked_response
 from .turnstile import verify_turnstile
 from .utils import SESSION_HISTORY_LIMIT, get_client_ip
 from .visibility import content_visibility, profile_view_for
@@ -113,13 +114,21 @@ def login_view(request):
         return JsonResponse({"error": _form_errors(form)}, status=400)
 
     username = form.get_username()
-    if username is None:
-        return JsonResponse({"error": "Invalid credentials"}, status=401)
+    # 邮箱不存在时 get_username 为 None；仍用提交的用户名/邮箱作撞库计数键。
+    throttle_ident = username or form.cleaned_data.get("username") or form.cleaned_data.get("email") or ""
+    blocked = login_blocked_response(request, throttle_ident)
+    if blocked is not None:
+        return blocked
 
     # 用 check_password 而非 authenticate：密码正确后再区分「停用 / 未验证」，
     # 错误密码统一回 401，不泄露账号存在性与状态（防枚举）。
-    candidate = User.objects.filter(username=username).first()
+    candidate = User.objects.filter(username=username).first() if username else None
     if candidate is None or not candidate.check_password(form.cleaned_data["password"]):
+        user_login_failed.send(
+            sender=User,
+            request=request,
+            credentials={"username": throttle_ident},
+        )
         return JsonResponse({"error": "Invalid credentials"}, status=401)
 
     # 密码正确 → 确为本人，可安全揭示账号状态（停用 / 放行）。

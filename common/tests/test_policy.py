@@ -10,6 +10,8 @@ from common.policy import (
     DEFAULT_AUTO_UPDATE_ENABLED,
     DEFAULT_COMMENT_MAX_DEPTH,
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
+    DEFAULT_LOGIN_PER_IP_PER_HOUR,
+    DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
     DEFAULT_SYNC_UPLOAD_MAX_BYTES,
@@ -46,6 +48,8 @@ class SitePolicyDefaultsTest(TestCase):
             p.resend_verification_per_ip_per_hour,
             DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
         )
+        self.assertEqual(p.login_per_ip_per_hour, DEFAULT_LOGIN_PER_IP_PER_HOUR)
+        self.assertEqual(p.login_per_username_per_hour, DEFAULT_LOGIN_PER_USERNAME_PER_HOUR)
         self.assertEqual(p.feedback_anon_per_ip_per_day, DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY)
         self.assertEqual(p.sync_upload_max_bytes, DEFAULT_SYNC_UPLOAD_MAX_BYTES)
         self.assertEqual(p.tus_media_max_bytes, DEFAULT_TUS_MEDIA_MAX_BYTES)
@@ -108,6 +112,22 @@ class SitePolicyDefaultsTest(TestCase):
         obj.comment_max_depth = 32
         obj.full_clean()
 
+    def test_admin_fieldset_login_throttle(self):
+        titles = [fs[0] for fs in SiteSettingsAdmin.fieldsets]
+        self.assertIn("注册与限流", titles)
+        rates = next(fs for fs in SiteSettingsAdmin.fieldsets if fs[0] == "注册与限流")
+        self.assertEqual(
+            rates[1]["fields"],
+            (
+                "registration_enabled",
+                "register_per_ip_per_day",
+                "resend_verification_per_ip_per_hour",
+                "login_per_ip_per_hour",
+                "login_per_username_per_hour",
+                "feedback_anon_per_ip_per_day",
+            ),
+        )
+
     def test_admin_fieldset_content_review(self):
         titles = [fs[0] for fs in SiteSettingsAdmin.fieldsets]
         self.assertIn("审核", titles)
@@ -157,6 +177,8 @@ class SitePolicyPublicGetTest(TestCase):
         self.assertEqual(data["registration_enabled"], True)
         self.assertEqual(data["register_per_ip_per_day"], 5)
         self.assertEqual(data["resend_verification_per_ip_per_hour"], 5)
+        self.assertEqual(data["login_per_ip_per_hour"], 30)
+        self.assertEqual(data["login_per_username_per_hour"], 10)
         self.assertEqual(data["feedback_anon_per_ip_per_day"], 10)
         self.assertEqual(data["sync_upload_max_bytes"], 50 * 1024 * 1024)
         self.assertEqual(data["tus_media_max_bytes"], 500 * 1024 * 1024)

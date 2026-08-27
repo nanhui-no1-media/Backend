@@ -40,6 +40,15 @@ if TESTING:
     EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 
+def _https_security(debug):
+    """HSTS + Secure cookies: on in production, off for local HTTP."""
+    return {
+        "SECURE_HSTS_SECONDS": 0 if debug else 31536000,
+        "SESSION_COOKIE_SECURE": not debug,
+        "CSRF_COOKIE_SECURE": not debug,
+    }
+
+
 def _email_backend_for(host_user):
     """邮件后端选择：配了 SMTP 用户名 → 163 SMTP（SSL/465）；否则 dev 用 console。
 
@@ -127,6 +136,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'accounts.middleware.SingleSessionMiddleware',
+    'accounts.middleware.LoginThrottleMiddleware',
     # tus 可续传上传：把 Tus-* / Upload-* 请求头解析到 request 属性上。
     'rest_framework_tus.middleware.TusMiddleware',
 ]
@@ -229,6 +239,17 @@ CORS_ALLOW_HEADERS = (
 # clickjacking; it only allows this site to embed its own pages (审核对象界面).
 X_FRAME_OPTIONS = "SAMEORIGIN"
 
+# nginx 写 X-Forwarded-Proto；HSTS / is_secure() 靠这一条认出 HTTPS。
+# 客户端自带的 X-Forwarded-Proto 由 nginx proxy_set_header 覆盖，不能伪造。
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# 生产开 HSTS（1 年）。不含 includeSubDomains / preload，避免绑死其它子域。
+# SecurityMiddleware 只在 is_secure() 时下发，本地 HTTP 不受影响。
+# 值在 import 时钉死：Django 测试 runner 会把 DEBUG 改成 False，但不会重算这些。
+_https = _https_security(DEBUG)
+SECURE_HSTS_SECONDS = _https["SECURE_HSTS_SECONDS"]
+SESSION_COOKIE_SECURE = _https["SESSION_COOKIE_SECURE"]
+CSRF_COOKIE_SECURE = _https["CSRF_COOKIE_SECURE"]
+
 # ---- 邮件 / SMTP ----
 # 163 邮箱 SMTP：配了 EMAIL_HOST_USER（+ EMAIL_HOST_PASSWORD 授权码）即切到 SMTP，
 # 否则 dev 用 console 后端（邮件打终端，便于本地调试注册 / 重置流程）。
@@ -277,6 +298,8 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    # 一层 nginx：取 X-Forwarded-For 最右（真实客户端），忽略客户端伪造的前缀。
+    'NUM_PROXIES': 1,
     # Operational throttle rates live in common.SiteSettings (get_policy()),
     # not here. Empty dict so DRF has a well-formed setting; the three scopes
     # override get_rate() and do not read this map.

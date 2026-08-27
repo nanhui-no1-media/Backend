@@ -20,6 +20,8 @@ class SiteSettingsAdmin(admin.ModelAdmin):
                     "registration_enabled",
                     "register_per_ip_per_day",
                     "resend_verification_per_ip_per_hour",
+                    "login_per_ip_per_hour",
+                    "login_per_username_per_hour",
                     "feedback_anon_per_ip_per_day",
                 )
             },

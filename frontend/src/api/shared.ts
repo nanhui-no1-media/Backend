@@ -18,6 +18,7 @@ export interface SupersedeTakeover {
 export type ApiError =
   | { kind: "session_superseded"; takeover: SupersedeTakeover }
   | { kind: "login_protection"; retryAfter: number }
+  | { kind: "login_throttled"; retryAfter: number }
   | { kind: "account_disabled" }            // 账号已停用（自助注册三态之一）
   | { kind: "email_not_verified"; email: string }  // 邮箱未验证，登录被拒（提示重发）
   | { kind: "network" }              // 断网 / 超时 / 响应非 JSON
@@ -39,6 +40,7 @@ type ResponseOutcome<T> =
 export const REASON = {
   SESSION_SUPERSEDED: "session_superseded",
   LOGIN_PROTECTION: "login_protection",
+  LOGIN_THROTTLED: "login_throttled",
   ACCOUNT_DISABLED: "account_disabled",
   EMAIL_NOT_VERIFIED: "email_not_verified",
 } as const;
@@ -53,6 +55,12 @@ export function classifyHttpResponse(status: number, data: any): ApiError {
   }
   if (reason === REASON.LOGIN_PROTECTION && typeof data?.retry_after === "number") {
     return { kind: "login_protection", retryAfter: data.retry_after };
+  }
+  if (reason === REASON.LOGIN_THROTTLED) {
+    return {
+      kind: "login_throttled",
+      retryAfter: typeof data?.retry_after === "number" ? data.retry_after : 0,
+    };
   }
   if (reason === REASON.ACCOUNT_DISABLED) {
     return { kind: "account_disabled" };
@@ -95,6 +103,8 @@ export function humanizeApiError(err: ApiError): string {
         (mins > 0 ? `（约 ${mins} 分钟后可重试）` : "")
       );
     }
+    case "login_throttled":
+      return "登录尝试过于频繁，请稍后再试。";
     case "account_disabled":
       return "账号已被停用，请联系信息组。";
     case "email_not_verified":

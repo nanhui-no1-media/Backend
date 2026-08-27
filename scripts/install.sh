@@ -285,6 +285,7 @@ server {
     listen [::]:80 default_server;
     server_name $SERVER_NAME;
     client_max_body_size 20M;
+    server_tokens off;
 
     location /static/ { alias $DIR/staticfiles/; }
     location /media/   { alias $DIR/media/; }
@@ -312,6 +313,7 @@ server {
 
 # --- 有证书后启用 HTTP/2：取消注释，并把上面的 location /static/ /media/、error_page 和 location / 拷进本 server。
 #     nginx 1.25.1+ 也可写成 listen 443 ssl; 然后 http2 on;
+#     HSTS 只写在 443（HTTP 响应里的 HSTS 浏览器会忽略）。
 # server {
 #     listen 443 ssl http2;
 #     listen [::]:443 ssl http2;
@@ -319,6 +321,8 @@ server {
 #     ssl_certificate     /etc/letsencrypt/live/$SERVER_NAME/fullchain.pem;
 #     ssl_certificate_key /etc/letsencrypt/live/$SERVER_NAME/privkey.pem;
 #     client_max_body_size 20M;
+#     server_tokens off;
+#     add_header Strict-Transport-Security "max-age=31536000" always;
 # }
 NGINX
 )

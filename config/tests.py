@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from django.conf import settings
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 
 class SettingsHygieneTest(TestCase):
@@ -17,6 +17,33 @@ class SettingsHygieneTest(TestCase):
         self.assertNotIn("register", rates)
         self.assertNotIn("resend_verification", rates)
         self.assertNotIn("feedback_anon", rates)
+        self.assertNotIn("login", rates)
+        self.assertEqual(settings.REST_FRAMEWORK.get("NUM_PROXIES"), 1)
+
+    def test_proxy_ssl_header_trusts_nginx(self):
+        self.assertEqual(
+            settings.SECURE_PROXY_SSL_HEADER,
+            ("HTTP_X_FORWARDED_PROTO", "https"),
+        )
+
+    def test_hsts_seconds_follow_debug(self):
+        from config import settings as cfg
+
+        # Django 测试会把 settings.DEBUG 改成 False，但不重跑 import。测公式本身。
+        self.assertEqual(cfg._https_security(True)["SECURE_HSTS_SECONDS"], 0)
+        self.assertFalse(cfg._https_security(True)["SESSION_COOKIE_SECURE"])
+        self.assertFalse(cfg._https_security(True)["CSRF_COOKIE_SECURE"])
+        prod = cfg._https_security(False)
+        self.assertEqual(prod["SECURE_HSTS_SECONDS"], 31536000)
+        self.assertTrue(prod["SESSION_COOKIE_SECURE"])
+        self.assertTrue(prod["CSRF_COOKIE_SECURE"])
+
+    @override_settings(SECURE_HSTS_SECONDS=31536000, SECURE_SSL_REDIRECT=False)
+    def test_hsts_header_on_https_request(self):
+        resp = self.client.get("/auth/csrf/", secure=True)
+        self.assertTrue(
+            resp.headers["Strict-Transport-Security"].startswith("max-age=31536000"),
+        )
 
     def test_private_media_root_is_separate_from_public_media(self):
         # 身份证明等审计留底绝不能落在公开 MEDIA_ROOT 之内（DEBUG 下后者被整目录公开服务）。

@@ -69,6 +69,7 @@ server {
     listen [::]:80 default_server;
     server_name club.example.com;
     client_max_body_size 20M;
+    server_tokens off;
 
     location /static/ { alias /opt/club/staticfiles/; }
     location /media/   { alias /opt/club/media/; }
@@ -98,9 +99,13 @@ server {
     ssl_certificate     /etc/letsencrypt/live/club.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/club.example.com/privkey.pem;
     client_max_body_size 20M;
+    server_tokens off;
+    add_header Strict-Transport-Security "max-age=31536000" always;
     # location /static/ /media/ 与 location / 与 80 相同
 }
 ```
+
+已上 HTTPS 的机器：更新器**不会**改 Nginx。在 443 的 `server` 里加上面两行（`server_tokens off` 与 HSTS），80 建议只 301 到 HTTPS，然后 `nginx -t && systemctl reload nginx`。Django 在 `DJANGO_DEBUG=0` 时也会对 HTTPS 响应发同一条 HSTS（`max-age=31536000`）；重复同值无害。不要开 `includeSubDomains` / `preload`，除非确认该域名下没有仍走 HTTP 的子域。
 
 HTTP/3 同样只在 nginx 对外终结，对内仍 1.1。需模块支持，并放行 **UDP/443**：
 

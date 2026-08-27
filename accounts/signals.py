@@ -1,10 +1,21 @@
 from django.contrib.auth.models import User
-from django.contrib.auth.signals import user_logged_in
+from django.contrib.auth.signals import user_logged_in, user_login_failed
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 from .models import sync_appointment_channel
+from .throttles import record_login_failure
 from .utils import record_user_session
+
+
+@receiver(user_login_failed)
+def on_user_login_failed(sender, credentials, request=None, **kwargs):
+    # 门户 /auth/login/ 不走 authenticate()，由 login_view 显式 send 本信号。
+    # Django admin 登录走 authenticate()，由此自动计数。
+    if request is None:
+        return
+    username = (credentials or {}).get("username") or ""
+    record_login_failure(request, username)
 
 
 @receiver(user_logged_in)

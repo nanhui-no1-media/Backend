@@ -19,6 +19,8 @@ DEFAULT_CONTENT_REVIEW_ENABLED = True
 DEFAULT_REGISTRATION_ENABLED = True
 DEFAULT_REGISTER_PER_IP_PER_DAY = 5
 DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR = 5
+DEFAULT_LOGIN_PER_IP_PER_HOUR = 30
+DEFAULT_LOGIN_PER_USERNAME_PER_HOUR = 10
 DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY = 10
 DEFAULT_SYNC_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 DEFAULT_TUS_MEDIA_MAX_BYTES = 500 * 1024 * 1024
@@ -40,6 +42,8 @@ class SitePolicy:
     registration_enabled: bool
     register_per_ip_per_day: int
     resend_verification_per_ip_per_hour: int
+    login_per_ip_per_hour: int
+    login_per_username_per_hour: int
     feedback_anon_per_ip_per_day: int
     sync_upload_max_bytes: int
     tus_media_max_bytes: int
@@ -61,6 +65,8 @@ class SitePolicy:
             registration_enabled=DEFAULT_REGISTRATION_ENABLED,
             register_per_ip_per_day=DEFAULT_REGISTER_PER_IP_PER_DAY,
             resend_verification_per_ip_per_hour=DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
+            login_per_ip_per_hour=DEFAULT_LOGIN_PER_IP_PER_HOUR,
+            login_per_username_per_hour=DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
             feedback_anon_per_ip_per_day=DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
             sync_upload_max_bytes=DEFAULT_SYNC_UPLOAD_MAX_BYTES,
             tus_media_max_bytes=DEFAULT_TUS_MEDIA_MAX_BYTES,
@@ -94,6 +100,8 @@ def _snapshot(row) -> SitePolicy:
         registration_enabled=row.registration_enabled,
         register_per_ip_per_day=row.register_per_ip_per_day,
         resend_verification_per_ip_per_hour=row.resend_verification_per_ip_per_hour,
+        login_per_ip_per_hour=row.login_per_ip_per_hour,
+        login_per_username_per_hour=row.login_per_username_per_hour,
         feedback_anon_per_ip_per_day=row.feedback_anon_per_ip_per_day,
         sync_upload_max_bytes=row.sync_upload_max_bytes,
         tus_media_max_bytes=row.tus_media_max_bytes,

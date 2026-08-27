@@ -1,3 +1,4 @@
+from django.http import HttpResponse, JsonResponse
 from rest_framework.throttling import SimpleRateThrottle
 
 from common.policy import get_policy
@@ -13,6 +14,23 @@ class _IPLimitThrottle(SimpleRateThrottle):
     def get_cache_key(self, request, view):
         ident = self.get_ident(request)
         return self.cache_format % {"scope": self.scope, "ident": ident}
+
+    def is_blocked(self, request, view=None):
+        """Peek: True if the next allow_request would deny. Does not increment."""
+        self.key = self.get_cache_key(request, view)
+        if self.key is None:
+            return False
+        self.history = list(self.cache.get(self.key, []))
+        self.now = self.timer()
+        while self.history and self.history[-1] <= self.now - self.duration:
+            self.history.pop()
+        return len(self.history) >= self.num_requests
+
+    def retry_after(self, request, view=None):
+        if not self.is_blocked(request, view):
+            return 0
+        wait = self.wait()
+        return max(0, int(wait or 0))
 
 
 class RegisterThrottle(_IPLimitThrottle):
@@ -31,3 +49,79 @@ class ResendVerificationThrottle(_IPLimitThrottle):
 
     def get_rate(self):
         return f"{get_policy().resend_verification_per_ip_per_hour}/hour"
+
+
+class LoginIpThrottle(_IPLimitThrottle):
+    """登录失败节流：每个 IP 每小时 N 次（N 来自 get_policy()）。"""
+
+    scope = "login"
+
+    def get_rate(self):
+        return f"{get_policy().login_per_ip_per_hour}/hour"
+
+
+class LoginUsernameThrottle(_IPLimitThrottle):
+    """登录失败节流：每个用户名（或邮箱）每小时 N 次。
+
+    ident 来自 request._login_throttle_ident（由调用方写入），不是 IP。
+    """
+
+    scope = "login_username"
+
+    def get_cache_key(self, request, view):
+        ident = (getattr(request, "_login_throttle_ident", None) or "").strip().lower()
+        if not ident:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": ident}
+
+    def get_rate(self):
+        return f"{get_policy().login_per_username_per_hour}/hour"
+
+
+def _attach_ident(request, username):
+    request._login_throttle_ident = (username or "").strip().lower()
+
+
+def is_login_blocked(request, username=""):
+    _attach_ident(request, username)
+    return LoginIpThrottle().is_blocked(request) or LoginUsernameThrottle().is_blocked(request)
+
+
+def record_login_failure(request, username=""):
+    """Count a failed password check. Successful logins do not call this."""
+    _attach_ident(request, username)
+    LoginIpThrottle().allow_request(request, None)
+    LoginUsernameThrottle().allow_request(request, None)
+
+
+def login_retry_after(request, username=""):
+    _attach_ident(request, username)
+    return max(
+        LoginIpThrottle().retry_after(request),
+        LoginUsernameThrottle().retry_after(request),
+    )
+
+
+def login_blocked_response(request, username="", *, as_html=False):
+    """429 if this login is blocked, else None."""
+    if not is_login_blocked(request, username):
+        return None
+    retry = login_retry_after(request, username)
+    if as_html:
+        resp = HttpResponse(
+            "登录尝试过于频繁，请稍后再试。",
+            status=429,
+            content_type="text/html; charset=utf-8",
+        )
+        if retry:
+            resp["Retry-After"] = str(retry)
+        return resp
+    body = {
+        "error": "登录尝试过于频繁，请稍后再试。",
+        "reason": "login_throttled",
+        "retry_after": retry,
+    }
+    resp = JsonResponse(body, status=429)
+    if retry:
+        resp["Retry-After"] = str(retry)
+    return resp

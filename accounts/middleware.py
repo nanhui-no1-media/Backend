@@ -1,7 +1,31 @@
 from django.http import JsonResponse
 
 from .models import UserSession
+from .throttles import login_blocked_response
 from .utils import record_user_session
+
+
+def _is_admin_login_post(request):
+    return request.method == "POST" and request.path.rstrip("/") == "/admin/login"
+
+
+class LoginThrottleMiddleware:
+    """Block /admin/login/ POSTs that already exceeded the failure budget.
+
+    The portal login view checks the same helpers itself. Recording still
+    happens on user_login_failed (admin authenticate + portal send).
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if _is_admin_login_post(request):
+            username = request.POST.get("username", "")
+            blocked = login_blocked_response(request, username, as_html=True)
+            if blocked is not None:
+                return blocked
+        return self.get_response(request)
 
 
 class SingleSessionMiddleware:

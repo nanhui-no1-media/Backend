@@ -80,6 +80,10 @@ export default function LoginModal({
         setError(humanizeApiError(apiError));
         return;
       }
+      if (apiError?.kind === "login_throttled") {
+        setError(humanizeApiError(apiError));
+        return;
+      }
       // 自助注册三态：账号已停用 / 邮箱未验证（后者附「重发验证邮件」入口）
       if (apiError?.kind === "account_disabled") {
         setError(humanizeApiError(apiError));

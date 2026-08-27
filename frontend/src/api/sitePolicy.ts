@@ -9,6 +9,8 @@ export interface SitePolicy {
   registration_enabled: boolean;
   register_per_ip_per_day: number;
   resend_verification_per_ip_per_hour: number;
+  login_per_ip_per_hour: number;
+  login_per_username_per_hour: number;
   feedback_anon_per_ip_per_day: number;
   sync_upload_max_bytes: number;
   tus_media_max_bytes: number;
@@ -29,6 +31,8 @@ const DEFAULTS: SitePolicy = {
   registration_enabled: true,
   register_per_ip_per_day: 5,
   resend_verification_per_ip_per_hour: 5,
+  login_per_ip_per_hour: 30,
+  login_per_username_per_hour: 10,
   feedback_anon_per_ip_per_day: 10,
   sync_upload_max_bytes: 50 * 1024 * 1024,
   tus_media_max_bytes: 500 * 1024 * 1024,

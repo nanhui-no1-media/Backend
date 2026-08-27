@@ -6,6 +6,8 @@ from .policy import (
     DEFAULT_COMMENT_MAX_DEPTH,
     DEFAULT_CONTENT_REVIEW_ENABLED,
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
+    DEFAULT_LOGIN_PER_IP_PER_HOUR,
+    DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
     DEFAULT_REGISTRATION_ENABLED,
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
@@ -50,6 +52,18 @@ class SiteSettings(models.Model):
     resend_verification_per_ip_per_hour = models.PositiveIntegerField(
         "每 IP 每小时重发验证邮件次数",
         default=DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
+    )
+    login_per_ip_per_hour = models.PositiveIntegerField(
+        "每 IP 每小时登录失败次数",
+        default=DEFAULT_LOGIN_PER_IP_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="门户登录与 Django admin 登录共用。只计失败，成功登录不占额度。",
+    )
+    login_per_username_per_hour = models.PositiveIntegerField(
+        "每用户名每小时登录失败次数",
+        default=DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="按用户名或邮箱计，防针对单一账号的撞库。",
     )
     feedback_anon_per_ip_per_day = models.PositiveIntegerField(
         "每 IP 每日匿名反馈次数",
