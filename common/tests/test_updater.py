@@ -9,6 +9,7 @@ import sqlite3
 import tarfile
 import tempfile
 import urllib.error
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -988,3 +989,87 @@ class GithubDownloadResumeTest(SimpleTestCase):
         self.assertEqual(dest.read_bytes(), payload)
         self.assertEqual(tarball_calls, [0, 10])
         self.assertFalse(Path(str(dest) + ".part").exists())
+
+
+class DownloadLockTest(SimpleTestCase):
+    def setUp(self):
+        super().setUp()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.paths = UpdaterPaths.from_root(Path(self._tmp.name))
+        self.paths.ensure_dirs()
+        self.payload = b"complete-archive-bytes"
+        digest = hashlib.sha256(self.payload).hexdigest()
+        self.sidecar = f"{digest}  club-aaaaaaaa.tar.gz\n"
+        self.remote = RemoteRelease(
+            sha="aaaaaaaa",
+            tarball_name="club-aaaaaaaa.tar.gz",
+            tarball_api_url="https://api.github.com/tarball",
+            checksum_api_url="https://api.github.com/sidecar",
+        )
+        self.dest = self.paths.releases_dir / self.remote.tarball_name
+        self.part_lock = Path(str(self.dest) + ".part.lock")
+
+    def _save(self, url, dest, token):
+        if url.endswith("/sidecar"):
+            dest.write_text(self.sidecar, encoding="utf-8")
+            return
+        dest.write_bytes(self.payload)
+
+    def test_skips_download_when_complete_archive_already_present(self):
+        self.dest.write_bytes(self.payload)
+        Path(str(self.dest) + ".sha256").write_text(self.sidecar, encoding="utf-8")
+
+        def save(url, dest, token):
+            raise AssertionError("must not re-download a verified archive")
+
+        dest = download_release(
+            self.remote, self.paths, "tok", download=save, sleep=lambda _s: None
+        )
+        self.assertEqual(dest.read_bytes(), self.payload)
+
+    def test_waits_on_part_lock_then_reuses_peer_archive(self):
+        """Daemon and --apply-now share backups/releases/*.part; the waiter must not write."""
+
+        def save(url, dest, token):
+            raise AssertionError("waiter must reuse the archive the peer just finished")
+
+        @contextmanager
+        def fake_lock(lock_path, *, blocking=True):
+            self.assertEqual(lock_path, self.part_lock)
+            self.dest.write_bytes(self.payload)
+            Path(str(self.dest) + ".sha256").write_text(self.sidecar, encoding="utf-8")
+            yield
+
+        with mock.patch("common.updater.update_lock", fake_lock):
+            dest = download_release(
+                self.remote, self.paths, "tok", download=save, sleep=lambda _s: None
+            )
+        self.assertEqual(dest, self.dest)
+        self.assertEqual(dest.read_bytes(), self.payload)
+
+    def test_logs_and_blocks_when_part_lock_is_held(self):
+        calls: list[bool] = []
+
+        @contextmanager
+        def fake_lock(lock_path, *, blocking=True):
+            self.assertEqual(lock_path, self.part_lock)
+            calls.append(blocking)
+            if not blocking:
+                raise BlockingIOError("update lock held")
+            yield
+
+        with mock.patch("common.updater.update_lock", fake_lock):
+            with self.assertLogs("updater", level="INFO") as cm:
+                dest = download_release(
+                    self.remote,
+                    self.paths,
+                    "tok",
+                    download=self._save,
+                    sleep=lambda _s: None,
+                )
+        self.assertEqual(calls, [False, True])
+        self.assertTrue(
+            any("waiting for another process" in line for line in cm.output)
+        )
+        self.assertEqual(dest.read_bytes(), self.payload)

@@ -734,7 +734,7 @@ def _lock_release(fh) -> None:
 
 @contextmanager
 def update_lock(lock_path: Path, *, blocking: bool = True) -> Iterator[None]:
-    """Exclusive lock on ``run/update.lock`` (fcntl flock on Unix)."""
+    """Exclusive flock on ``lock_path`` (fcntl on Unix, msvcrt on Windows)."""
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     fh = open(lock_path, "a+b")
     try:
@@ -750,6 +750,44 @@ def update_lock(lock_path: Path, *, blocking: bool = True) -> Iterator[None]:
             _lock_release(fh)
         finally:
             fh.close()
+
+
+@contextmanager
+def _hold_download_lock(part: Path) -> Iterator[None]:
+    """Serialize writers of the same ``.part`` across updater processes.
+
+    ``--apply-now`` and the ``start.sh`` daemon share ``backups/releases``.
+    Without this lock both resume the same file and the local copy can grow
+    past the remote size (HTTP 416 on the next Range request).
+    """
+    lock_path = Path(str(part) + ".lock")
+    acquired = False
+    try:
+        with update_lock(lock_path, blocking=False):
+            acquired = True
+            yield
+            return
+    except BlockingIOError:
+        if acquired:
+            raise
+    log.info("waiting for another process to finish downloading %s", part.name)
+    with update_lock(lock_path, blocking=True):
+        yield
+
+
+def _verified_complete_archive(dest: Path) -> Path | None:
+    if not is_complete_archive(dest):
+        return None
+    sidecar = Path(str(dest) + ".sha256")
+    try:
+        if sidecar.is_file():
+            verify_archive_checksum(dest, sidecar)
+            return dest
+    except ApplyError:
+        log.warning("existing %s failed checksum; re-downloading", dest.name)
+        dest.unlink(missing_ok=True)
+        sidecar.unlink(missing_ok=True)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1148,27 +1186,47 @@ def download_release(
 
     Incomplete ``.part`` files are kept and resumed with HTTP Range. Apply never
     unpacks a ``.part``; only a checksum-ok rename becomes a usable archive.
+    Exclusive flock on ``*.part.lock`` so a manual ``--apply-now`` cannot
+    resume the same file the daemon is still writing.
     """
     dest = paths.releases_dir / remote.tarball_name
-    if is_complete_archive(dest):
-        sidecar = Path(str(dest) + ".sha256")
-        try:
-            if sidecar.is_file():
-                verify_archive_checksum(dest, sidecar)
-                return dest
-        except ApplyError:
-            log.warning("existing %s failed checksum; re-downloading", dest.name)
-            dest.unlink(missing_ok=True)
-            sidecar.unlink(missing_ok=True)
+    paths.releases_dir.mkdir(parents=True, exist_ok=True)
+    part = Path(str(dest) + ".part")
+    sidecar_dest = Path(str(dest) + ".sha256")
+    sidecar_part = Path(str(sidecar_dest) + ".part")
+
+    with _hold_download_lock(part):
+        return _download_release_locked(
+            remote,
+            dest,
+            part,
+            sidecar_dest,
+            sidecar_part,
+            token,
+            download=download,
+            sleep=sleep,
+        )
+
+
+def _download_release_locked(
+    remote: RemoteRelease,
+    dest: Path,
+    part: Path,
+    sidecar_dest: Path,
+    sidecar_part: Path,
+    token: str,
+    *,
+    download: Callable[..., None] | None,
+    sleep: SleepFn,
+) -> Path:
+    existing = _verified_complete_archive(dest)
+    if existing is not None:
+        return existing
 
     if remote.checksum_api_url is None:
         raise UpdaterError(f"release {remote.sha} has no sha256 sidecar")
 
     save = download or github_download
-    paths.releases_dir.mkdir(parents=True, exist_ok=True)
-    part = Path(str(dest) + ".part")
-    sidecar_dest = Path(str(dest) + ".sha256")
-    sidecar_part = Path(str(sidecar_dest) + ".part")
     last_error: Exception | None = None
     for attempt in range(MAX_DOWNLOAD_ATTEMPTS):
         log.info(
