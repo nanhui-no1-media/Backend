@@ -1,8 +1,15 @@
 /**
- * Copy unhashed SurveyJS vanilla min files into Django static/surveyjs/.
+ * Copy unhashed SurveyJS vanilla min files into Django static dirs.
  *
- * Admin templates use {% static 'surveyjs/...' %}; hashed webpack chunks
- * would break those paths. Re-run after upgrading survey-* / Chart.js deps:
+ * Admin templates use {% static 'surveyjs/...' %}. Hashed webpack chunks
+ * would break those paths.
+ *
+ * Destinations:
+ *   - static/surveyjs/         local runserver (STATICFILES_DIRS)
+ *   - frontend/dist/surveyjs/  production collectstatic + release tarball
+ *
+ * Hooked from `npm run build` / `npm run dev`. Re-run after upgrading
+ * survey-* / Chart.js:
  *
  *   npm run copy-surveyjs
  *
@@ -12,7 +19,10 @@ const fs = require("fs");
 const path = require("path");
 
 const frontendRoot = path.join(__dirname, "..");
-const destDir = path.join(frontendRoot, "..", "static", "surveyjs");
+const destDirs = [
+  path.join(frontendRoot, "..", "static", "surveyjs"),
+  path.join(frontendRoot, "dist", "surveyjs"),
+];
 
 const files = [
   ["node_modules/survey-core/survey.core.min.js", "survey.core.min.js"],
@@ -28,9 +38,11 @@ const files = [
   ["node_modules/survey-creator-core/i18n/simplified-chinese.min.js", "survey-creator.i18n.zh-cn.min.js"],
 ];
 
-fs.mkdirSync(destDir, { recursive: true });
-
 let failed = false;
+for (const destDir of destDirs) {
+  fs.mkdirSync(destDir, { recursive: true });
+}
+
 for (const [srcRel, destName] of files) {
   const src = path.join(frontendRoot, srcRel);
   if (!fs.existsSync(src)) {
@@ -38,7 +50,9 @@ for (const [srcRel, destName] of files) {
     failed = true;
     continue;
   }
-  fs.copyFileSync(src, path.join(destDir, destName));
+  for (const destDir of destDirs) {
+    fs.copyFileSync(src, path.join(destDir, destName));
+  }
   console.log(`copied ${destName}`);
 }
 

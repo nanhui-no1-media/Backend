@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "webpack serve",
-    "build": "webpack --mode production && node scripts/assert-live2d-dist.js",
+    "dev": "node scripts/copy-surveyjs.js && webpack serve",
+    "build": "webpack --mode production && node scripts/copy-surveyjs.js && node scripts/assert-live2d-dist.js && node scripts/assert-surveyjs-dist.js",
     "copy-surveyjs": "node scripts/copy-surveyjs.js"
   },
   "keywords": [],

@@ -24,6 +24,10 @@ if [ ! -d frontend/dist ] || [ -z "$(ls -A frontend/dist 2>/dev/null)" ]; then
   echo "frontend/dist is missing or empty (download the frontend artifact first)" >&2
   exit 1
 fi
+if [ ! -f frontend/dist/surveyjs/survey.core.min.js ]; then
+  echo "frontend/dist/surveyjs is missing (npm run build must copy SurveyJS)" >&2
+  exit 1
+fi
 
 INCLUDE=(
   config

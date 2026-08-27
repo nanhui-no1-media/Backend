@@ -57,7 +57,7 @@ cd frontend
 npm run build
 ```
 
-构建产物写入 `frontend/dist/`，Django 会直接托管 SPA 页面与静态资源，无需额外部署独立前端服务。
+构建产物写入 `frontend/dist/`（含 Django admin 用的 SurveyJS 静态文件），Django 会直接托管 SPA 页面与静态资源，无需额外部署独立前端服务。
 
 ## 4. 目录结构
 
