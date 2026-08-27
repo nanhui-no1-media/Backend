@@ -2,14 +2,13 @@
  * Cubism 2 blog-widget adapter. Lives in the "mascot-widget" chunk only.
  * Cubism (`live2d.min.js`) is injected as a script tag so ts-loader never parses it.
  *
- * Stock Model requires apiPath or cdnPath. We pass a dummy same-origin apiPath
- * and never set cdnPath (that would fetch fghrsh model_list.json from a CDN).
- * Models are driven from catalog.json via loadlive2d.
+ * Models are driven from the local catalog.json via loadlive2d.
  */
 
 const LIVE2D_BASE = "/static/live2d/";
 const WIDGET_BASE = `${LIVE2D_BASE}widget/`;
 const RUNTIME_JS = `${LIVE2D_BASE}runtime/live2d.min.js`;
+const CUBISM5_CORE_JS = `${LIVE2D_BASE}runtime/live2dcubismcore.min.js`;
 const CATALOG_URL = `${LIVE2D_BASE}catalog.json`;
 const WAIFU_DISPLAY_KEY = "waifu-display";
 const SENTINEL_ATTR = "data-mascot-sentinel";
@@ -24,6 +23,8 @@ declare global {
     initWidget?: (config: {
       waifuPath: string;
       apiPath?: string;
+      cubism2Path?: string;
+      cubism5Path?: string;
       tools?: string[];
     }) => void;
     loadlive2d?: Live2dLoader;
@@ -52,12 +53,13 @@ function loadCss(href: string): Promise<void> {
   });
 }
 
-function loadScript(src: string): Promise<void> {
+function loadScript(src: string, module = false): Promise<void> {
   if (document.querySelector(`script[src="${src}"]`)) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = src;
     script.async = false;
+    if (module) script.type = "module";
     script.onload = () => resolve();
     script.onerror = () => reject(new Error(`Failed to load ${src}`));
     document.head.appendChild(script);
@@ -69,7 +71,8 @@ function ensureScripts(): Promise<void> {
     scriptsPromise = Promise.all([
       loadCss(`${WIDGET_BASE}waifu.css`),
       loadScript(RUNTIME_JS),
-      loadScript(`${WIDGET_BASE}waifu-tips.js`),
+      loadScript(CUBISM5_CORE_JS),
+      loadScript(`${WIDGET_BASE}waifu-tips.js`, true),
     ]).then(() => undefined);
   }
   return scriptsPromise;
@@ -162,7 +165,8 @@ export async function mountMascotWidget(
 
   window.initWidget({
     waifuPath: `${WIDGET_BASE}waifu-tips.json`,
-    apiPath: `${LIVE2D_BASE}unused-api/`,
+    cubism2Path: RUNTIME_JS,
+    cubism5Path: CUBISM5_CORE_JS,
     tools: ["hitokoto", "switch-model", "photo", "info", "quit"],
   });
 

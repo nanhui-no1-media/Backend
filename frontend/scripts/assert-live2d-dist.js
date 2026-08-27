@@ -11,6 +11,8 @@ const required = [
   "catalog.json",
   "widget/waifu.css",
   "widget/waifu-tips.js",
+  "widget/chunk/index.js",
+  "widget/chunk/index2.js",
 ];
 
 function fail(message) {
@@ -41,14 +43,14 @@ if (catalog.version !== 1 || !Array.isArray(catalog.models) || catalog.models.le
   fail("catalog.json must have version 1 and a non-empty models array");
 }
 
-const first = catalog.models[0];
-if (!first.id || !first.entry) {
-  fail("catalog.json first model must have id and entry");
-}
-
-const entryPath = path.join(distRoot, first.entry);
-if (!fs.existsSync(entryPath)) {
-  fail(`default model entry missing: ${first.entry}`);
+for (const model of catalog.models) {
+  if (!model.id || !model.entry) {
+    fail("every catalog model must have id and entry");
+  }
+  const entryPath = path.join(distRoot, model.entry);
+  if (!fs.existsSync(entryPath)) {
+    fail(`model entry missing: ${model.entry}`);
+  }
 }
 
 const licenseHits = [];
@@ -65,5 +67,5 @@ if (licenseHits.length < 1) {
 }
 
 console.log(
-  `assert-live2d-dist: ok (${catalog.models.length} models, default=${first.id}, licenses=${licenseHits.length})`,
+  `assert-live2d-dist: ok (${catalog.models.length} models, licenses=${licenseHits.length})`,
 );

@@ -2,114 +2,29 @@
   "version": 1,
   "models": [
     {
+      "id": "cat",
+      "name": "试做 (Cubism 3/4)",
+      "entry": "models/cat/试做.model3.json"
+    },
+    {
       "id": "hijiki",
-      "name": "hijiki",
+      "name": "hijiki (Cubism 2)",
       "entry": "models/hijiki/hijiki.model.json"
     },
     {
-      "id": "chitose",
-      "name": "chitose",
-      "entry": "models/chitose/chitose.model.json"
-    },
-    {
-      "id": "epsilon2_1",
-      "name": "epsilon2_1",
-      "entry": "models/epsilon2_1/Epsilon2.1.model.json"
-    },
-    {
-      "id": "gf",
-      "name": "gf",
-      "entry": "models/gf/Gantzert_Felixander.model.json"
-    },
-    {
-      "id": "haru-haru01",
-      "name": "haru-haru01",
-      "entry": "models/haru-haru01/haru01.model.json"
-    },
-    {
-      "id": "haru-haru02",
-      "name": "haru-haru02",
-      "entry": "models/haru-haru02/haru02.model.json"
-    },
-    {
-      "id": "haruto",
-      "name": "haruto",
-      "entry": "models/haruto/haruto.model.json"
-    },
-    {
-      "id": "hibiki",
-      "name": "hibiki",
-      "entry": "models/hibiki/hibiki.model.json"
-    },
-    {
-      "id": "izumi",
-      "name": "izumi",
-      "entry": "models/izumi/izumi.model.json"
-    },
-    {
-      "id": "koharu",
-      "name": "koharu",
-      "entry": "models/koharu/koharu.model.json"
+      "id": "kumo",
+      "name": "云吞kumo (Cubism 3/4)",
+      "entry": "models/kumo/云吞kumo.model3.json"
     },
     {
       "id": "miku",
-      "name": "miku",
+      "name": "miku (Cubism 2)",
       "entry": "models/miku/miku.model.json"
     },
     {
-      "id": "ni-j",
-      "name": "ni-j",
-      "entry": "models/ni-j/ni-j.model.json"
-    },
-    {
-      "id": "nico",
-      "name": "nico",
-      "entry": "models/nico/nico.model.json"
-    },
-    {
-      "id": "nietzsche",
-      "name": "nietzsche",
-      "entry": "models/nietzsche/nietzche.model.json"
-    },
-    {
-      "id": "nipsilon",
-      "name": "nipsilon",
-      "entry": "models/nipsilon/nipsilon.model.json"
-    },
-    {
-      "id": "nito",
-      "name": "nito",
-      "entry": "models/nito/nito.model.json"
-    },
-    {
       "id": "shizuku",
-      "name": "shizuku",
+      "name": "shizuku (Cubism 2)",
       "entry": "models/shizuku/shizuku.model.json"
-    },
-    {
-      "id": "tororo",
-      "name": "tororo",
-      "entry": "models/tororo/tororo.model.json"
-    },
-    {
-      "id": "tsumiki",
-      "name": "tsumiki",
-      "entry": "models/tsumiki/tsumiki.model.json"
-    },
-    {
-      "id": "unitychan",
-      "name": "unitychan",
-      "entry": "models/unitychan/unitychan.model.json"
-    },
-    {
-      "id": "wanko",
-      "name": "wanko",
-      "entry": "models/wanko/wanko.model.json"
-    },
-    {
-      "id": "z16",
-      "name": "z16",
-      "entry": "models/z16/z16.model.json"
     }
   ]
 }

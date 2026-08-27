@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 VENDOR = ROOT / "frontend" / "vendor" / "live2d"
 WIDGET_TAG = "v0.9.2"
 WIDGET_BASE = f"https://cdn.jsdelivr.net/gh/stevenjoezhang/live2d-widget@{WIDGET_TAG}"
+WIDGET_CHUNK_BASE = "https://cdn.jsdelivr.net/gh/stevenjoezhang/live2d-widget@master/dist"
 MODEL_REGISTRY = "https://registry.npmmirror.com"
 MODEL_VERSION = "1.0.5"
 
@@ -51,6 +52,7 @@ WIDGET_FILES = [
     "autoload.js",
     "LICENSE",
 ]
+WIDGET_CHUNK_FILES = ["chunk/index.js", "chunk/index2.js"]
 
 UA = {"User-Agent": "nanhui-backend-live2d-vendor/1.0"}
 
@@ -141,6 +143,22 @@ def collect_model_jsons(assets_dir: Path) -> list[Path]:
     return sorted(p for p in assets_dir.rglob("*.model.json") if p.is_file())
 
 
+def collect_all_model_entries() -> list[dict]:
+    """Include locally supplied Cubism 2/3+ models in the generated catalog."""
+    models_dir = VENDOR / "models"
+    entries: list[dict] = []
+    for model_json in sorted(models_dir.rglob("*")):
+        if not model_json.is_file() or not (
+            model_json.name.endswith(".model.json")
+            or model_json.name.endswith(".model3.json")
+        ):
+            continue
+        rel = model_json.relative_to(VENDOR).as_posix()
+        model_id = model_json.name.removesuffix(".model3.json").removesuffix(".model.json")
+        entries.append({"id": model_id, "name": model_id, "entry": rel})
+    return entries
+
+
 def vendor_widget() -> None:
     runtime = VENDOR / "runtime"
     widget = VENDOR / "widget"
@@ -182,6 +200,14 @@ def vendor_widget() -> None:
                 raise
         upstream = (widget / "autoload.js").read_text(encoding="utf-8")
         upstream_path.write_text(upstream, encoding="utf-8")
+
+    for name in WIDGET_CHUNK_FILES:
+        dest = widget / name
+        if dest.is_file() and dest.stat().st_size > 1_000:
+            print(f"  {name} already present; skip download")
+        else:
+            download(f"{WIDGET_CHUNK_BASE}/{name}", dest)
+            print(f"  {name} ({dest.stat().st_size} bytes)")
 
     patched = patch_autoload(upstream)
     (widget / "autoload.js").write_text(patched, encoding="utf-8")
@@ -302,6 +328,12 @@ def main() -> None:
     VENDOR.mkdir(parents=True, exist_ok=True)
     vendor_widget()
     catalog_models = vendor_models()
+    known_entries = {model["entry"] for model in catalog_models}
+    catalog_models.extend(
+        model
+        for model in collect_all_model_entries()
+        if model["entry"] not in known_entries
+    )
     catalog_models.sort(key=lambda m: (0 if m["id"] == "hijiki" else 1, m["id"]))
     (VENDOR / "catalog.json").write_text(
         json.dumps({"version": 1, "models": catalog_models}, indent=2, ensure_ascii=False)
