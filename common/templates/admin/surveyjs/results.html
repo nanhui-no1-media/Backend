@@ -7,6 +7,7 @@
 <script src="{% static 'surveyjs/survey.i18n.zh-cn.min.js' %}"></script>
 <script src="{% static 'surveyjs/chart.umd.min.js' %}"></script>
 <link rel="stylesheet" href="{% static 'surveyjs/survey.analytics.min.css' %}">
+<link rel="stylesheet" href="{% static 'admin/surveyjs/isolate.css' %}">
 <script src="{% static 'surveyjs/survey.analytics.min.js' %}"></script>
 <script src="{% static 'admin/surveyjs/analytics-zh-cn.js' %}"></script>
 <style>
@@ -28,7 +29,7 @@
 {% block content %}
 <p><a href="{{ back_url }}" class="button">返回</a></p>
 <h2>统计</h2>
-<div id="survey-viz-panel"></div>
+<div id="survey-viz-panel" class="surveyjs-admin-host"></div>
 {{ schema_json|json_script:"survey-schema" }}
 {{ answers_json|json_script:"survey-answers" }}
 <script src="{% static 'admin/surveyjs/results.js' %}"></script>

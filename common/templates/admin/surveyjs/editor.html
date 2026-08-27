@@ -8,6 +8,7 @@
 <script src="{% static 'surveyjs/survey.i18n.zh-cn.min.js' %}"></script>
 <script src="{% static 'surveyjs/survey-js-ui.min.js' %}"></script>
 <link rel="stylesheet" href="{% static 'surveyjs/survey-creator-core.min.css' %}">
+<link rel="stylesheet" href="{% static 'admin/surveyjs/isolate.css' %}">
 <script src="{% static 'surveyjs/survey-creator-core.min.js' %}"></script>
 <script src="{% static 'surveyjs/survey-creator.i18n.zh-cn.min.js' %}"></script>
 <script src="{% static 'surveyjs/survey-creator-js.min.js' %}"></script>
@@ -36,7 +37,7 @@
   <a href="{{ back_url }}" class="button">返回</a>
   <span id="survey-save-status">{% if locked_message %}{{ locked_message }}{% endif %}</span>
 </div>
-<div id="survey-creator"></div>
+<div id="survey-creator" class="surveyjs-admin-host"></div>
 {{ schema_json|json_script:"survey-schema" }}
 <script src="{% static 'admin/surveyjs/editor.js' %}"></script>
 <script>
