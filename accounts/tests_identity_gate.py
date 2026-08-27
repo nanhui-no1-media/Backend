@@ -77,10 +77,10 @@ class MessagingGateTest(TestCase):
         self.tier3 = make_verified("tier3")
         self.target = make_verified("target")
         # tier3 参与的会话（供 send_message）
-        self.conv = Conversation.objects.create(conversation_type="private")
+        self.conv = Conversation.objects.create()
         self.conv.participants.set([self.tier3, self.target])
         # tier2 参与的会话（验证 send_message 被 gate 挡、mark_read 不被挡）
-        self.conv2 = Conversation.objects.create(conversation_type="private")
+        self.conv2 = Conversation.objects.create()
         self.conv2.participants.set([self.tier2, self.target])
 
     def test_tier2_send_message_blocked(self):
@@ -110,6 +110,14 @@ class MessagingGateTest(TestCase):
 
     def test_tier2_list_conversations_unaffected(self):
         self.assertEqual(_client(self.tier2).get(CONV).status_code, 200)
+
+    def test_legacy_task_and_proposal_conversation_actions_gone(self):
+        # 任务/申报讨论已拆出会话；身份门槛测试不得再打 get_task_conversation。
+        # 动作已从路由器删除：POST 落到 detail pk → 405，GET 则 404。
+        c = _client(self.tier3)
+        for action in ("get_task_conversation", "get_proposal_conversation"):
+            self.assertIn(_post(c, f"{CONV}{action}/", {"task_id": 1}).status_code, (404, 405))
+            self.assertEqual(c.get(f"{CONV}{action}/").status_code, 404)
 
 
 class ProposalsGateTest(TestCase):

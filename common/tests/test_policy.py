@@ -8,6 +8,7 @@ from common.admin import SiteSettingsAdmin
 from common.models import SiteSettings
 from common.policy import (
     DEFAULT_AUTO_UPDATE_ENABLED,
+    DEFAULT_COMMENT_MAX_DEPTH,
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
@@ -59,6 +60,7 @@ class SitePolicyDefaultsTest(TestCase):
         )
         self.assertEqual(p.update_release_keep, DEFAULT_UPDATE_RELEASE_KEEP)
         self.assertEqual(p.update_db_backup_keep, DEFAULT_UPDATE_DB_BACKUP_KEEP)
+        self.assertEqual(p.comment_max_depth, DEFAULT_COMMENT_MAX_DEPTH)
 
     def test_save_always_pk_1_and_invalidates_cache(self):
         get_policy()  # warm cache with defaults
@@ -93,11 +95,30 @@ class SitePolicyDefaultsTest(TestCase):
         with self.assertRaises(ValidationError):
             obj.full_clean()
 
+    def test_comment_max_depth_rejects_out_of_range(self):
+        obj, _ = SiteSettings.objects.get_or_create(pk=1)
+        obj.comment_max_depth = 0
+        with self.assertRaises(ValidationError):
+            obj.full_clean()
+        obj.comment_max_depth = 33
+        with self.assertRaises(ValidationError):
+            obj.full_clean()
+        obj.comment_max_depth = 1
+        obj.full_clean()
+        obj.comment_max_depth = 32
+        obj.full_clean()
+
     def test_admin_fieldset_content_review(self):
         titles = [fs[0] for fs in SiteSettingsAdmin.fieldsets]
         self.assertIn("审核", titles)
         review = next(fs for fs in SiteSettingsAdmin.fieldsets if fs[0] == "审核")
         self.assertEqual(review[1]["fields"], ("content_review_enabled",))
+
+    def test_admin_fieldset_comment_max_depth(self):
+        titles = [fs[0] for fs in SiteSettingsAdmin.fieldsets]
+        self.assertIn("评论", titles)
+        comments = next(fs for fs in SiteSettingsAdmin.fieldsets if fs[0] == "评论")
+        self.assertEqual(comments[1]["fields"], ("comment_max_depth",))
 
     def test_admin_fieldset_auto_update(self):
         titles = [fs[0] for fs in SiteSettingsAdmin.fieldsets]
@@ -147,6 +168,7 @@ class SitePolicyPublicGetTest(TestCase):
         self.assertEqual(data["update_apply_cutoff_minutes_before_end"], 30)
         self.assertEqual(data["update_release_keep"], 3)
         self.assertEqual(data["update_db_backup_keep"], 5)
+        self.assertEqual(data["comment_max_depth"], 8)
 
     def test_get_reflects_saved_row(self):
         obj, _ = SiteSettings.objects.get_or_create(pk=1)

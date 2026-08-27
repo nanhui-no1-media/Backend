@@ -1,3 +1,7 @@
+import type { ThreadStatus } from "./messaging";
+
+export type { Conversation, DirectMessage as Message } from "./messaging";
+
 export interface TaskUser {
   id: number;
   username: string;
@@ -32,29 +36,6 @@ export interface TaskClaimRequest {
   reviewed_by: TaskUser | null;
   reviewed_at: string | null;
   created_at: string;
-}
-
-export interface Conversation {
-  id: number;
-  conversation_type: "task" | "private";
-  task: number | null;
-  title: string;
-  participants: TaskUser[];
-  last_message: Message | null;
-  unread_count: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Message {
-  id: number;
-  conversation: number;
-  sender: TaskUser;
-  content: string;
-  mentions: TaskUser[];
-  is_read: boolean;
-  created_at: string;
-  updated_at: string;
 }
 
 export type TaskStatus = "pending" | "in_progress" | "reviewing" | "review" | "completed" | "cancelled";
@@ -114,6 +95,7 @@ export interface TaskFormData {
   assignee_id?: number | null;
   collaborator_ids?: number[];
   tag_ids?: number[];
+  comment_thread_status?: ThreadStatus;
 }
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {

@@ -74,7 +74,7 @@ export default function InboxPage() {
             <span>待办</span>
           </nav>
           <h1>待办</h1>
-          <p className="section-sub">当前你仍欠的行动：活动、任务、未读会话。</p>
+          <p className="section-sub">当前你仍欠的行动：活动、任务。</p>
         </div>
       </div>
       <div className="container" style={{ paddingBottom: "var(--s-16)" }}>

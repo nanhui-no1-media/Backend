@@ -2,17 +2,15 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { taskApi } from "../api/tasks";
 import { attachmentApi } from "../api/attachments";
-import { messagingApi } from "../api/messaging";
-import { api } from "../api/client";
 import {
-  TaskDetail, TaskUser, TaskAction,
+  TaskDetail, TaskAction,
   STATUS_LABELS, PRIORITY_LABELS,
   STATUS_BADGE_CLASS, PRIORITY_DOT_CLASS,
 } from "../types/tasks";
 import RichTextEditor from "../components/RichTextEditor";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
-import MessageThread from "../components/MessageThread";
+import CommentSection from "../components/CommentSection";
 import "../styles/detail.css";
 
 export default function TaskDetailPage() {
@@ -21,9 +19,6 @@ export default function TaskDetailPage() {
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [currentUser, setCurrentUser] = useState<TaskUser | null>(null);
-  const [messageCount, setMessageCount] = useState(0);
-  const [conversationId, setConversationId] = useState<number | null>(null);
   const [claimReason, setClaimReason] = useState("");
   const [claiming, setClaiming] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -39,20 +34,10 @@ export default function TaskDetailPage() {
     taskApi.get(Number(id))
       .then((t) => {
         setTask(t);
-        // 讨论消息由 <MessageThread> 按 conversationId 自行倒序分页加载
-        messagingApi.getTaskConversation(t.id)
-          .then((conv) => setConversationId(conv.id))
-          .catch(() => {});
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
-
-  useEffect(() => {
-    api.me()
-      .then((d) => setCurrentUser({ ...d.user, avatar: d.profile.avatar, nickname: d.profile.nickname }))
-      .catch(() => {});
-  }, []);
 
   const reloadTask = async () => {
     if (!task) return;
@@ -389,19 +374,7 @@ export default function TaskDetailPage() {
           )}
         </div>
 
-        <div className="card card-pad detail-section">
-          <h3 className="section-h">讨论 ({messageCount})</h3>
-          {conversationId && currentUser ? (
-            <MessageThread
-              conversationId={conversationId}
-              currentUser={currentUser}
-              autoScroll={false}
-              onCountChange={setMessageCount}
-            />
-          ) : (
-            <p className="empty-text">暂无讨论</p>
-          )}
-        </div>
+        <CommentSection host={{ task: task.id }} />
       </div>
     </AppShell>
   );

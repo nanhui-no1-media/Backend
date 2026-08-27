@@ -1,6 +1,6 @@
 # 社团管理系统 Backend
 
-这是一个以 Django 为核心、React 前端为展示层的社团内部管理系统。当前代码结构已经覆盖了用户认证、任务管理、活动/众议/征集/展示、新闻发布、提案/反馈、教程、招聘、消息和站点策略等核心场景，适用于校内社团的日常运营和后台管理。
+这是一个以 Django 为核心、React 前端为展示层的社团内部管理系统。当前代码结构已经覆盖了用户认证、任务管理、活动/众议/征集/展示、新闻发布、提案/反馈、教程、招聘、评论与私信、通知、横幅公告和站点策略等核心场景，适用于校内社团的日常运营和后台管理。
 
 ## 1. 当前项目状况
 
@@ -8,11 +8,12 @@
 
 - 认证与账号：登录、注册、邮箱验证、人工审核、密码重置、用户资料、会话管理
 - 内容管理：新闻、教程、关于页、站点政策
-- 协作管理：任务、标签、消息、提案/反馈
+- 协作管理：任务、标签、评论区、私信、提案/反馈
+- 提醒与运营：站内通知、横幅公告、全站禁言
 - 活动管理：活动、众议、征集、展示、审核
 - 招聘与审批：招聘信息、面试/审核流程
 - 后台管理：Django Admin + 自定义视图 + 前端 SPA
-- 运维能力：`scripts/install.sh` / `start.sh` 自动部署、systemd + Nginx + Gunicorn，适合内部低门槛生产环境
+- 运维能力：`scripts/install.sh` / `start.sh` 自动部署、systemd + Nginx + Gunicorn（ASGI / 单 worker），适合内部低门槛生产环境
 
 ## 2. 技术栈
 
@@ -20,7 +21,7 @@
 - 前端：React 19 / TypeScript / Webpack 5
 - 数据库：SQLite（默认开发/生产都可用）
 - 依赖管理：uv（Python） + npm（前端）
-- 运行方式：Django 直接托管前端产物，Nginx + Gunicorn 作为生产网关
+- 运行方式：Django 直接托管前端产物；生产为 Nginx + Gunicorn ASGI（`UvicornWorker`，**1 worker**，无 Redis；见 [ADR 0015](docs/adr/0015-channels-without-redis.md)）
 
 ## 3. 快速开始
 
@@ -72,7 +73,7 @@ Backend/
 ├── docs/                 # 项目文档
 ├── exam_board/           # 评审/考核相关功能
 ├── frontend/             # React 前端源代码与构建输出
-├── messaging/            # 消息/通知
+├── messaging/            # 评论区 / 私信 / 通知 / 横幅公告
 ├── news/                 # 新闻模块
 ├── proposals/            # 反馈/意见/提案模块
 ├── recruitment/          # 招聘模块
@@ -107,6 +108,8 @@ Backend/
 - 提案/反馈：`/proposals/`
 - 教程：`/tutorials/`
 - 招聘：`/recruitment/`
+- 消息（评论区 / 私信 / 通知 / 横幅）：`/messaging/`
+- 实时推送（已登录）：`/ws/messaging/`
 - 附件上传：`/uploads/`
 - 站点政策：`/site-policy/`
 

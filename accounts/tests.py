@@ -142,6 +142,9 @@ class MeViewTest(TestCase):
         perms = self.client.get("/auth/me/").json()["user"]["permissions"]
         self.assertTrue(perms["can_manage_news"])
         self.assertFalse(perms["can_manage_tasks"])
+        self.assertTrue(perms["can_manage_announcement"])
+        self.assertFalse(perms["can_mute_user"])
+        self.assertFalse(perms["can_manage_comment_thread"])
 
     def test_me_permissions_for_president(self):
         from django.contrib.auth.models import Group
@@ -154,6 +157,9 @@ class MeViewTest(TestCase):
         self.assertTrue(perms["can_change_proposals"])
         self.assertTrue(perms["can_view_feedback"])
         self.assertFalse(perms["can_manage_news"])
+        self.assertTrue(perms["can_manage_comment_thread"])
+        self.assertTrue(perms["can_mute_user"])
+        self.assertFalse(perms["can_manage_announcement"])
 
     def test_can_change_activity_decoupled_from_proposals(self):
         # #52：活动管理门禁须与申报解耦——社长有 change_proposals 但无 change_activity，
@@ -713,6 +719,9 @@ class CapabilityKeysContractTest(TestCase):
             "can_review_content",
             "can_review_identity",
             "can_force_publish",
+            "can_manage_comment_thread",
+            "can_mute_user",
+            "can_manage_announcement",
         }
         user = User.objects.create_user(username="cap", password="p")
         keys = set(_capabilities(user).keys())

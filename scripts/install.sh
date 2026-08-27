@@ -269,6 +269,11 @@ write_nginx_site() {
   layout="$(nginx_layout)"
   local body
   body=$(cat <<NGINX
+map \$http_upgrade \$connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
@@ -288,6 +293,9 @@ server {
 
     location / {
         proxy_pass http://unix:$DIR/run/gunicorn.sock;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade           \$http_upgrade;
+        proxy_set_header Connection        \$connection_upgrade;
         proxy_set_header Host              \$host;
         proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;

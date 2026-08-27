@@ -30,6 +30,7 @@ DEFAULT_UPDATE_WINDOW_END_HOUR = 3
 DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END = 30
 DEFAULT_UPDATE_RELEASE_KEEP = 3
 DEFAULT_UPDATE_DB_BACKUP_KEEP = 5
+DEFAULT_COMMENT_MAX_DEPTH = 8
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class SitePolicy:
     update_apply_cutoff_minutes_before_end: int
     update_release_keep: int
     update_db_backup_keep: int
+    comment_max_depth: int
 
     @classmethod
     def defaults(cls) -> SitePolicy:
@@ -70,6 +72,7 @@ class SitePolicy:
             update_apply_cutoff_minutes_before_end=DEFAULT_UPDATE_APPLY_CUTOFF_MINUTES_BEFORE_END,
             update_release_keep=DEFAULT_UPDATE_RELEASE_KEEP,
             update_db_backup_keep=DEFAULT_UPDATE_DB_BACKUP_KEEP,
+            comment_max_depth=DEFAULT_COMMENT_MAX_DEPTH,
         )
 
 
@@ -102,6 +105,7 @@ def _snapshot(row) -> SitePolicy:
         update_apply_cutoff_minutes_before_end=row.update_apply_cutoff_minutes_before_end,
         update_release_keep=row.update_release_keep,
         update_db_backup_keep=row.update_db_backup_keep,
+        comment_max_depth=row.comment_max_depth,
     )
 
 

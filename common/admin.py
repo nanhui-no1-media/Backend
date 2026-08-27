@@ -12,6 +12,7 @@ class SiteSettingsAdmin(admin.ModelAdmin):
     fieldsets = (
         ("验证", {"fields": ("verification_enabled",)}),
         ("审核", {"fields": ("content_review_enabled",)}),
+        ("评论", {"fields": ("comment_max_depth",)}),
         (
             "注册与限流",
             {

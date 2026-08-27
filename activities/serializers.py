@@ -7,7 +7,7 @@ from attachments.serializers import AttachmentSerializer
 from common.rich_text import sanitize_html
 from common.survey_schema import InvalidSurveySchema, validate_schema_dict
 from reviews.visibility import comment_for, status_of
-from tasks.serializers import SimpleUserSerializer  # 复用（与申报/新闻一致）
+from tasks.serializers import CommentThreadHostMixin, SimpleUserSerializer  # 复用（与申报/新闻一致）
 
 from .debt import owed_for
 from .device import device_id_from_request
@@ -146,7 +146,7 @@ def _is_reviewer(activity, user):
     )
 
 
-class ActivityDetailSerializer(serializers.ModelSerializer):
+class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
     creator = SimpleUserSerializer(read_only=True)
     review_status = serializers.SerializerMethodField()
     review_comment = serializers.SerializerMethodField()
@@ -185,6 +185,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             "my_submission", "submissions",
             "exhibits",
             "option_texts",
+            "comment_thread", "comment_thread_status",
             "created_at", "updated_at",
         ]
         read_only_fields = [
@@ -275,7 +276,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             activity.schema = schema
         for i, text in enumerate(texts):
             VoteOption.objects.create(activity=activity, text=text, order=i)
-        return activity
+        return self.apply_comment_thread_status(activity)
 
     def update(self, instance, validated_data):
         # 视图层 gate：标题/正文/时间须 scheduled；调研 schema 可在开放且零作答时改。
@@ -292,7 +293,7 @@ class ActivityDetailSerializer(serializers.ModelSerializer):
             instance.options.all().delete()
             for i, text in enumerate(texts):
                 VoteOption.objects.create(activity=instance, text=text, order=i)
-        return instance
+        return self.apply_comment_thread_status(instance)
 
     # ---- 众议读侧聚合 ----
 

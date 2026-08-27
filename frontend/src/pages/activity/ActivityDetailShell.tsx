@@ -9,6 +9,7 @@ import type { ActivityStatus } from "../../types/activities";
 import Avatar from "../../components/Avatar";
 import PageChrome from "../../components/PageChrome";
 import AuthorReviewBanner from "../../components/AuthorReviewBanner";
+import CommentSection from "../../components/CommentSection";
 import { activityApi } from "../../api/activities";
 import { useEmbedMode } from "../../embed";
 import CollectionPanel, { CollectionSubmitCard } from "./CollectionPanel";
@@ -241,6 +242,7 @@ export default function ActivityDetailShell({
             </div>
           </div>
         )}
+        <CommentSection host={{ activity: a.id }} />
       </div>
     </PageChrome>
   );

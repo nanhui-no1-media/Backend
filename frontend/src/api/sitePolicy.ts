@@ -20,6 +20,7 @@ export interface SitePolicy {
   update_apply_cutoff_minutes_before_end: number;
   update_release_keep: number;
   update_db_backup_keep: number;
+  comment_max_depth: number;
 }
 
 const DEFAULTS: SitePolicy = {
@@ -39,6 +40,7 @@ const DEFAULTS: SitePolicy = {
   update_apply_cutoff_minutes_before_end: 30,
   update_release_keep: 3,
   update_db_backup_keep: 5,
+  comment_max_depth: 8,
 };
 
 let snapshot: SitePolicy = DEFAULTS;

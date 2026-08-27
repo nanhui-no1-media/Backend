@@ -2,6 +2,7 @@
 from django.utils import timezone
 
 from common.policy import get_policy
+from messaging.services import notify
 
 from .models import Review
 
@@ -13,6 +14,18 @@ _ALLOWED = {
     APPROVE: (Review.STATUS_PENDING, Review.STATUS_REMOVED),
     REJECT: (Review.STATUS_PENDING,),
     REMOVE: (Review.STATUS_APPROVED,),
+}
+
+_NOTIFY_EVENT = {
+    APPROVE: "approved",
+    REJECT: "rejected",
+    REMOVE: "removed",
+}
+
+_HOST_URL = {
+    "news": "/news/{id}",
+    "activity": "/activity/{id}",
+    "tutorial": "/tutorials/{id}",
 }
 
 
@@ -59,4 +72,36 @@ def apply(action, review, user, *, comment=""):
         review.status = Review.STATUS_REMOVED
         review.comment = (comment or "").strip()
     review.save(update_fields=["status", "comment", "reviewer", "reviewed_at", "updated_at"])
+    _notify_owner(review, action, user)
     return review
+
+
+def _notify_owner(review, action, actor):
+    """审核结果通知宿主主人（新闻作者 / 活动发起人 / 教程上传者）。"""
+    host, owner, kind = _host_owner(review)
+    if host is None or owner is None:
+        return
+    event = _NOTIFY_EVENT.get(action)
+    if not event:
+        return
+    notify(
+        owner,
+        "review",
+        event,
+        actor=actor,
+        payload={
+            "type": kind,
+            "id": host.pk,
+            "url": _HOST_URL[kind].format(id=host.pk),
+        },
+    )
+
+
+def _host_owner(review):
+    if review.news_id:
+        return review.news, review.news.author, "news"
+    if review.activity_id:
+        return review.activity, review.activity.creator, "activity"
+    if review.tutorial_id:
+        return review.tutorial, review.tutorial.uploader, "tutorial"
+    return None, None, None

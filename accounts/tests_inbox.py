@@ -351,42 +351,40 @@ class InboxTaskDebtTest(TestCase):
         self.assertEqual(self._inbox(self.creator)["count"], 0)
 
 
-class InboxConversationTest(TestCase):
-    """未读会话各占一行；标已读后消失。自己发的消息不算未读。"""
+class InboxOmitsConversationTest(TestCase):
+    """私信未读不再进待办（私信有自己的未读计数）。"""
 
     def setUp(self):
         self.alice = grant_verification(User.objects.create_user(username="alice", password="x"))
         self.bob = grant_verification(User.objects.create_user(username="bob", password="x"))
         self.client = APIClient()
         self.client.force_authenticate(self.alice)
-        self.conv = Conversation.objects.create(conversation_type="private")
+        self.conv = Conversation.objects.create()
         self.conv.participants.set([self.alice, self.bob])
 
-    def test_unread_conversation_is_row(self):
+    def test_unread_dm_is_not_inbox_row(self):
         Message.objects.create(conversation=self.conv, sender=self.bob, content="在吗")
         body = self.client.get(INBOX).json()
-        self.assertEqual(body["count"], 1)
-        row = body["results"][0]
-        self.assertEqual(row["kind"], "conversation")
-        self.assertEqual(row["reason"], "unread")
-        self.assertFalse(row["pinned"])
-        self.assertEqual(row["conversation"]["id"], self.conv.pk)
-        self.assertGreater(row["conversation"]["unread_count"], 0)
-        self.assertIsNone(row["end_at"])
+        self.assertEqual(body["count"], 0)
+        self.assertTrue(all(item["kind"] != "conversation" for item in body["results"]))
 
-    def test_own_message_not_unread_row(self):
+    def test_unread_dm_not_mixed_into_task_debt(self):
+        Task.objects.create(
+            title="进行中", creator=self.bob, assignee=self.alice, status="in_progress",
+        )
+        Message.objects.create(conversation=self.conv, sender=self.bob, content="在吗")
+        body = self.client.get(INBOX).json()
+        kinds = [item["kind"] for item in body["results"]]
+        self.assertEqual(kinds, ["task"])
+        self.assertTrue(all(item["conversation"] is None for item in body["results"]))
+
+    def test_own_message_not_inbox_row(self):
         Message.objects.create(conversation=self.conv, sender=self.alice, content="我自己说的")
-        self.assertEqual(self.client.get(INBOX).json()["count"], 0)
-
-    def test_mark_read_removes_row(self):
-        Message.objects.create(conversation=self.conv, sender=self.bob, content="看一下")
-        resp = self.client.post(f"/messaging/conversations/{self.conv.pk}/mark_read/")
-        self.assertEqual(resp.status_code, 200)
         self.assertEqual(self.client.get(INBOX).json()["count"], 0)
 
     def test_non_participant_conversation_absent(self):
         carol = grant_verification(User.objects.create_user(username="carol", password="x"))
-        other = Conversation.objects.create(conversation_type="private")
+        other = Conversation.objects.create()
         other.participants.set([self.bob, carol])
         Message.objects.create(conversation=other, sender=carol, content="与 alice 无关")
         self.assertEqual(self.client.get(INBOX).json()["count"], 0)

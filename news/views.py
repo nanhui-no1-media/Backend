@@ -11,6 +11,7 @@ from rest_framework.permissions import DjangoModelPermissionsOrAnonReadOnly, IsA
 from rest_framework.response import Response
 
 from accounts.utils import get_client_ip
+from messaging.services import thread_for
 from reviews.lifecycle import open_review
 from reviews.visibility import public_q, visible_queryset
 from tasks.models import Tag
@@ -77,6 +78,7 @@ class NewsViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         news = serializer.save(author=self.request.user)
         open_review(news=news, actor=self.request.user)
+        thread_for(news)
 
     @action(detail=False, methods=["get"])
     def mine(self, request):

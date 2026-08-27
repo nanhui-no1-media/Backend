@@ -15,6 +15,10 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
   const [birthday, setBirthday] = useState("");
   const [gender, setGender] = useState("");
   const [bio, setBio] = useState("");
+  const [email, setEmail] = useState("");
+  const [notifyComment, setNotifyComment] = useState(false);
+  const [notifyReview, setNotifyReview] = useState(false);
+  const [notifyDiscipline, setNotifyDiscipline] = useState(false);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -22,6 +26,7 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const hasBoundEmail = !!email.trim();
 
   useEffect(() => {
     api.getProfile()
@@ -30,6 +35,10 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
         setBirthday(d.profile.birthday || "");
         setGender(d.profile.gender);
         setBio(d.profile.bio);
+        setEmail(d.user?.email || "");
+        setNotifyComment(!!d.profile.email_notify_comment);
+        setNotifyReview(!!d.profile.email_notify_review);
+        setNotifyDiscipline(!!d.profile.email_notify_discipline);
         setAvatar(d.profile.avatar);
       })
       .finally(() => setLoading(false));
@@ -57,6 +66,9 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
       fd.append("birthday", birthday);
       fd.append("gender", gender);
       fd.append("bio", bio);
+      fd.append("email_notify_comment", hasBoundEmail && notifyComment ? "true" : "false");
+      fd.append("email_notify_review", hasBoundEmail && notifyReview ? "true" : "false");
+      fd.append("email_notify_discipline", hasBoundEmail && notifyDiscipline ? "true" : "false");
       await api.updateProfile(fd);
       setAvatarPreview(null);
       setSuccess("资料已更新");
@@ -110,6 +122,30 @@ export default function ProfileEditPanel({ onSaved }: { onSaved: () => void }) {
       <div className="field">
         <label className="label">个人简介</label>
         <textarea className="textarea" value={bio} onChange={(e) => setBio(e.target.value)} maxLength={500} rows={3} placeholder="介绍一下自己吧" />
+      </div>
+
+      <div className="field" style={hasBoundEmail ? undefined : { opacity: 0.55 }}>
+        <label className="label">邮件转发通知</label>
+        <p className="hint" style={{ marginBottom: 8 }}>
+          {hasBoundEmail
+            ? `转发到绑定邮箱 ${email}`
+            : "需先绑定邮箱后才能转发；站内通知始终投递。"}
+        </p>
+        <label className="check" style={{ display: "flex", marginBottom: 6 }}>
+          <input type="checkbox" checked={notifyComment} disabled={!hasBoundEmail}
+                 onChange={(e) => setNotifyComment(e.target.checked)} />
+          评论通知
+        </label>
+        <label className="check" style={{ display: "flex", marginBottom: 6 }}>
+          <input type="checkbox" checked={notifyReview} disabled={!hasBoundEmail}
+                 onChange={(e) => setNotifyReview(e.target.checked)} />
+          审核通知
+        </label>
+        <label className="check" style={{ display: "flex" }}>
+          <input type="checkbox" checked={notifyDiscipline} disabled={!hasBoundEmail}
+                 onChange={(e) => setNotifyDiscipline(e.target.checked)} />
+          纪律通知
+        </label>
       </div>
 
       <div className="form-actions">

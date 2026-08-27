@@ -5,8 +5,11 @@ import RichTextEditor from "../components/RichTextEditor";
 import { api } from "../api/client";
 import { newsApi } from "../api/news";
 import { taskApi } from "../api/tasks";
+import { messagingApi } from "../api/messaging";
 import { attachmentApi } from "../api/attachments";
 import type { Tag } from "../types/tasks";
+import type { ThreadStatus } from "../types/messaging";
+import CommentThreadStatusField from "../components/CommentThreadStatusField";
 import "../styles/news.css";
 import "../styles/form.css";
 
@@ -17,6 +20,7 @@ interface DraftSnap {
   tagIds: number[];
   featured: boolean;
   isPublished: boolean;
+  commentThreadStatus: ThreadStatus;
   savedAt: number;
 }
 
@@ -47,6 +51,7 @@ export default function NewsFormPage() {
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [featured, setFeatured] = useState(false);
   const [isPublished, setIsPublished] = useState(true);
+  const [commentThreadStatus, setCommentThreadStatus] = useState<ThreadStatus>("open");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(isEdit);
@@ -74,6 +79,7 @@ export default function NewsFormPage() {
           setTagIds(Array.isArray(snap.tagIds) ? snap.tagIds : []);
           setFeatured(!!snap.featured);
           setIsPublished(snap.isPublished ?? true);
+          setCommentThreadStatus(snap.commentThreadStatus === "muted" || snap.commentThreadStatus === "closed" ? snap.commentThreadStatus : "open");
           setSavedAt(snap.savedAt ?? null);
           setDraftRestored(true);
           setRteKey((k) => k + 1);
@@ -91,6 +97,9 @@ export default function NewsFormPage() {
         setIsPublished(n.is_published);
         setCoverPreview(n.cover_image_url);
         setRteKey((k) => k + 1);
+        messagingApi.getThread({ news: n.id })
+          .then((t) => setCommentThreadStatus(t.status))
+          .catch(() => {});
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -106,14 +115,14 @@ export default function NewsFormPage() {
       if (!title && !summary && !content && tagIds.length === 0) return;
       const snap: DraftSnap = {
         title, summary, content, tagIds, featured, isPublished,
-        savedAt: Date.now(),
+        commentThreadStatus, savedAt: Date.now(),
       };
       localStorage.setItem(draftKey, JSON.stringify(snap));
       setSavedAt(snap.savedAt);
     }, 800);
     return () => { if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, summary, content, tagIds, featured, isPublished]);
+  }, [title, summary, content, tagIds, featured, isPublished, commentThreadStatus]);
 
   const onPickCover = (f: File | null) => {
     if (f && f.size > 2 * 1024 * 1024) {
@@ -132,6 +141,7 @@ export default function NewsFormPage() {
     localStorage.removeItem(draftKey);
     setTitle(""); setSummary(""); setContent("");
     setTagIds([]); setFeatured(false); setIsPublished(true);
+    setCommentThreadStatus("open");
     setSavedAt(null); setDraftRestored(false);
     setRteKey((k) => k + 1);
   };
@@ -170,12 +180,14 @@ export default function NewsFormPage() {
       fd.append("content", content);
       fd.append("featured", String(featured));
       fd.append("is_published", String(isPublished));
+      fd.append("comment_thread_status", commentThreadStatus);
       tagIds.forEach((tid) => fd.append("tag_ids", String(tid)));
       if (cover) fd.append("cover_image", cover);
       const saved = newsIdRef.current
         ? await newsApi.update(newsIdRef.current, fd)
         : await newsApi.create(fd);
       if (!newsIdRef.current) newsIdRef.current = saved.id;
+      await messagingApi.applyHostThreadStatus({ news: saved.id }, commentThreadStatus);
       if (draftSupported) localStorage.removeItem(draftKey);
       navigate(`/news/${saved.id}`);
     } catch (e: any) {
@@ -299,6 +311,8 @@ export default function NewsFormPage() {
               <input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} />
               {" "}设为头条（列表页顶部展示）
             </label>
+
+            <CommentThreadStatusField value={commentThreadStatus} onChange={setCommentThreadStatus} />
           </div>
 
           {/* 底部状态 + 操作 */}

@@ -18,6 +18,7 @@ from accounts.permissions import IsVerified
 
 from attachments.create import create_attachment
 from attachments.validation import upload_error
+from messaging.services import thread_for
 from reviews.lifecycle import open_review
 from reviews.models import Review
 from reviews.visibility import status_of, visible_queryset
@@ -145,6 +146,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         activity = serializer.save(creator=self.request.user)
         open_review(activity=activity, actor=self.request.user)
+        thread_for(activity)
 
     @action(detail=False, methods=["get"])
     def mine(self, request):
@@ -183,7 +185,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
                     raise PermissionDenied("当前不可修改问卷")
             elif not can_edit(instance):
                 raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
-        elif not incoming and not can_edit(instance):
+        elif not incoming and not can_edit(instance) and not getattr(serializer, "_comment_thread_status", None):
             raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
         super().perform_update(serializer)
 

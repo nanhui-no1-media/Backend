@@ -23,3 +23,17 @@
   padding: var(--s-3) var(--s-6); font-size: 13px;
 }
 .identity-banner svg { width: 18px; height: 18px; flex-shrink: 0; }
+
+.site-banner {
+  display: flex; align-items: center; gap: var(--s-3);
+  background: var(--brand-50); color: var(--brand-900);
+  border-bottom: 1px solid var(--brand-100);
+  padding: var(--s-3) var(--s-6); font-size: 14px;
+}
+.site-banner-body { flex: 1; min-width: 0; line-height: 1.5; }
+.site-banner-body a { color: var(--brand-700); font-weight: 600; }
+.site-banner-dismiss {
+  flex-shrink: 0; width: 28px; height: 28px; border-radius: var(--r-sm);
+  color: var(--muted); font-size: 18px; line-height: 1;
+}
+.site-banner-dismiss:hover { background: var(--brand-100); color: var(--brand-800); }

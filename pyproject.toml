@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "bleach>=6.4.0",
+    "channels[daphne]>=4.3.2",
     "django>=6.0.5",
     "django-cors-headers>=4.9.0",
     "django-filter>=25.2",
@@ -14,4 +15,5 @@ dependencies = [
     "gunicorn>=26.0.0",
     "pillow>=12.2.0",
     "python-dotenv>=1.2.2",
+    "uvicorn[standard]>=0.52.4",
 ]

@@ -26,6 +26,7 @@ from .permissions import (
     CanViewTask,
 )
 from accounts.permissions import IsVerified
+from messaging.services import thread_for
 from .serializers import (
     SimpleUserSerializer,
     TagSerializer,
@@ -101,7 +102,8 @@ class TaskViewSet(viewsets.ModelViewSet):
         return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        serializer.save(creator=self.request.user)
+        task = serializer.save(creator=self.request.user)
+        thread_for(task)
 
     def perform_update(self, serializer):
         serializer.save()

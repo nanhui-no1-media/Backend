@@ -17,6 +17,9 @@ const CAP_LABELS: Record<string, string> = {
   can_review_content: "审核内容",
   can_review_identity: "审核身份",
   can_force_publish: "免审发布",
+  can_manage_comment_thread: "评论区协管",
+  can_mute_user: "全站禁言",
+  can_manage_announcement: "管理横幅公告",
 };
 
 /** 统一的 24x24 线性图标外壳，沿用项目内联 SVG 约定（stroke=currentColor）。 */
@@ -115,6 +118,26 @@ const CAP_ICONS: Record<string, ReactNode> = {
     <Svg>
       <path d="M12 19V5" />
       <path d="M5 12l7-7 7 7" />
+    </Svg>
+  ),
+  can_manage_comment_thread: (
+    <Svg>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <path d="M8 8h8" />
+      <path d="M8 12h5" />
+    </Svg>
+  ),
+  can_mute_user: (
+    <Svg>
+      <circle cx={12} cy={12} r={8.5} />
+      <path d="M8 8l8 8" />
+    </Svg>
+  ),
+  can_manage_announcement: (
+    <Svg>
+      <path d="M4 10v4" />
+      <path d="M4 12h3l9-5v10l-9-5H4z" />
+      <path d="M18 9.5v5" />
     </Svg>
   ),
 };

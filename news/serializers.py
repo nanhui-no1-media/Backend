@@ -4,7 +4,7 @@ from rest_framework import serializers
 from common.rich_text import sanitize_html
 from reviews.visibility import comment_for, public_q, status_of
 from tasks.models import Tag
-from tasks.serializers import SimpleUserSerializer
+from tasks.serializers import CommentThreadHostMixin, SimpleUserSerializer
 
 from .models import News
 from attachments.models import Attachment
@@ -69,7 +69,7 @@ class NewsAttachmentSerializer(AttachmentSerializer):
         fields = ["id", "file_url", "file_type", "file_name", "file_size"]
 
 
-class NewsDetailSerializer(serializers.ModelSerializer):
+class NewsDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
     """详情序列化：含正文、相关阅读；写入接受封面文件与 tag_ids。"""
 
     author = SimpleUserSerializer(read_only=True)
@@ -93,6 +93,7 @@ class NewsDetailSerializer(serializers.ModelSerializer):
             "author", "tags", "tag_ids",
             "featured", "views", "is_published", "review_status", "review_comment", "published_at",
             "related", "created_at", "updated_at", "attachments",
+            "comment_thread", "comment_thread_status",
         ]
         read_only_fields = ["author", "views", "published_at", "created_at", "updated_at"]
 
@@ -139,7 +140,7 @@ class NewsDetailSerializer(serializers.ModelSerializer):
         news = News.objects.create(**validated_data)
         if tags:
             news.tags.set(tags)
-        return news
+        return self.apply_comment_thread_status(news)
 
     def update(self, instance, validated_data):
         tags = validated_data.pop("tags", None)
@@ -155,4 +156,4 @@ class NewsDetailSerializer(serializers.ModelSerializer):
         instance.save()
         if tags is not None:
             instance.tags.set(tags)
-        return instance
+        return self.apply_comment_thread_status(instance)

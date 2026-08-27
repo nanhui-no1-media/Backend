@@ -51,6 +51,10 @@ class Profile(models.Model):
     real_name = models.CharField("真实姓名", max_length=100, blank=True)
     identity = models.CharField("身份", max_length=10, choices=IDENTITY_CHOICES, blank=True)
 
+    email_notify_comment = models.BooleanField("邮件转发评论通知", default=False)
+    email_notify_review = models.BooleanField("邮件转发审核通知", default=False)
+    email_notify_discipline = models.BooleanField("邮件转发纪律通知", default=False)
+
     def __str__(self):
         return f"{self.user.username}'s profile"
 

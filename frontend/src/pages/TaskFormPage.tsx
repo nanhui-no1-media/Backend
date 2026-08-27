@@ -1,12 +1,15 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { taskApi } from "../api/tasks";
+import { messagingApi } from "../api/messaging";
 import {
   TaskDetail, TaskPriority, TaskFormData,
   Tag, PRIORITY_LABELS,
 } from "../types/tasks";
+import type { ThreadStatus } from "../types/messaging";
 import RichTextEditor from "../components/RichTextEditor";
 import UserSearchSelect, { type SelectUser } from "../components/UserSearchSelect";
+import CommentThreadStatusField from "../components/CommentThreadStatusField";
 import "./TaskFormPage.css";
 
 // 任务详情返回的 TaskUser → 选择器最小形状
@@ -33,6 +36,7 @@ export default function TaskFormPage() {
   const [assignee, setAssignee] = useState<SelectUser[]>([]);
   const [tagIds, setTagIds] = useState<number[]>([]);
   const [collaborators, setCollaborators] = useState<SelectUser[]>([]);
+  const [commentThreadStatus, setCommentThreadStatus] = useState<ThreadStatus>("open");
 
   const [tags, setTags] = useState<Tag[]>([]);
 
@@ -55,6 +59,9 @@ export default function TaskFormPage() {
         setAssignee(task.assignee ? [toSelect(task.assignee)] : []);
         setTagIds(task.tags.map((t) => t.id));
         setCollaborators(task.collaborators.map(toSelect));
+        messagingApi.getThread({ task: task.id })
+          .then((t) => setCommentThreadStatus(t.status))
+          .catch(() => {});
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -79,6 +86,7 @@ export default function TaskFormPage() {
       title: title.trim(),
       description,
       priority,
+      comment_thread_status: commentThreadStatus,
     };
     if (assignee.length > 0) data.assignee_id = assignee[0].id;
     if (tagIds.length > 0) data.tag_ids = tagIds;
@@ -88,6 +96,7 @@ export default function TaskFormPage() {
       const result = isEdit
         ? await taskApi.update(Number(id), data)
         : await taskApi.create(data);
+      await messagingApi.applyHostThreadStatus({ task: result.id }, commentThreadStatus);
       navigate(`/tasks/${result.id}`);
     } catch (err: any) {
       setError(err.message);
@@ -175,6 +184,8 @@ export default function TaskFormPage() {
             <label>协作者</label>
             <UserSearchSelect selected={collaborators} onChange={setCollaborators} placeholder="搜索并添加协作者（可多选）" />
           </div>
+
+          <CommentThreadStatusField value={commentThreadStatus} onChange={setCommentThreadStatus} />
 
           <div className="form-actions">
             <button type="button" className="task-btn-secondary" onClick={() => navigate(id ? `/tasks/${id}` : "/tasks")}>

@@ -12,6 +12,8 @@ import SessionsPanel from "../components/profile/SessionsPanel";
 import ContentListPanel from "../components/profile/ContentListPanel";
 import PermissionsPanel from "../components/profile/PermissionsPanel";
 import VerificationPanel from "../components/profile/VerificationPanel";
+import MuteUserPanel from "../components/profile/MuteUserPanel";
+import { messagingApi } from "../api/messaging";
 import type { UserProfileData } from "../types/profile";
 import "../styles/profile.css";
 
@@ -36,6 +38,10 @@ export default function UserProfile() {
   const [profile, setProfile] = useState<UserProfileData | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loadErr, setLoadErr] = useState("");
+  const [canMute, setCanMute] = useState(false);
+  const [canDm, setCanDm] = useState(false);
+  const [dmBusy, setDmBusy] = useState(false);
+  const [dmError, setDmError] = useState("");
 
   const uid = Number(id);
 
@@ -50,6 +56,12 @@ export default function UserProfile() {
         else if (e.status === 404) setNotFound(true);
         else setLoadErr(e.message || "加载失败");
       });
+    api.me()
+      .then((d: any) => {
+        setCanMute(!!d.user?.permissions?.can_mute_user);
+        setCanDm(!!d.profile?.is_verified);
+      })
+      .catch(() => { setCanMute(false); setCanDm(false); });
   }, [uid, openLogin]);
 
   if (notFound || loadErr) {
@@ -95,6 +107,19 @@ export default function UserProfile() {
     setSearch(next, { replace: true });
   };
 
+  const startDm = async () => {
+    setDmBusy(true);
+    setDmError("");
+    try {
+      const conv = await messagingApi.startPrivate(uid);
+      navigate(`/messages/${conv.id}`);
+    } catch (e: any) {
+      setDmError(e?.message || "无法发起私信");
+    } finally {
+      setDmBusy(false);
+    }
+  };
+
   const onProfileSaved = () => {
     api.getUserProfile(uid).then((d: any) => setProfile(d)).catch((e: any) => console.warn("profile refetch failed", e));
     notifyAuthChange();
@@ -125,6 +150,15 @@ export default function UserProfile() {
           <div className="profile-other">
             <ProfileTabs tabs={tabs} active={active} onPick={setTab} />
             <div className="profile-panel">
+              {canDm && (
+                <div style={{ marginBottom: "var(--s-4)" }}>
+                  {dmError && <div className="alert alert-danger" style={{ marginBottom: 8 }}><span>{dmError}</span></div>}
+                  <button className="btn btn-secondary btn-sm" type="button" onClick={startDm} disabled={dmBusy}>
+                    {dmBusy ? "打开中…" : "发私信"}
+                  </button>
+                </div>
+              )}
+              {canMute && <MuteUserPanel userId={uid} />}
               {active === "news" && <ContentListPanel userId={uid} type="news" selfView={false} />}
               {active === "activities" && <ContentListPanel userId={uid} type="activities" selfView={false} />}
               {active === "tutorials" && <ContentListPanel userId={uid} type="tutorials" selfView={false} />}

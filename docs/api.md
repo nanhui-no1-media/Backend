@@ -236,12 +236,105 @@ DELETE /tutorials/tutorials/<id>/
 - 审核教程是否通过
 - 统计浏览量/收藏等元数据
 
-## 8. 消息、审核、关于、招聘等接口
+## 8. 消息模块契约（`/messaging/` + `/ws/messaging/`）
+
+本节是消息重置后的 HTTP / WebSocket 契约（[ADR 0015](adr/0015-channels-without-redis.md)、[ADR 0016](adr/0016-comment-thread-vs-dm.md)）。实现按此对齐；**不要**另起 `/messages/` 等前缀。会话子资源沿用现网路径；评论区 / 通知 / 禁言 / 横幅按下列资源名落地。
+
+公开 `GET /site-policy/` 已返回站点策略快照；`comment_max_depth` 随快照出现，不另开接口。
+
+### 8.1 评论区
+
+按宿主取恰好一条；可改状态（`open` 开放 / `muted` 评论区禁言 / `closed` 彻底关闭）。
+
+```http
+GET    /messaging/threads/?news=<id>
+GET    /messaging/threads/?activity=<id>
+GET    /messaging/threads/?task=<id>
+PATCH  /messaging/threads/<id>/
+```
+
+`PATCH` 体为 `{ "status": "open" | "muted" | "closed" }`。彻底关闭后普通读者看不到该区；协管仍可 GET。
+
+### 8.2 评论
+
+根评论分页（页大小 20），子评论嵌在同一 payload（社团体量，不另开子列表）。
+
+```http
+GET    /messaging/comments/?thread=<id>
+POST   /messaging/comments/
+POST   /messaging/comments/<id>/retract/
+POST   /messaging/comments/<id>/delete/
+```
+
+- 发表：已验证、未被全站禁言、能看见宿主、评论区为开放
+- 撤回：作者、限时、且无子评论
+- 删除：协管墓碑（「该评论已删除」），子树保留
+
+### 8.3 私信（会话）
+
+只保留 1:1 私信。列表不返回任务/申报会话。
+
+```http
+GET    /messaging/conversations/
+GET    /messaging/conversations/<id>/
+GET    /messaging/conversations/messages/?conversation_id=<id>
+GET    /messaging/conversations/unread_count/
+POST   /messaging/conversations/start_private/
+POST   /messaging/conversations/<id>/send_message/
+POST   /messaging/conversations/<id>/mark_read/
+```
+
+**删除（不再提供）：**
+
+```http
+POST   /messaging/conversations/get_task_conversation/
+POST   /messaging/conversations/get_proposal_conversation/
+```
+
+任务讨论改走该任务的评论区；申报事件改走通知。
+
+### 8.4 通知
+
+```http
+GET    /messaging/notifications/
+GET    /messaging/notifications/unread_count/
+POST   /messaging/notifications/<id>/mark_read/
+POST   /messaging/notifications/mark_read/
+```
+
+最后一条为全部已读。通知不是私信副本；待办收件箱不再含会话项。
+
+### 8.5 全站禁言
+
+```http
+POST   /messaging/mutes/
+POST   /messaging/mutes/lift/
+GET    /messaging/mutes/me/
+```
+
+禁言 / 解除需 `can_mute_user`。`GET …/me/` 给当前用户自己的状态，供 SPA 禁用评论与私信输入框。被禁言者仍可登录、阅读、接收私信与通知。
+
+### 8.6 横幅公告
+
+```http
+GET    /messaging/banners/current/
+```
+
+`AllowAny`，无需 session。全站同一时刻至多一条。写入只走 Django admin，无产品侧写接口。
+
+### 8.7 WebSocket（只推送）
+
+```http
+GET    /ws/messaging/
+```
+
+已登录（session cookie）；进组 `user_{id}`。客户端可发 `{ "action": "subscribe_thread"|"unsubscribe_thread", "thread_id": <id> }` 订当前评论区。下行 `{ "event": "dm"|"notification"|"comment", "payload": { ids } }`（`message_id` / `comment_id` / `notification_id` / `thread_id` / `conversation_id`）。无输入状态、已读回执、在线、历史回放。挤号不走此连接。访客无 socket，横幅靠 8.6 轮询。
+
+## 9. 审核、关于、招聘等接口
 
 这些模块大多按应用前缀直接挂路由：
 
 ```http
-/messaging/
 /reviews/
 /about/
 /recruitment/
@@ -252,22 +345,22 @@ DELETE /tutorials/tutorials/<id>/
 
 这部分接口一般用于：
 
-- 站内消息
 - 审核工作流
 - 关于页编辑
-- 招聘信息展示与审批
+- 招聘信息展示与审批（含招生公告）
 - 文件附件的上传/管理
+- 公开站点策略快照
 
-## 9. 接口调试建议
+## 10. 接口调试建议
 
-### 9.1 调试时优先看以下内容
+### 10.1 调试时优先看以下内容
 
 - `config/urls.py`
 - 各应用下的 `urls.py`
 - 相关 `views.py` / `ViewSet`
 - `admin.py` 中的权限配置
 
-### 9.2 典型请求示例
+### 10.2 典型请求示例
 
 #### 登录
 
@@ -289,7 +382,7 @@ curl -b cookies.txt http://localhost:8000/auth/me/
 curl http://localhost:8000/news/news/
 ```
 
-## 10. 推荐的协作原则
+## 11. 推荐的协作原则
 
 - 前后端联调时，先确认 URL path 是否正确，再看权限和 CSRF
 - 任何改动接口，都要同步更新本文档和前端请求代码

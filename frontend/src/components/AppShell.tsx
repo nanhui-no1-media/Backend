@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { messagingApi } from "../api/messaging";
+import { onMessagingEvent, onMessagingOpen, startMessagingSocket, stopMessagingSocket } from "../api/messagingSocket";
 import { useSitePolicy } from "../api/sitePolicy";
 import { useEmbedMode } from "../embed";
 import { useLoginModal } from "./LoginModalProvider";
+import type { Banner } from "../types/messaging";
 import "./AppShell.css";
 
 interface AppShellUser {
@@ -29,14 +32,42 @@ const NAV: { label: string; path: string }[] = [
   { label: "反馈", path: "/feedback" },
   { label: "任务", path: "/tasks" },
 ];
-const USER_MENU: { label: string; path: string }[] = [
+const USER_MENU: { label: string; path: string; needVerified?: boolean }[] = [
   { label: "个人中心", path: "/profile" },
-  { label: "待办", path: "/inbox" },
+  { label: "私信", path: "/messages", needVerified: true },
+  { label: "通知", path: "/notifications" },
+  { label: "待办", path: "/inbox", needVerified: true },
   { label: "任务管理", path: "/tasks" },
   { label: "活动", path: "/activity" },
   { label: "意见反馈", path: "/feedback" },
   { label: "后台管理", path: "/admin/" },
 ];
+
+const BANNER_TTL_MS = 24 * 60 * 60 * 1000;
+
+function bannerStorageKey(id: number) {
+  return `banner:${id}`;
+}
+
+function isBannerDismissed(id: number): boolean {
+  try {
+    const raw = localStorage.getItem(bannerStorageKey(id));
+    if (!raw) return false;
+    const t = Number(raw);
+    return Number.isFinite(t) && Date.now() - t < BANNER_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+function dismissBanner(id: number) {
+  try { localStorage.setItem(bannerStorageKey(id), String(Date.now())); } catch { /* ignore */ }
+}
+
+function formatBadge(n: number): string {
+  if (n > 99) return "99+";
+  return String(n);
+}
 
 const Caret = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
@@ -53,6 +84,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [inboxCount, setInboxCount] = useState(0);
+  const [dmCount, setDmCount] = useState(0);
+  const [notifCount, setNotifCount] = useState(0);
+  const [banner, setBanner] = useState<Banner | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const [showTop, setShowTop] = useState(false);
   const userWrap = useRef<HTMLDivElement>(null);
   const { openLogin, authNonce, notifyAuthChange } = useLoginModal();
@@ -70,14 +105,79 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, [authNonce]);
 
   const showInbox = !!user && !!profile.is_verified;
+  const showDm = showInbox;
+  const showNotif = !!user;
 
-  // 待办角标：与原先未读同一节奏——登录态、路由跳转时刷新，不轮询。
   useEffect(() => {
     if (!showInbox) { setInboxCount(0); return; }
     api.inbox()
       .then((d: any) => setInboxCount(Number(d?.count) || 0))
       .catch(() => setInboxCount(0));
   }, [showInbox, authNonce, location.pathname]);
+
+  useEffect(() => {
+    if (!showDm) { setDmCount(0); return; }
+    messagingApi.unreadCount()
+      .then((d) => setDmCount(Number(d?.total) || 0))
+      .catch(() => setDmCount(0));
+  }, [showDm, authNonce, location.pathname]);
+
+  useEffect(() => {
+    if (!showNotif) { setNotifCount(0); return; }
+    messagingApi.notificationUnreadCount()
+      .then((d) => setNotifCount(Number(d?.total) || 0))
+      .catch(() => setNotifCount(0));
+  }, [showNotif, authNonce, location.pathname]);
+
+  useEffect(() => {
+    if (!user) {
+      stopMessagingSocket();
+      return;
+    }
+    startMessagingSocket();
+    const refreshBadges = () => {
+      if (showDm) {
+        messagingApi.unreadCount().then((d) => setDmCount(Number(d?.total) || 0)).catch(() => {});
+      }
+      messagingApi.notificationUnreadCount().then((d) => setNotifCount(Number(d?.total) || 0)).catch(() => {});
+    };
+    const offOpen = onMessagingOpen(refreshBadges);
+    const offEv = onMessagingEvent((ev) => {
+      if (ev.event === "dm") {
+        messagingApi.unreadCount().then((d) => setDmCount(Number(d?.total) || 0)).catch(() => {});
+      }
+      if (ev.event === "notification") {
+        messagingApi.notificationUnreadCount().then((d) => setNotifCount(Number(d?.total) || 0)).catch(() => {});
+      }
+    });
+    return () => {
+      offOpen();
+      offEv();
+    };
+  }, [user, showDm]);
+
+  useEffect(() => {
+    return () => { stopMessagingSocket(); };
+  }, []);
+
+  const loadBanner = () => {
+    messagingApi.currentBanner()
+      .then((b) => {
+        setBanner(b);
+        setBannerDismissed(b ? isBannerDismissed(b.id) : false);
+      })
+      .catch(() => { setBanner(null); });
+  };
+
+  useEffect(() => {
+    loadBanner();
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const onFocus = () => loadBanner();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   // 用 body.is-authed 驱动 cobalt 的 .act-guest/.act-user 显隐
   useEffect(() => {
@@ -143,15 +243,26 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <button className="btn btn-primary btn-sm" onClick={() => openLogin()}>登录</button>
             </div>
             <div className="act-user">
-              {showInbox && (
+              {showDm && (
                 <button
-                  className={"inbox-entry" + (isActive("/inbox") ? " is-current" : "")}
+                  className={"inbox-entry" + (isActive("/messages") ? " is-current" : "")}
                   type="button"
-                  aria-label={inboxCount > 0 ? `待办，${inboxCount} 项` : "待办"}
-                  onClick={() => go("/inbox")}
+                  aria-label={dmCount > 0 ? `私信，${dmCount} 条未读` : "私信"}
+                  onClick={() => go("/messages")}
                 >
-                  待办
-                  {inboxCount > 0 && <span className="inbox-badge tnum">{inboxCount}</span>}
+                  私信
+                  {dmCount > 0 && <span className="inbox-badge tnum">{formatBadge(dmCount)}</span>}
+                </button>
+              )}
+              {showNotif && (
+                <button
+                  className={"inbox-entry" + (isActive("/notifications") ? " is-current" : "")}
+                  type="button"
+                  aria-label={notifCount > 0 ? `通知，${notifCount} 条未读` : "通知"}
+                  onClick={() => go("/notifications")}
+                >
+                  通知
+                  {notifCount > 0 && <span className="inbox-badge tnum">{formatBadge(notifCount)}</span>}
                 </button>
               )}
               <div className="user-chip-wrap" ref={userWrap}>
@@ -170,7 +281,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
                         <div className="um-sub">@{user?.username}</div>
                       </div>
                     </div>
-                    {USER_MENU.filter((m) => m.path !== "/inbox" || showInbox).map((m) => (
+                    {USER_MENU.filter((m) => {
+                      if (m.needVerified) return showInbox;
+                      return true;
+                    }).map((m) => (
                       <button key={m.path} className="user-menu-item" type="button" onClick={() => go(m.path)}>
                         {m.label}
                       </button>
@@ -202,6 +316,16 @@ export default function AppShell({ children }: { children: ReactNode }) {
           {user ? (
             <>
               <button className="sheet-item" type="button" onClick={() => go("/profile")}>个人中心</button>
+              {showDm && (
+                <button className="sheet-item" type="button" onClick={() => go("/messages")}>
+                  私信{dmCount > 0 ? `（${dmCount}）` : ""}
+                </button>
+              )}
+              {showNotif && (
+                <button className="sheet-item" type="button" onClick={() => go("/notifications")}>
+                  通知{notifCount > 0 ? `（${notifCount}）` : ""}
+                </button>
+              )}
               {showInbox && (
                 <button className="sheet-item" type="button" onClick={() => go("/inbox")}>
                   待办{inboxCount > 0 ? `（${inboxCount}）` : ""}
@@ -227,10 +351,32 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <button className="identity-banner" type="button" role="status"
                 onClick={() => go("/profile?tab=verification")}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v4h1" /></svg>
-          <span>{policy.verification_enabled
+          <span>          {policy.verification_enabled
             ? "你的账号尚未验证，发帖 / 发消息 / 建申报暂不可用。前往「账号验证」完成验证。"
             : "验证通道已关闭，暂无法完成验证"}</span>
         </button>
+      )}
+
+      {banner && !bannerDismissed && (
+        <div className="site-banner" role="status">
+          <span className="site-banner-body">
+            {banner.link ? (
+              banner.link.startsWith("http://") || banner.link.startsWith("https://") ? (
+                <a href={banner.link} target="_blank" rel="noopener noreferrer">{banner.body}</a>
+              ) : (
+                <a href="#" onClick={(e) => { e.preventDefault(); go(banner.link.startsWith("/") ? banner.link : `/${banner.link}`); }}>{banner.body}</a>
+              )
+            ) : banner.body}
+          </span>
+          <button
+            className="site-banner-dismiss"
+            type="button"
+            aria-label="关闭横幅公告"
+            onClick={() => { dismissBanner(banner.id); setBannerDismissed(true); }}
+          >
+            ×
+          </button>
+        </div>
       )}
 
       <main className="page">{children}</main>

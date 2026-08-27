@@ -1,19 +1,17 @@
 """已验证成员待办收件箱（#82）：``GET /auth/inbox/``。
 
-混合时间线：活动债、任务债、未读会话。48h 内截止的活动债置顶（end_at 升序），
+混合时间线：活动债、任务债。48h 内截止的活动债置顶（end_at 升序），
 其余按 updated_at 降序。不分页（ADR-0008 数字分页会把债拆进后页）。
+私信未读不进待办（私信有自己的未读计数）。
 """
 from datetime import timedelta
 
-from django.db.models import Exists, OuterRef
 from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from activities.debt import activity_debt_reason, activity_debts_for
 from activities.serializers import ActivityListSerializer
-from messaging.models import Conversation, Message
-from messaging.serializers import ConversationSerializer
 from tasks.debt import task_debt_reason, task_debts_for
 from tasks.serializers import TaskListSerializer
 
@@ -57,35 +55,6 @@ def _task_item(task, request, now, user):
     }
 
 
-def _conversation_item(conversation, request, now):
-    return {
-        "kind": "conversation",
-        "reason": "unread",
-        "pinned": False,
-        "updated_at": conversation.updated_at,
-        "end_at": None,
-        "activity": None,
-        "task": None,
-        "conversation": ConversationSerializer(
-            conversation, context={"request": request},
-        ).data,
-    }
-
-
-def unread_conversations_for(user):
-    unread = (
-        Message.objects.filter(conversation_id=OuterRef("pk"))
-        .exclude(sender=user)
-        .exclude(read_statuses__user=user)
-    )
-    return (
-        Conversation.objects.filter(participants=user)
-        .filter(Exists(unread))
-        .prefetch_related("participants", "participants__profile")
-        .distinct()
-    )
-
-
 def build_inbox(request):
     user = request.user
     now = timezone.now()
@@ -94,8 +63,6 @@ def build_inbox(request):
         items.append(_activity_item(activity, request, now))
     for task in task_debts_for(user):
         items.append(_task_item(task, request, now, user))
-    for conversation in unread_conversations_for(user):
-        items.append(_conversation_item(conversation, request, now))
     pinned = [i for i in items if i["pinned"]]
     rest = [i for i in items if not i["pinned"]]
     pinned.sort(key=lambda i: i["end_at"])

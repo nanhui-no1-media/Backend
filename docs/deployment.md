@@ -9,8 +9,9 @@
 - Django 6.0 后端
 - React 19 前端
 - SQLite 默认数据库
-- Nginx + Gunicorn + systemd 生产部署方式
+- Nginx + Gunicorn（ASGI / `UvicornWorker`）+ systemd 生产部署方式
 - 一套 `scripts/install.sh` / `start.sh` 自动化脚本
+- 消息推送：单进程 `InMemoryChannelLayer`（[ADR 0015](adr/0015-channels-without-redis.md)），**不**在 v1 引入 Redis
 
 这套架构适合中小型社团内部站点、活动管理、内容发布、用户/审核场景。它的优点是：
 
@@ -26,17 +27,20 @@
 ```text
 浏览器
   ↓
-Nginx
+Nginx（HTTP/1.1，转发 Upgrade / Connection）
   ├── /static/ → Django staticfiles
   ├── /media/ → 用户上传文件
-  └── 其他请求 → Gunicorn → Django
+  └── 其他请求（含 /ws/）→ Gunicorn UvicornWorker × 1 → Django ASGI
 ```
 
 关键特征：
 
 - Django 直接提供前端 `frontend/dist/` 产物
-- `start.sh` 负责拉起 Gunicorn，并一起拉起更新守护进程
+- `start.sh` 负责拉起 Gunicorn（**1 个** ASGI worker，`config.asgi:application`），并一起拉起更新守护进程
+- WebSocket 走 `/ws/messaging/`，只推送私信 / 通知 / 当前评论区；挤号仍走 HTTP 中间件（[ADR 0015](adr/0015-channels-without-redis.md)）
+- Nginx 须 `proxy_http_version 1.1` 并设置 `Upgrade` / `Connection` 头，否则浏览器连不上 socket
 - `scripts/install.sh` 会处理依赖安装、（必要时）前端构建、SECRET_KEY / FRONTEND_URL / 超管、迁移、collectstatic、systemd 和 Nginx 配置
+- **不要**在未引入 Redis 之前把 `--workers` 调到 >1：内存 channel layer 无法跨进程扇出，SQLite 也怕多写者
 
 ## 3. 一次性部署
 
@@ -107,7 +111,7 @@ sudo ./scripts/install.sh --skip-deps
 - 导出 `.env`
 - 创建 `run/` 目录
 - 拉起更新守护进程
-- `exec` 启动 Gunicorn
+- `exec` 启动 Gunicorn（`-k uvicorn.workers.UvicornWorker --workers 1`，`config.asgi:application`）
 
 ## 4. 常用管理命令
 
@@ -260,7 +264,7 @@ uv run python manage.py collectstatic --noinput
 - 降低并发 Worker 数
 - 使用 WAL 模式
 - 避免大量热点写操作同步发生
-- 对低流量站点，通常 `--workers 2` 已足够
+- 生产契约是 **`--workers 1`**（[ADR 0015](adr/0015-channels-without-redis.md)）；加 worker 须先上 Redis channel layer，另开 ADR
 
 ## 9. 监控和可观测性
 

@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { activityApi } from "../api/activities";
+import { messagingApi } from "../api/messaging";
 import { useSitePolicy } from "../api/sitePolicy";
 import RichTextEditor from "../components/RichTextEditor";
 import AppShell from "../components/AppShell";
+import CommentThreadStatusField from "../components/CommentThreadStatusField";
 import type { ActivityType, ExhibitionFormData, SurveyAudience, SurveyFormData } from "../types/activities";
+import type { ThreadStatus } from "../types/messaging";
 import "../styles/form.css";
 
 // 默认截止时间：当前 + N 天，格式 datetime-local 取值（yyyy-MM-ddThh:mm）
@@ -42,6 +45,7 @@ export default function ActivityFormPage() {
   const [startAt, setStartAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [commentThreadStatus, setCommentThreadStatus] = useState<ThreadStatus>("open");
 
   // 众议字段
   const [options, setOptions] = useState<string[]>(["", ""]);
@@ -95,6 +99,9 @@ export default function ActivityFormPage() {
       } else if (a.type === "survey") {
         setAudience(a.audience || "members");
       }
+      messagingApi.getThread({ activity: a.id })
+        .then((t) => setCommentThreadStatus(t.status))
+        .catch(() => {});
     }).catch((e: any) => setError(e?.message || "加载失败"));
   }, [editId]);
 
@@ -136,6 +143,7 @@ export default function ActivityFormPage() {
           start_at: toIso(startAt),
           end_at: toIso(endAt),
           option_texts: options.map((o) => o.trim()).filter(Boolean),
+          comment_thread_status: commentThreadStatus,
         };
         saved = editId
           ? await activityApi.update(editId, payload)
@@ -152,6 +160,7 @@ export default function ActivityFormPage() {
           review_enabled: reviewEnabled,
           start_at: toIso(startAt),
           end_at: toIso(endAt),
+          comment_thread_status: commentThreadStatus,
         };
         saved = editId
           ? await activityApi.update(editId, payload as unknown as Record<string, unknown>)
@@ -167,6 +176,7 @@ export default function ActivityFormPage() {
           is_secret_ballot: secret,
           start_at: toIso(startAt),
           end_at: toIso(endAt),
+          comment_thread_status: commentThreadStatus,
         };
         saved = editId
           ? await activityApi.update(editId, payload as unknown as Record<string, unknown>)
@@ -179,11 +189,13 @@ export default function ActivityFormPage() {
           audience,
           start_at: toIso(startAt),
           end_at: toIso(endAt),
+          comment_thread_status: commentThreadStatus,
         };
         saved = editId
           ? await activityApi.update(editId, payload as unknown as Record<string, unknown>)
           : await activityApi.create(payload);
       }
+      await messagingApi.applyHostThreadStatus({ activity: saved.id }, commentThreadStatus);
       navigate(`/activity/${saved.id}`);
     } catch (err: any) {
       setError(err.message || (editId ? "保存失败" : "创建失败"));
@@ -367,6 +379,8 @@ export default function ActivityFormPage() {
               </div>
             </>
           )}
+
+          <CommentThreadStatusField value={commentThreadStatus} onChange={setCommentThreadStatus} />
 
           <div style={{ display: "flex", gap: 12, marginTop: "var(--s-4)" }}>
             <button className="btn btn-primary" type="submit" disabled={submitting}>{submitting ? "保存中…" : editId ? "保存修改" : "发起活动"}</button>

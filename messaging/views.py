@@ -1,84 +1,314 @@
-import re
+from collections import defaultdict
 
 from django.contrib.auth.models import User
-from rest_framework import status, viewsets
+from django.http import Http404
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.generics import get_object_or_404
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.permissions import IsVerified
+from activities.models import Activity
+from news.models import News
 from tasks.models import Task
 
-from proposals.models import Proposal
-from proposals.notifications import proposal_approvers
+from .models import (
+    Comment,
+    CommentThread,
+    Conversation,
+    Message,
+    MessageReadStatus,
+    Notification,
+    unread_message_count,
+)
+from .permissions import (
+    CanManageThread,
+    CanMuteUser,
+    IsConversationParticipant,
+    IsNotMuted,
+)
+from .serializers import (
+    BannerSerializer,
+    CommentSerializer,
+    CommentThreadSerializer,
+    ConversationSerializer,
+    MessageSerializer,
+    NotificationSerializer,
+    UserMuteSerializer,
+)
+from .services import (
+    MessagingError,
+    MessagingNotFound,
+    can_see_host,
+    can_see_thread,
+    current_banner,
+    current_mute,
+    delete_comment,
+    lift_mute,
+    mute_user,
+    post_comment,
+    retract_comment,
+    retract_dm,
+    send_dm,
+    set_thread_status,
+    start_private,
+    thread_for,
+)
 
-from accounts.permissions import IsVerified
-from .models import Conversation, Message, MessageReadStatus, unread_message_count
-from .permissions import IsConversationParticipant
-from .serializers import ConversationSerializer, MessageSerializer
+_HOST_MODELS = {"news": News, "activity": Activity, "task": Task}
+
+
+def _thread_qs():
+    return CommentThread.objects.select_related(
+        "news", "news__author", "news__review",
+        "activity", "activity__creator", "activity__publication_review",
+        "task", "task__creator",
+    )
+
+
+def _error_response(exc: MessagingError):
+    return Response({"detail": exc.detail}, status=exc.status)
+
+
+def _host_from_query(request):
+    params = request.query_params
+    keys = [k for k in ("news", "activity", "task") if params.get(k)]
+    if len(keys) != 1:
+        raise MessagingError("请指定恰好一个宿主：news、activity 或 task")
+    key = keys[0]
+    model = _HOST_MODELS[key]
+    try:
+        return model.objects.get(pk=params.get(key))
+    except (model.DoesNotExist, ValueError, TypeError):
+        raise MessagingNotFound("宿主不存在") from None
+
+
+class CommentThreadViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """按宿主取恰好一条评论区；PATCH 改状态。"""
+
+    serializer_class = CommentThreadSerializer
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def get_queryset(self):
+        return _thread_qs()
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [AllowAny()]
+        if self.action == "partial_update":
+            return [IsAuthenticated(), CanManageThread()]
+        return [IsAuthenticated()]
+
+    def get_object(self):
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup = self.lookup_url_kwarg or self.lookup_field
+        obj = get_object_or_404(queryset, **{self.lookup_field: self.kwargs[lookup]})
+        if not can_see_thread(self.request.user, obj):
+            raise Http404
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def list(self, request):
+        try:
+            host = _host_from_query(request)
+        except MessagingError as exc:
+            return _error_response(exc)
+        if not can_see_host(request.user, host):
+            return Response({"detail": "评论区不存在"}, status=status.HTTP_404_NOT_FOUND)
+        thread = thread_for(host)
+        if not can_see_thread(request.user, thread):
+            return Response({"detail": "评论区不存在"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(self.get_serializer(thread).data)
+
+    def partial_update(self, request, pk=None):
+        thread = self.get_object()
+        new_status = request.data.get("status")
+        try:
+            thread = set_thread_status(thread, request.user, new_status)
+        except MessagingError as exc:
+            return _error_response(exc)
+        return Response(self.get_serializer(thread).data)
+
+
+class CommentViewSet(viewsets.GenericViewSet):
+    """根评论分页，子评论嵌在同一 payload；POST 发表 / 撤回 / 协管删除。"""
+
+    serializer_class = CommentSerializer
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        return Comment.objects.select_related(
+            "author", "author__profile",
+            "thread", "thread__news", "thread__activity", "thread__task",
+        )
+
+    def get_permissions(self):
+        if self.action == "list":
+            return [AllowAny()]
+        if self.action == "create":
+            return [IsAuthenticated(), IsVerified(), IsNotMuted()]
+        if self.action == "retract":
+            return [IsAuthenticated()]
+        if self.action == "tombstone":
+            return [IsAuthenticated(), CanManageThread()]
+        return [IsAuthenticated()]
+
+    def get_object(self):
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup = self.lookup_url_kwarg or self.lookup_field
+        obj = get_object_or_404(queryset, **{self.lookup_field: self.kwargs[lookup]})
+        if not can_see_thread(self.request.user, obj.thread):
+            raise Http404
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def list(self, request):
+        thread_id = request.query_params.get("thread")
+        if not thread_id:
+            return Response({"detail": "缺少 thread"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            thread = _thread_qs().get(pk=thread_id)
+        except (CommentThread.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "评论区不存在"}, status=status.HTTP_404_NOT_FOUND)
+        if not can_see_thread(request.user, thread):
+            return Response({"detail": "评论区不存在"}, status=status.HTTP_404_NOT_FOUND)
+
+        children_map = defaultdict(list)
+        for comment in (
+            thread.comments
+            .select_related("author", "author__profile")
+            .order_by("created_at")
+        ):
+            children_map[comment.parent_id].append(comment)
+
+        roots = (
+            thread.comments
+            .filter(parent__isnull=True)
+            .select_related("author", "author__profile")
+            .order_by("created_at")
+        )
+        page = self.paginate_queryset(roots)
+        ctx = {**self.get_serializer_context(), "children_map": children_map}
+        if page is not None:
+            return self.get_paginated_response(CommentSerializer(page, many=True, context=ctx).data)
+        return Response(CommentSerializer(roots, many=True, context=ctx).data)
+
+    def create(self, request):
+        thread_id = request.data.get("thread")
+        if not thread_id:
+            return Response({"detail": "缺少 thread"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            thread = _thread_qs().get(pk=thread_id)
+        except (CommentThread.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "评论区不存在"}, status=status.HTTP_404_NOT_FOUND)
+        parent = None
+        parent_id = request.data.get("parent")
+        if parent_id:
+            try:
+                parent = Comment.objects.get(pk=parent_id, thread=thread)
+            except (Comment.DoesNotExist, ValueError, TypeError):
+                return Response({"detail": "父评论不存在"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            comment = post_comment(
+                thread, request.user, request.data.get("content", ""), parent=parent,
+            )
+        except MessagingError as exc:
+            return _error_response(exc)
+        return Response(
+            CommentSerializer(comment, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    def retract(self, request, pk=None):
+        comment = self.get_object()
+        try:
+            comment = retract_comment(comment, request.user)
+        except MessagingError as exc:
+            return _error_response(exc)
+        return Response(CommentSerializer(comment, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="delete")
+    def tombstone(self, request, pk=None):
+        comment = self.get_object()
+        try:
+            comment = delete_comment(comment, request.user)
+        except MessagingError as exc:
+            return _error_response(exc)
+        return Response(CommentSerializer(comment, context=self.get_serializer_context()).data)
 
 
 class ConversationViewSet(viewsets.ModelViewSet):
-    """会话管理"""
-    serializer_class = ConversationSerializer
-    permission_classes = [IsAuthenticated, IsConversationParticipant]
-    filterset_fields = ["conversation_type", "task", "proposal"]
+    """1:1 私信。不再提供任务/申报会话。"""
 
-    # 身份门槛（#30）：仅「写 / 建会话」动作需身份已审核；读（messages / unread_count /
-    # mark_read / list / retrieve）不挂，保持 Tier-2 只读。
-    _VERIFIED_GATED = {
-        "send_message", "start_private", "get_task_conversation", "get_proposal_conversation",
-    }
+    serializer_class = ConversationSerializer
+    http_method_names = ["get", "post", "head", "options"]
+
+    _VERIFIED_GATED = {"send_message", "start_private"}
+    _MUTE_GATED = {"send_message", "start_private"}
 
     def get_permissions(self):
         perms = [IsAuthenticated(), IsConversationParticipant()]
         if self.action in self._VERIFIED_GATED:
             perms.append(IsVerified())
+        if self.action in self._MUTE_GATED:
+            perms.append(IsNotMuted())
         return perms
 
-    def get_queryset(self): # pyright: ignore[reportIncompatibleMethodOverride]
+    def get_queryset(self):  # pyright: ignore[reportIncompatibleMethodOverride]
         return (
             Conversation.objects
             .filter(participants=self.request.user)
             .order_by("-updated_at", "-id")
-            .select_related("task", "proposal")
             .prefetch_related(
                 "participants", "participants__profile",
                 "messages", "messages__sender", "messages__sender__profile",
             )
         )
 
-    @action(detail=True, methods=["post"])
-    def send_message(self, request, pk=None):
-        """发送消息"""
-        conversation = self.get_object()
-        content = request.data.get("content", "").strip()
-        if not content:
-            return Response({"detail": "消息内容不能为空"}, status=status.HTTP_400_BAD_REQUEST)
-
-        message = Message.objects.create(
-            conversation=conversation,
-            sender=request.user,
-            content=content,
+    def create(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "请使用 start_private 发起私信。"},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
         )
 
-        mentioned_usernames = re.findall(r"@(\w+)", content)
-        if mentioned_usernames:
-            mentioned_users = User.objects.filter(username__in=mentioned_usernames)
-            message.mentions.set(mentioned_users)
-
+    @action(detail=True, methods=["post"])
+    def send_message(self, request, pk=None):
+        conversation = self.get_object()
+        try:
+            message = send_dm(conversation, request.user, request.data.get("content", ""))
+        except MessagingError as exc:
+            return _error_response(exc)
         return Response(
             MessageSerializer(message, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
         )
 
+    @action(detail=True, methods=["post"])
+    def retract_message(self, request, pk=None):
+        conversation = self.get_object()
+        message_id = request.data.get("message_id")
+        if not message_id:
+            return Response({"detail": "缺少 message_id"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            message = conversation.messages.get(pk=message_id)
+        except (Message.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "消息不存在"}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            message = retract_dm(message, request.user)
+        except MessagingError as exc:
+            return _error_response(exc)
+        return Response(MessageSerializer(message, context={"request": request}).data)
+
     @action(detail=False, methods=["get"])
     def unread_count(self, request):
-        """未读消息总数，驱动顶栏铃铛红点（不含自己发出的消息）。"""
         return Response({"total": unread_message_count(request.user)})
 
     @action(detail=True, methods=["post"])
     def mark_read(self, request, pk=None):
-        """标记会话中所有消息为已读"""
         conversation = self.get_object()
         unread = conversation.messages.exclude(read_statuses__user=request.user)
         for msg in unread:
@@ -87,10 +317,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def messages(self, request):
-        """获取会话的消息列表（通过 conversation id 参数）。
-
-        倒序分页（最新在前，DRF 默认 20/页）：前端「最新优先 + 向上加载更早」消费信封。
-        """
+        """倒序分页（最新在前）：前端「最新优先 + 向上加载更早」。"""
         conversation_id = request.query_params.get("conversation_id")
         if not conversation_id:
             return Response({"detail": "缺少 conversation_id"}, status=status.HTTP_400_BAD_REQUEST)
@@ -109,102 +336,122 @@ class ConversationViewSet(viewsets.ModelViewSet):
         if page is not None:
             serializer = MessageSerializer(page, many=True, context={"request": request})
             return self.get_paginated_response(serializer.data)
-        # 无分页兜底（未配全局分页时）：仍按最新在前返回
         return Response(MessageSerializer(messages, many=True, context={"request": request}).data)
 
     @action(detail=False, methods=["post"])
     def start_private(self, request):
-        """发起私人对话"""
         target_id = request.data.get("user_id")
         if not target_id:
             return Response({"detail": "缺少 user_id"}, status=status.HTTP_400_BAD_REQUEST)
-        if int(target_id) == request.user.pk:
-            return Response({"detail": "不能和自己对话"}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            target = User.objects.get(pk=target_id)
-        except User.DoesNotExist:
+            target = User.objects.get(pk=int(target_id))
+        except (User.DoesNotExist, ValueError, TypeError):
             return Response({"detail": "用户不存在"}, status=status.HTTP_404_NOT_FOUND)
-
-        # 查找已有的私人对话
-        existing = (
-            Conversation.objects
-            .filter(conversation_type="private", participants=request.user)
-            .filter(participants=target)
-            .first()
-        )
-        if existing:
-            return Response(ConversationSerializer(existing, context={"request": request}).data)
-
-        conversation = Conversation.objects.create(conversation_type="private")
-        conversation.participants.set([request.user, target])
+        try:
+            conversation, created = start_private(request.user, target)
+        except MessagingError as exc:
+            return _error_response(exc)
         return Response(
             ConversationSerializer(conversation, context={"request": request}).data,
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+class NotificationViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        return (
+            Notification.objects
+            .filter(recipient=self.request.user)
+            .order_by("-created_at")
+        )
+
+    @action(detail=False, methods=["get"])
+    def unread_count(self, request):
+        total = self.get_queryset().filter(read_at__isnull=True).count()
+        return Response({"total": total})
+
+    @action(detail=True, methods=["post"], url_path="mark_read")
+    def mark_one_read(self, request, pk=None):
+        obj = self.get_object()
+        if obj.read_at is None:
+            obj.read_at = timezone.now()
+            obj.save(update_fields=["read_at"])
+        return Response(self.get_serializer(obj).data)
+
+    @action(detail=False, methods=["post"], url_path="mark_read")
+    def mark_all_read(self, request):
+        self.get_queryset().filter(read_at__isnull=True).update(read_at=timezone.now())
+        return Response({"detail": "已全部标为已读"})
+
+
+class MuteViewSet(viewsets.ViewSet):
+    def get_permissions(self):
+        if self.action == "me":
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), CanMuteUser()]
+
+    def create(self, request):
+        user_id = request.data.get("user_id")
+        if not user_id:
+            return Response({"detail": "缺少 user_id"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            target = User.objects.get(pk=int(user_id))
+        except (User.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "用户不存在"}, status=status.HTTP_404_NOT_FOUND)
+        ends_at = None
+        raw = request.data.get("ends_at")
+        if raw:
+            ends_at = parse_datetime(str(raw))
+            if ends_at is None:
+                return Response({"detail": "ends_at 格式无效"}, status=status.HTTP_400_BAD_REQUEST)
+            if timezone.is_naive(ends_at):
+                ends_at = timezone.make_aware(ends_at)
+        try:
+            row = mute_user(
+                request.user, target,
+                reason=request.data.get("reason") or "",
+                ends_at=ends_at,
+            )
+        except MessagingError as exc:
+            return _error_response(exc)
+        return Response(UserMuteSerializer(row).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["post"])
-    def get_task_conversation(self, request):
-        """获取或创建任务讨论会话"""
-        task_id = request.data.get("task_id")
-        if not task_id:
-            return Response({"detail": "缺少 task_id"}, status=status.HTTP_400_BAD_REQUEST)
+    def lift(self, request):
+        user_id = request.data.get("user_id")
+        if not user_id:
+            return Response({"detail": "缺少 user_id"}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            task = Task.objects.get(pk=task_id)
-        except Task.DoesNotExist:
-            return Response({"detail": "任务不存在"}, status=status.HTTP_404_NOT_FOUND)
-
-        # 检查用户是否有权限查看此任务
-        user = request.user
-        if not user.has_perm("tasks.manage_tasks"):
-            if task.creator != user and task.assignee != user and not task.collaborators.filter(pk=user.pk).exists():
-                return Response({"detail": "无权访问此任务"}, status=status.HTTP_403_FORBIDDEN)
-
-        conversation, _ = Conversation.objects.get_or_create(
-            conversation_type="task",
-            task=task,
-        )
-
-        # 确保所有任务相关者都是参与者
-        participant_ids = {task.creator_id}
-        if task.assignee_id:
-            participant_ids.add(task.assignee_id)
-        for cid in task.collaborators.values_list("id", flat=True):
-            participant_ids.add(cid)
-        if user.has_perm("tasks.manage_tasks"):
-            participant_ids.add(user.pk)
-        # 请求者也需要加入
-        participant_ids.add(user.pk)
-
-        conversation.participants.set(participant_ids)
-        return Response(ConversationSerializer(conversation, context={"request": request}).data)
-
-    @action(detail=False, methods=["post"])
-    def get_proposal_conversation(self, request):
-        """获取或创建申报讨论会话（活动申报）。反馈/举报无创建人，不开放讨论。"""
-        proposal_id = request.data.get("proposal_id")
-        if not proposal_id:
-            return Response({"detail": "缺少 proposal_id"}, status=status.HTTP_400_BAD_REQUEST)
+            target = User.objects.get(pk=int(user_id))
+        except (User.DoesNotExist, ValueError, TypeError):
+            return Response({"detail": "用户不存在"}, status=status.HTTP_404_NOT_FOUND)
         try:
-            proposal = Proposal.objects.get(pk=proposal_id)
-        except Proposal.DoesNotExist:
-            return Response({"detail": "申报不存在"}, status=status.HTTP_404_NOT_FOUND)
+            row = lift_mute(request.user, target)
+        except MessagingError as exc:
+            return _error_response(exc)
+        return Response(UserMuteSerializer(row).data)
 
-        user = request.user
-        # 反馈/举报仅有 view_feedback 权限者可见；活动申报对所有登录用户开放
-        # （viewset 已 IsAuthenticated，此处不必再判登录态）
-        if proposal.proposal_type == "feedback":
-            if not user.has_perm("proposals.view_feedback"):
-                return Response({"detail": "无权访问"}, status=status.HTTP_403_FORBIDDEN)
+    @action(detail=False, methods=["get"])
+    def me(self, request):
+        row = current_mute(request.user)
+        return Response({
+            "muted": row is not None,
+            "mute": UserMuteSerializer(row).data if row else None,
+        })
 
-        conversation, _ = Conversation.objects.get_or_create(
-            conversation_type="proposal",
-            proposal=proposal,
-        )
-        # 参与者：创建人 + 全体 approve_proposal 持有者 + 当前请求者
-        participant_ids = set()
-        if proposal.creator_id is not None:
-            participant_ids.add(proposal.creator_id)
-        participant_ids.update(p.pk for p in proposal_approvers())
-        participant_ids.add(user.pk)
-        conversation.participants.set(participant_ids)
-        return Response(ConversationSerializer(conversation, context={"request": request}).data)
+
+class BannerViewSet(viewsets.ViewSet):
+    permission_classes = [AllowAny]
+
+    @action(detail=False, methods=["get"])
+    def current(self, request):
+        banner = current_banner()
+        if banner is None:
+            # DRF Response(None) is an empty body, not JSON null; 204 matches
+            # frontend readResponse (empty banner → null).
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(BannerSerializer(banner).data)

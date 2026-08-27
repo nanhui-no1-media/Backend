@@ -1,4 +1,5 @@
 import type { TaskUser, Attachment } from "./tasks";
+import type { ThreadStatus } from "./messaging";
 
 // 活动（ADR 0007 / 0011）：众议 / 征集 / 展示 / 调研。独立于申报（反馈）。
 
@@ -114,6 +115,7 @@ export interface DeliberationFormData {
   start_at?: string;
   end_at?: string;
   option_texts: string[];
+  comment_thread_status?: ThreadStatus;
 }
 
 export interface CollectionFormData {
@@ -127,6 +129,7 @@ export interface CollectionFormData {
   review_enabled: boolean;
   start_at?: string;
   end_at?: string;
+  comment_thread_status?: ThreadStatus;
 }
 
 export interface ExhibitionFormData {
@@ -138,6 +141,7 @@ export interface ExhibitionFormData {
   is_secret_ballot: boolean;
   start_at?: string;
   end_at?: string;
+  comment_thread_status?: ThreadStatus;
 }
 
 export interface SurveyFormData {
@@ -147,6 +151,7 @@ export interface SurveyFormData {
   audience: SurveyAudience;
   start_at?: string;
   end_at?: string;
+  comment_thread_status?: ThreadStatus;
 }
 
 // 众议/征集/展示/调研均走 JSON 创建标量(展品改在详情页 add_exhibit 录入；调研问卷改在 survey-edit)。

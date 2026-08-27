@@ -7,6 +7,7 @@ import { newsApi } from "../api/news";
 import { type NewsDetail } from "../types/news";
 import { useEmbedMode } from "../embed";
 import AuthorReviewBanner from "../components/AuthorReviewBanner";
+import CommentSection from "../components/CommentSection";
 import "../styles/news.css";
 import "../styles/form.css";
 
@@ -150,6 +151,8 @@ export default function NewsDetailPage() {
             )}
           </aside>
         </div>
+
+        <CommentSection host={{ news: news.id }} />
 
         {!embed && related.length > 0 && (
           <section style={{ paddingBottom: "var(--s-16)" }}>

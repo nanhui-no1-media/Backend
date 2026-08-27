@@ -1,11 +1,59 @@
 from django.contrib.auth.models import User
-from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from attachments.serializers import AttachmentSerializer
 
 from .lifecycle import available_actions, status_for_assignee
 from .models import Tag, Task, TaskClaimRequest
+
+# 新闻 / 活动详情序列化也复用（与 SimpleUserSerializer 同模式）。
+_THREAD_STATUSES = ("open", "muted", "closed")
+
+
+class CommentThreadHostMixin(serializers.Serializer):
+    """宿主详情：写入 ``comment_thread_status``，读出 ``comment_thread``。
+
+    只调用 ``messaging.services``，不 import 模型。
+    """
+
+    comment_thread_status = serializers.ChoiceField(
+        choices=_THREAD_STATUSES, required=False, write_only=True,
+    )
+    comment_thread = serializers.SerializerMethodField()
+
+    def get_comment_thread(self, obj):
+        from messaging.services import can_manage_thread, thread_for
+
+        thread = thread_for(obj)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return {
+            "id": thread.pk,
+            "status": thread.status,
+            "can_manage": can_manage_thread(user, thread),
+        }
+
+    def to_internal_value(self, data):
+        value = super().to_internal_value(data)
+        self._comment_thread_status = value.pop("comment_thread_status", None)
+        return value
+
+    def apply_comment_thread_status(self, instance):
+        status = getattr(self, "_comment_thread_status", None)
+        if not status:
+            return instance
+        from messaging.services import MessagingError, MessagingForbidden, set_thread_status, thread_for
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        try:
+            set_thread_status(thread_for(instance), user, status)
+        except MessagingForbidden as exc:
+            raise PermissionDenied(detail=exc.detail)
+        except MessagingError as exc:
+            raise serializers.ValidationError({"comment_thread_status": exc.detail})
+        return instance
 
 
 class SimpleUserSerializer(serializers.ModelSerializer):
@@ -68,7 +116,7 @@ class TaskListSerializer(serializers.ModelSerializer):
         return obj.attachments.count()
 
 
-class TaskDetailSerializer(serializers.ModelSerializer):
+class TaskDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
     creator = SimpleUserSerializer(read_only=True)
     assignee = SimpleUserSerializer(read_only=True)
     collaborators = SimpleUserSerializer(many=True, read_only=True)
@@ -98,6 +146,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             "collaborators", "collaborator_ids",
             "tags", "tag_ids",
             "attachments", "claim_requests", "available_actions",
+            "comment_thread", "comment_thread_status",
             "completed_at",
             "reject_reason",
             "created_at", "updated_at",
@@ -122,7 +171,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             task.tags.set(tags)
         if collaborators:
             task.collaborators.set(collaborators)
-        return task
+        return self.apply_comment_thread_status(task)
 
     def update(self, instance, validated_data):
         tags = validated_data.pop("tags", None)
@@ -134,4 +183,4 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             instance.tags.set(tags)
         if collaborators is not None:
             instance.collaborators.set(collaborators)
-        return instance
+        return self.apply_comment_thread_status(instance)

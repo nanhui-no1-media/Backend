@@ -20,6 +20,7 @@ const TaskListPage = lazy(() => import("./pages/TaskListPage"));
 const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage"));
 const TaskFormPage = lazy(() => import("./pages/TaskFormPage"));
 const MessagePage = lazy(() => import("./pages/MessagePage"));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
 const ProposalListPage = lazy(() => import("./pages/ProposalListPage"));
 const ProposalDetailPage = lazy(() => import("./pages/ProposalDetailPage"));
 const ActivityListPage = lazy(() => import("./pages/ActivityListPage"));
@@ -77,6 +78,7 @@ export default function App() {
           <Route path="/tasks/:id/edit" element={<ProtectedRoute><TaskFormPage /></ProtectedRoute>} />
           <Route path="/messages" element={<ProtectedRoute><MessagePage /></ProtectedRoute>} />
           <Route path="/messages/:id" element={<ProtectedRoute><MessagePage /></ProtectedRoute>} />
+          <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
           <Route path="/activity" element={<ActivityListPage />} />
           <Route path="/activity/new" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
           <Route path="/activity/:id" element={<ActivityDetailPage />} />
