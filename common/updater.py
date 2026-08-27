@@ -15,9 +15,11 @@ import re
 import shutil
 import signal
 import sqlite3
+import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -277,6 +279,9 @@ class UpdaterPaths:
             run_dir=run_dir,
             backups_dir=backups,
             releases_dir=backups / "releases",
+            # Historical path. Apply/rollback now unpack into a fresh
+            # backups/staging-* so a leftover undeletable ``staging`` cannot
+            # block updates (Errno 13 on the ECS box).
             staging_dir=backups / "staging",
             lock_file=run_dir / "update.lock",
             applied_file=run_dir / "applied-release",
@@ -285,7 +290,7 @@ class UpdaterPaths:
         )
 
     def ensure_dirs(self) -> None:
-        for p in (self.run_dir, self.releases_dir, self.staging_dir):
+        for p in (self.run_dir, self.releases_dir):
             p.mkdir(parents=True, exist_ok=True)
 
 
@@ -533,12 +538,57 @@ def prune_db_backups(paths: UpdaterPaths, keep: int) -> list[Path]:
 # ---------------------------------------------------------------------------
 
 
+STAGING_PREFIX = "staging-"
+
+
+def make_staging(parent: Path) -> Path:
+    """Fresh directory under ``parent``. Never reuses a leftover ``staging`` path."""
+    parent.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix=STAGING_PREFIX, dir=parent))
+
+
+def remove_tree(path: Path, *, ignore_errors: bool = False) -> None:
+    """``rmtree`` that chmod's read-only entries first (tarball 0555 dirs)."""
+
+    def onexc(func: Callable[..., Any], p: str, exc: BaseException) -> None:
+        try:
+            os.chmod(p, stat.S_IWUSR | stat.S_IRUSR | stat.S_IXUSR)
+        except OSError:
+            if ignore_errors:
+                return
+            raise exc
+        try:
+            func(p)
+        except OSError:
+            if ignore_errors:
+                return
+            raise
+
+    if not path.exists() and not path.is_symlink():
+        return
+    # Do not pass ignore_errors to shutil: it would replace onexc with a no-op
+    # and skip the chmod retry (Python 3.12+).
+    shutil.rmtree(path, onexc=onexc)
+
+
+@contextmanager
+def staging_workspace(parent: Path) -> Iterator[Path]:
+    staging = make_staging(parent)
+    try:
+        yield staging
+    finally:
+        try:
+            remove_tree(staging, ignore_errors=True)
+        except OSError:
+            log.warning("could not remove staging %s", staging, exc_info=True)
+
+
 def unpack_archive(archive: Path, staging: Path) -> None:
     """Extract a complete tarball into ``staging`` (replaced). Never unpack ``.part``."""
     if archive_sha(archive) is None:
         raise ApplyError(f"refusing to unpack incomplete or unnamed archive: {archive.name}")
     if staging.exists():
-        shutil.rmtree(staging)
+        remove_tree(staging)
     staging.mkdir(parents=True)
     with tarfile.open(archive, "r:gz") as tf:
         tf.extractall(staging, filter="data")
@@ -1155,8 +1205,9 @@ def rollback_release(
     try:
         update_progress(paths.maintenance_flag, "rollback")
         if restore_files and previous_archive is not None and is_complete_archive(previous_archive):
-            unpack_archive(previous_archive, paths.staging_dir)
-            sync_tree(paths.staging_dir, paths.root)
+            with staging_workspace(paths.backups_dir) as staging:
+                unpack_archive(previous_archive, staging)
+                sync_tree(staging, paths.root)
         elif restore_files:
             log.error("no previous tarball; leaving files as they are")
         if db_snapshot is not None and db_snapshot.is_file():
@@ -1237,11 +1288,12 @@ def apply_release(
             checkpoint("backup")
             _check_window(now_fn(), policy, respect_window=respect_window)
             update_progress(paths.maintenance_flag, "unpack", sha=sha)
-            unpack_archive(archive, paths.staging_dir)
-            checkpoint("unpack")
-            _check_window(now_fn(), policy, respect_window=respect_window)
-            update_progress(paths.maintenance_flag, "sync", sha=sha)
-            sync_tree(paths.staging_dir, paths.root)
+            with staging_workspace(paths.backups_dir) as staging:
+                unpack_archive(archive, staging)
+                checkpoint("unpack")
+                _check_window(now_fn(), policy, respect_window=respect_window)
+                update_progress(paths.maintenance_flag, "sync", sha=sha)
+                sync_tree(staging, paths.root)
             files_changed = True
             checkpoint("sync")
             _check_window(now_fn(), policy, respect_window=respect_window)

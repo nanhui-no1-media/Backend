@@ -206,6 +206,52 @@ class UnpackExcludeRollbackTest(SimpleTestCase):
         with self.assertRaises(ApplyError):
             unpack_archive(part, self.paths.staging_dir)
 
+    def test_apply_and_rollback_ignore_stuck_staging_path(self):
+        """A leftover backups/staging the process cannot replace must not block apply."""
+        self._seed_live()
+        v1 = self._tarball("aaaaaaaaaaaa", {"app.py": b"good\n"})
+        v2 = self._tarball("bbbbbbbbbbbb", {"app.py": b"bad\n"})
+        unpack_archive(v1, self.paths.staging_dir)
+        sync_tree(self.paths.staging_dir, self.root)
+        self.paths.applied_file.write_text("aaaaaaaaaaaa\n", encoding="utf-8")
+
+        shutil.rmtree(self.paths.staging_dir)
+        self.paths.staging_dir.write_text("stuck leftover\n", encoding="utf-8")
+
+        def run(argv, *, check=True):
+            argv = [str(a) for a in argv]
+            if "migrate" in argv:
+                if check:
+                    raise CommandError(argv, 1)
+                return 1
+            return 0
+
+        with self.assertRaises(CommandError):
+            apply_release(
+                self.paths,
+                v2,
+                _policy(),
+                run=run,
+                sleep=lambda _s: None,
+                now_fn=lambda: _at(1, 15),
+                respect_window=True,
+                drain_seconds=0,
+            )
+
+        self.assertEqual((self.root / "app.py").read_text(encoding="utf-8"), "good\n")
+        self.assertEqual(
+            self.paths.staging_dir.read_text(encoding="utf-8"), "stuck leftover\n"
+        )
+        self.assertEqual(
+            self.paths.applied_file.read_text(encoding="utf-8").strip(), "aaaaaaaaaaaa"
+        )
+        leftover_temps = [
+            p
+            for p in self.paths.backups_dir.iterdir()
+            if p.is_dir() and p.name.startswith("staging-")
+        ]
+        self.assertEqual(leftover_temps, [])
+
     def test_sync_preserves_excludes_and_replaces_code(self):
         self._seed_live()
         src = self.root / "staging-src"
