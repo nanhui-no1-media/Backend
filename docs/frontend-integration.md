@@ -12,7 +12,7 @@
 |------|------|
 | `/auth` | 账号、个人资料、用户列表等接口 |
 | `/tasks` | 任务、标签接口 |
-| `/proposals` | 活动申报、意见反馈接口 |
+| `/reviews` | 发布审核、意见反馈、举报案接口 |
 | `/attachments` | 统一附件接口（上传/删除） |
 | `/messaging` | 站内消息、任务讨论接口 |
 | `/about` | 关于页（公开读 / 授权写） |
@@ -114,9 +114,8 @@ fetch("/auth/profile/update/", {
       "can_manage_tasks": true,
       "can_assign_task": true,
       "can_manage_tags": true,
-      "can_approve_proposals": true,
-      "can_change_proposals": true,
       "can_view_feedback": true,
+      "can_handle_reports": true,
       "can_edit_about": false
     }
   },
@@ -130,7 +129,7 @@ fetch("/auth/profile/update/", {
 }
 ```
 
-其中 `avatar`、`birthday` 等可选字段未设置时为 `null`，`gender` 取值为 `"M"`（男）、`"F"`（女）、`"O"`（其他）或空字符串。`user.permissions` 为能力字典（8 项语义化布尔，由后端 `user.has_perm(...)` 派生）：`can_manage_news` / `can_manage_tasks` / `can_assign_task` / `can_manage_tags` / `can_approve_proposals` / `can_change_proposals` / `can_view_feedback` / `can_edit_about`（关于页编辑，持 `about.change_aboutpage`）。前端据此门禁 UI（写新闻、任务流转、申报审批/编辑、查看反馈、关于页编辑等），实际操作仍由后端按权限校验（见「任务系统 · 权限模型」）。
+其中 `avatar`、`birthday` 等可选字段未设置时为 `null`，`gender` 取值为 `"M"`（男）、`"F"`（女）、`"O"`（其他）或空字符串。`user.permissions` 为能力字典（语义化布尔，由后端 `user.has_perm(...)` 派生），含 `can_view_feedback`（`reviews.view_feedback`）、`can_handle_reports`（`reviews.handle_report`）、`can_review_content`（`reviews.moderate`）等。前端据此门禁 UI，实际操作仍由后端按权限校验。
 
 ### 列表查询（分页 / 过滤 / 搜索 / 排序）
 
@@ -327,11 +326,11 @@ const initial = displayName.charAt(0).toUpperCase();
 - **任务编辑/删除**：仅当 `pending`，且为创建人或持 `tasks.manage_tasks`。
 - **认领审批 / 验收 / 取消**：创建人或持 `tasks.manage_tasks`。
 - **直接指派 `assign`**：持 `tasks.assign_task`。
-- **附件**（任务/申报通用，见「附件接口」）：父级创建者、或父级活跃参与者（任务 = 进行中的负责人/协作者）、或持父级管理权限（任务 `tasks.manage_tasks` / 申报 `proposals.change_proposal`）可上传与删除；此外上传者始终可删自己上传的附件。
+- **附件**（任务/意见反馈/新闻/作品/展品，见「附件接口」）：父级创建者、或父级活跃参与者（任务 = 进行中的负责人/协作者）、或持父级管理权限（任务 `tasks.manage_tasks`）可上传与删除；此外上传者始终可删自己上传的附件。
 - **标签写**：持 `tasks.manage_tags`（读：任意登录用户）。
 - **消息**：仅会话参与者。
 
-> 角色已由「组名硬编码」改为 Django Permission：**信息组**（默认组）承载 `news` 增删改；**社长**（默认组）承载 `tasks.manage_tasks / assign_task / manage_tags` 与 `proposals.approve_proposal / view_feedback / change_proposal`。`/auth/me/` 返回 `user.permissions`（能力字典），前端据此预判当前用户可执行的操作、显示对应 UI（审批 / 验收 / 取消等）。实际操作仍由后端按 `has_perm` 校验、失败返回 403，前端应同时兜底。注意：能力字典只在当前用户接口出现，任务 / 消息里引用的**其他**用户（`SimpleUserSerializer`）不含此字段。可在 Django admin 用「组管理」调整权限束。
+> 角色已由「组名硬编码」改为 Django Permission：**信息组**（默认组）承载 `news` 增删改；**社长**（默认组）承载 `tasks.manage_tasks / assign_task / manage_tags` 与 `reviews.view_feedback / handle_report`。`/auth/me/` 返回 `user.permissions`（能力字典），前端据此预判当前用户可执行的操作、显示对应 UI。实际操作仍由后端按 `has_perm` 校验、失败返回 403，前端应同时兜底。注意：能力字典只在当前用户接口出现，任务 / 消息里引用的**其他**用户（`SimpleUserSerializer`）不含此字段。可在 Django admin 用「组管理」调整权限束。
 
 ### 标签接口 `/tasks/tags/`
 
@@ -339,14 +338,14 @@ const initial = displayName.charAt(0).toUpperCase();
 
 ### 附件接口 `/attachments/`
 
-附件已收口为独立子系统，任务与申报共用同一套端点与权限规则。附件**列表不单独提供**——随任务/申报详情的 `attachments` 字段返回。
+附件已收口为独立子系统，任务与意见反馈等父级共用同一套端点与权限规则。附件**列表不单独提供**——随父级详情的 `attachments` 字段返回。
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/attachments/` | POST | 上传：`multipart`，字段 `file` + `task_id` 或 `proposal_id`（恰填一个）；≤50MB，禁 `.exe/.bat/.sh/.py` 等 |
+| `/attachments/` | POST | 上传：`multipart`，字段 `file` + 恰好一个父级 id（如 `task_id` / `feedback_id`）；≤50MB，禁 `.exe/.bat/.sh/.py` 等 |
 | `/attachments/{id}/` | DELETE | 删除：上传者，或满足父级权限规则者 |
 
-权限（任务/申报同一抽象规则）：父级**创建者**、或父级**活跃参与者**（任务 = 进行中的负责人/协作者；申报无）、或持父级**管理权限**（任务 `tasks.manage_tasks` / 申报 `proposals.change_proposal`）。删除额外允许上传者删自己上传的附件。上传要求登录（匿名意见反馈无附件）。删除父级（任务/申报）时，其附件行与磁盘文件由后端自动回收。
+权限：父级**创建者**、或父级**活跃参与者**（任务 = 进行中的负责人/协作者）、或持父级**管理权限**（任务 `tasks.manage_tasks`）。删除额外允许上传者删自己上传的附件。上传要求登录（匿名意见反馈无附件）。删除父级时，其附件行与磁盘文件由后端自动回收。
 
 
 ## 站内消息与任务讨论
@@ -405,7 +404,7 @@ Django 的路由规则：
 | `/admin/*` | Django Admin |
 | `/auth/*` | Django API（账号/资料/用户） |
 | `/tasks/*` | Django API（任务/标签） |
-| `/proposals/*` | Django API（申报/反馈） |
+| `/reviews/*` | Django API（发布审核 / 意见反馈 / 举报案） |
 | `/attachments/*` | Django API（统一附件） |
 | `/messaging/*` | Django API（消息/讨论） |
 | `/about/*` | Django API（关于页） |
@@ -413,7 +412,7 @@ Django 的路由规则：
 | `/media/*` | 用户上传文件 |
 | 其他所有路径 | 返回 `index.html`（SPA） |
 
-前端路由不受限制，Django 会将所有非后端路径交给前端处理。路径选择只需避开 `/admin/`、`/auth/`、`/tasks/`、`/proposals/`、`/attachments/`、`/messaging/`、`/about/`、`/static/`、`/media/` 即可。
+前端路由不受限制，Django 会将所有非后端路径交给前端处理。路径选择只需避开 `/admin/`、`/auth/`、`/tasks/`、`/reviews/`、`/attachments/`、`/messaging/`、`/about/`、`/static/`、`/media/` 即可。
 
 ## 部署模式
 

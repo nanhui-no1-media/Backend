@@ -60,7 +60,7 @@ module.exports = {
     historyApiFallback: { index: "/static/index.html" },
     proxy: [
       { context: ["/ws"], target: "http://localhost:8000", ws: true },
-      { context: ["/auth", "/admin", "/media", "/tasks", "/messaging", "/proposals", "/news", "/attachments", "/uploads", "/activities", "/reviews", "/about", "/exam_board", "/tutorials", "/recruitment", "/site-policy"], target: "http://localhost:8000" },
+      { context: ["/auth", "/admin", "/media", "/tasks", "/messaging", "/news", "/attachments", "/uploads", "/activities", "/reviews", "/about", "/exam_board", "/tutorials", "/recruitment", "/site-policy"], target: "http://localhost:8000" },
     ],
   },
 };

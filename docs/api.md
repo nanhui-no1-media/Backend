@@ -205,21 +205,16 @@ GET /activities/activities/<id>/
 
 对于活动详情页、投票或展示内容，通常由前端针对该 API 做业务聚合。
 
-## 6. 提案与反馈接口
+## 6. 意见反馈接口
 
 ```http
-GET /proposals/
-GET /proposals/<id>/
-POST /proposals/
+GET /reviews/feedbacks/
+GET /reviews/feedbacks/<id>/
+POST /reviews/feedbacks/submit/
+POST /reviews/feedbacks/<id>/close/
 ```
 
-从代码结构和语义来看，这部分主要面向：
-
-- 反馈意见
-- 匿名/署名提交
-- 审核或处理记录
-
-项目中有明确“匿名反馈”和“署名反馈”两种提交方式，匿名提交一般不记录提交者身份。
+意见反馈是审核系统的一种案件（无对象投递箱），不是独立 app。匿名提交不记录提交者身份；署名提交可带附件。职员侧在 `/reviews` 队列处理。
 
 ## 7. 教程接口
 

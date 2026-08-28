@@ -16,7 +16,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
 
     def get_uploaded_by(self, obj):
         # 延迟导入打破 tasks ↔ attachments 的序列化器循环：
-        # tasks/proposals 的详情序列化器复用本类，而 SimpleUserSerializer 住在
+        # 各父级详情序列化器复用本类，而 SimpleUserSerializer 住在
         # tasks.serializers——若在模块顶层导入会成环。运行期再取，Python 已缓存模块。
         from tasks.serializers import SimpleUserSerializer
 

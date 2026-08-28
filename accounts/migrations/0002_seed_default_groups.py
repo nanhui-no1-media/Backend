@@ -1,3 +1,10 @@
+"""Seed default groups.
+
+History rewrite (2026-08): dropped the ``proposals`` permission grants and the
+dependency on ``proposals.0001``. Already-applied databases never re-run this
+file; new installs get task perms here and ``reviews.view_feedback`` /
+``handle_report`` from the reviews 0007–0008 squash.
+"""
 from django.db import migrations
 
 
@@ -24,9 +31,6 @@ def seed(apps, schema_editor):
             ("tasks", "manage_tasks"),
             ("tasks", "assign_task"),
             ("tasks", "manage_tags"),
-            ("proposals", "approve_proposal"),
-            ("proposals", "view_feedback"),
-            ("proposals", "change_proposal"),
         ],
     }
 
@@ -45,7 +49,6 @@ class Migration(migrations.Migration):
         ("accounts", "0001_initial"),
         ("news", "0002_create_info_group"),
         ("tasks", "0001_initial"),
-        ("proposals", "0001_initial"),
     ]
 
     operations = [

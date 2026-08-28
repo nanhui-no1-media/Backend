@@ -1,7 +1,8 @@
-"""Grant 社长 reviews.view_feedback + reviews.handle_report; drop leftover proposals perms.
+"""Squash reviews 0007–0008.
 
-Runtime never branches on the group name — this is a one-shot convenience seed,
-same pattern as reviews/0003_grant_moderate_to_president.
+Old installs already copied Proposal → Feedback and granted perms; ``replaces``
+marks this applied. New installs skip the copy (there is no Proposal table)
+and only seed reviews.view_feedback / handle_report onto 社长.
 """
 from django.db import migrations
 
@@ -26,13 +27,19 @@ def grant_and_drop(apps, schema_editor):
         content_type__app_label="proposals",
         codename__in=["approve_proposal", "view_feedback", "change_proposal"],
     )
-    group.permissions.remove(*stale)
+    if stale.exists():
+        group.permissions.remove(*stale)
 
 
 class Migration(migrations.Migration):
 
-    dependencies = [
+    replaces = [
         ("reviews", "0007_copy_proposals_to_feedback"),
+        ("reviews", "0008_grant_feedback_and_report_to_president"),
+    ]
+
+    dependencies = [
+        ("reviews", "0006_feedback_report_models"),
         ("accounts", "0002_seed_default_groups"),
     ]
 

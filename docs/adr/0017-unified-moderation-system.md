@@ -11,11 +11,11 @@
 3. **三个权限，不用组名分支。** `reviews.moderate`（发布审核，既有）、`reviews.view_feedback`（查看并了结意见反馈）、`reviews.handle_report`（处理举报案）。关闭反馈不另拆 approve 权限（持有者不会不同）。前端能力：`can_view_feedback` 改源、`can_handle_reports` 新增；去掉 `can_approve_proposals` / `can_change_proposals`。
 4. **成立并处置是特权默认动作。** 视图只查 `reviews.handle_report`。`report_lifecycle.uphold` 按对象执行默认处置，**不**要求操作者同时持有 `reviews.moderate` / `messaging.manage_comment_thread` / `messaging.mute_user`：新闻/活动/教程 `apply(REMOVE)`（已下架则幂等只结案）；评论走 `delete_comment_for_report`（跳过 `can_manage_thread`）；用户走 `mute_user_for_report`（跳过 `mute_user` 权限；仍禁自禁、已禁言则拒；`ends_at` 省略即永久）。这两处特权函数只给 `report_lifecycle` 调用。不把评论区禁言 / 停用账号接到此按钮。恢复走既有重新上架 / 解除禁言。
 5. **不要 GenericFK。** 举报对象与 `Review` / `CommentThread` 一样：可空 FK + 恰好一个父级的 CheckConstraint。进行中案每对象至多一张（五条部分唯一约束）。
-6. **`proposals` 运行时删除，迁移包留作墓碑。** 数据：`Proposal` → `Feedback`（`pending_approval`→`pending`；`approved`/`rejected`/`withdrawn`→`closed`；类别 `report`→`complaint`）。附件 FK `proposal` → `feedback`。旧 `feedback_category=report` **不**自动生成举报案。`proposals` 仍在 `INSTALLED_APPS`，只留历史迁移；本变更不 squash、不卸 app。
+6. **`proposals` 已卸掉。** 数据迁移（`Proposal` → `Feedback`）发生在 [#95](https://github.com/nanhui-no1-media/Backend/pull/95)。随后一轮 squash：`attachments` 0001–0006、`messaging` 0001–0004、`reviews` 0007–0008 压成「当前模型快照」并 `replaces` 旧文件；`accounts.0002` 去掉申报权限播种。图上不再有 `proposals.*` 节点，应用从 `INSTALLED_APPS` 删除。旧库靠 `replaces`（已 apply 的 0001…0006 视为 squash 已 apply）不会重建表。
 
 ## 被否的方案
 
 - **把反馈/举报折进现有 `Review` 行**：`Review` 的语义是发布门控，混进去会让「可否公开」与「有人投诉了什么」无法分开查询与授权。否。
 - **ContentTypes GenericFK**：与附件/审核/评论区既有「可空 FK + XOR」不一致，且不参与 CASCADE。否。
 - **成立处置再查 moderate / mute_user**：处理举报的人与发稿审核/禁言的人可以不是同一批；再查会卡住默认处置。否。
-- **本变更卸掉 `proposals` app / squash 迁移**：历史迁移链会断。否。
+- **本变更卸掉 `proposals` app / squash 迁移**：[#95](https://github.com/nanhui-no1-media/Backend/pull/95) 当时否，以免历史链断裂。后续 squash 已做完，app 已卸。

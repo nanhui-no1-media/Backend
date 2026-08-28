@@ -75,9 +75,8 @@ Backend/
 ├── frontend/             # React 前端源代码与构建输出
 ├── messaging/            # 评论区 / 私信 / 通知 / 横幅公告
 ├── news/                 # 新闻模块
-├── proposals/            # 反馈/意见/提案模块
 ├── recruitment/          # 招聘模块
-├── reviews/              # 审核与审查逻辑
+├── reviews/              # 发布审核 / 意见反馈 / 举报案
 ├── scripts/              # 运维脚本（install.sh、更新/回滚）
 ├── static/               # 静态资源
 ├── tasks/                # 任务与标签模块
@@ -105,7 +104,7 @@ Backend/
 - 任务：`/tasks/`
 - 新闻：`/news/`
 - 活动：`/activities/`
-- 提案/反馈：`/proposals/`
+- 审核（发布审核 / 意见反馈 / 举报）：`/reviews/`
 - 教程：`/tutorials/`
 - 招聘：`/recruitment/`
 - 消息（评论区 / 私信 / 通知 / 横幅）：`/messaging/`

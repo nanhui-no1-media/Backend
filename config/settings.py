@@ -112,7 +112,6 @@ INSTALLED_APPS = [
     'about',
     'tasks',
     'messaging',
-    'proposals',
     'activities',
     'exam_board',
     'news',
