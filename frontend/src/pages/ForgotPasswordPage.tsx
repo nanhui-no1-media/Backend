@@ -1,8 +1,9 @@
-import { useState, FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import AppShell from "../components/AppShell";
 import { useLoginModal } from "../components/LoginModalProvider";
+import { useTurnstile } from "../turnstile";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -11,17 +12,24 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { openLogin } = useLoginModal();
+  const { containerRef, token, reset, enabled, policyReady } = useTurnstile();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccess("");
+    if (!policyReady) return;
+    if (enabled && !token) {
+      setError("请先完成人机校验。");
+      return;
+    }
     setLoading(true);
     try {
-      await api.passwordReset(email);
+      await api.passwordReset(email, token);
       setSuccess("如果该邮箱已注册，重置链接已发送，请查看控制台输出。");
     } catch (err: any) {
       setError(err.message);
+      reset();
     } finally {
       setLoading(false);
     }
@@ -51,8 +59,9 @@ export default function ForgotPasswordPage() {
                   <label className="label">邮箱</label>
                   <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="请输入注册邮箱" required />
                 </div>
-                <button className="btn btn-primary btn-block" type="submit" disabled={loading}>
-                  {loading ? "发送中…" : "发送重置链接"}
+                <div ref={containerRef} />
+                <button className="btn btn-primary btn-block" type="submit" disabled={loading || !policyReady}>
+                  {loading ? "发送中…" : !policyReady ? "加载中…" : "发送重置链接"}
                 </button>
               </form>
               <div className="hint center" style={{ marginTop: "var(--s-4)" }}>

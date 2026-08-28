@@ -32,8 +32,8 @@ from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, Profi
 from .models import Profile, IdentityProof, UserSession, Verification, is_verified
 from .tokens import email_verification_token
 from .throttles import RegisterThrottle, ResendVerificationThrottle, login_blocked_response
-from .turnstile import verify_turnstile
-from .utils import SESSION_HISTORY_LIMIT, get_client_ip
+from .turnstile import passes_turnstile, turnstile_error_response
+from .utils import SESSION_HISTORY_LIMIT
 from .visibility import content_visibility, profile_view_for
 
 logger = logging.getLogger(__name__)
@@ -371,6 +371,9 @@ def password_reset_view(request):
     if not form.is_valid():
         return JsonResponse({"error": _form_errors(form)}, status=400)
 
+    if not passes_turnstile(request, body.get("turnstile_token") or ""):
+        return turnstile_error_response()
+
     email = form.cleaned_data["email"]
     for user in User.objects.filter(email=email):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
@@ -470,9 +473,9 @@ def register_view(request):
     if errors:
         return JsonResponse({"error": errors[0] if len(errors) == 1 else errors}, status=400)
 
-    # Turnstile 人机校验（DEBUG / 未配 secret 时 verify_turnstile 直接放行）
-    if not verify_turnstile(turnstile_token, get_client_ip(request)):
-        return JsonResponse({"error": "人机校验失败，请刷新后重试。"}, status=400)
+    # Turnstile：两项密钥都空则关闭并放行；启用时校验失败拒注册。
+    if not passes_turnstile(request, turnstile_token):
+        return turnstile_error_response()
 
     started_email = False
     try:
@@ -553,6 +556,9 @@ def resend_verification_view(request):
     email = (body.get("email") or "").strip().lower()
     if not email:
         return JsonResponse({"error": "请输入邮箱。"}, status=400)
+
+    if not passes_turnstile(request, body.get("turnstile_token") or ""):
+        return turnstile_error_response()
 
     v = (
         Verification.objects.select_related("user")

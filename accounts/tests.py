@@ -1,6 +1,6 @@
 import json
 from datetime import timedelta
-from django.test import TestCase, Client, RequestFactory
+from django.test import TestCase, Client, RequestFactory, override_settings
 from django.contrib.auth.models import User
 from django.utils import timezone
 from .models import UserSession
@@ -213,6 +213,16 @@ class PasswordResetViewTest(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 400)
+
+    @override_settings(TURNSTILE_SITE_KEY="site", TURNSTILE_SECRET_KEY="secret")
+    def test_password_reset_rejected_without_turnstile_when_enabled(self):
+        response = self.client.post(
+            "/auth/password-reset/",
+            data=json.dumps({"email": "test@example.com"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("人机校验", str(response.json()["error"]))
 
 
 class PasswordResetConfirmViewTest(TestCase):

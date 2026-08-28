@@ -4,7 +4,7 @@
 
 ## 决策
 
-运营向旋钮（验证通道开/关、每 IP 注册上限、上传字节帽）放在 `common.SiteSettings` 单例，Django admin 可改、`get_policy()` 快照给调用方、公开 `GET /site-policy/` 给 SPA。密钥与基础设施（`SECRET_KEY`、SMTP、Turnstile secret、`FRONTEND_URL`、MEDIA 路径）仍在 `config/settings.py` + `.env`，改完需重启。
+运营向旋钮（验证通道开/关、每 IP 注册上限、上传字节帽）放在 `common.SiteSettings` 单例，Django admin 可改、`get_policy()` 快照给调用方、公开 `GET /site-policy/` 给 SPA。密钥与基础设施（`SECRET_KEY`、SMTP、Turnstile secret、`FRONTEND_URL`、MEDIA 路径）仍在 `config/settings.py` + `.env`，改完需重启。Turnstile 公开 sitekey 叠在同一 `GET /site-policy/` 上（`turnstile_enabled` / `turnstile_site_key`）；两项都空则功能关闭，secret 永不下发。
 
 调用方只 import `get_policy()`，不查模型。加旋钮 = 新字段 + 迁移 + 快照字段；不做 KV 袋。
 

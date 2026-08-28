@@ -1,6 +1,6 @@
 from django.contrib.auth.models import Group, User
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from messaging.models import Notification
@@ -76,6 +76,27 @@ class FeedbackSubmitTest(TestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, 400)
+
+    @override_settings(TURNSTILE_SITE_KEY="site", TURNSTILE_SECRET_KEY="secret")
+    def test_anonymous_rejected_without_turnstile_when_enabled(self):
+        resp = self.client.post(
+            "/reviews/feedbacks/submit/",
+            {"title": "匿名", "description": "……", "category": "complaint"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("人机校验", str(resp.data["detail"]))
+        self.assertFalse(Feedback.objects.exists())
+
+    @override_settings(TURNSTILE_SITE_KEY="site", TURNSTILE_SECRET_KEY="secret")
+    def test_logged_in_skips_turnstile(self):
+        self.client.force_authenticate(self.member)
+        resp = self.client.post(
+            "/reviews/feedbacks/submit/",
+            {"title": "匿名", "description": "……", "category": "other"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
 
 
 class FeedbackCloseTest(TestCase):

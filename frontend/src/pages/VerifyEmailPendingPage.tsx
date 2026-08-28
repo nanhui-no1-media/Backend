@@ -1,8 +1,9 @@
-import { useState, FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import AppShell from "../components/AppShell";
 import { useLoginModal } from "../components/LoginModalProvider";
+import { useTurnstile } from "../turnstile";
 
 /**
  * 邮箱验证待办 / 重发页（#29）：输入邮箱重发验证邮件。
@@ -16,21 +17,28 @@ export default function VerifyEmailPendingPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { openLogin } = useLoginModal();
+  const { containerRef, token, reset, enabled, policyReady } = useTurnstile();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccess("");
+    if (!policyReady) return;
     if (!email.trim()) {
       setError("请输入邮箱。");
       return;
     }
+    if (enabled && !token) {
+      setError("请先完成人机校验。");
+      return;
+    }
     setLoading(true);
     try {
-      await api.resendVerification(email.trim());
+      await api.resendVerification(email.trim(), token);
       setSuccess("如果该邮箱已注册且尚未验证，验证邮件已重发，请查收（含垃圾邮件箱）。");
     } catch (err: any) {
       setError(err?.message || "发送失败，请稍后重试。");
+      reset();
     } finally {
       setLoading(false);
     }
@@ -67,8 +75,9 @@ export default function VerifyEmailPendingPage() {
                     required
                   />
                 </div>
-                <button className="btn btn-primary btn-block" type="submit" disabled={loading}>
-                  {loading ? "发送中…" : "发送验证邮件"}
+                <div ref={containerRef} />
+                <button className="btn btn-primary btn-block" type="submit" disabled={loading || !policyReady}>
+                  {loading ? "发送中…" : !policyReady ? "加载中…" : "发送验证邮件"}
                 </button>
               </form>
               <div className="hint center" style={{ marginTop: "var(--s-4)" }}>

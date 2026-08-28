@@ -36,11 +36,23 @@ export const api = {
   verifyEmail: (uid: string, token: string) =>
     request(`/verify-email/?uid=${encodeURIComponent(uid)}&token=${encodeURIComponent(token)}`),
 
-  resendVerification: (email: string) =>
-    request("/resend-verification/", { method: "POST", body: JSON.stringify({ email }) }),
+  resendVerification: (email: string, turnstileToken = "") =>
+    request("/resend-verification/", {
+      method: "POST",
+      body: JSON.stringify({
+        email,
+        ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
+      }),
+    }),
 
-  passwordReset: (email: string) =>
-    request("/password-reset/", { method: "POST", body: JSON.stringify({ email }) }),
+  passwordReset: (email: string, turnstileToken = "") =>
+    request("/password-reset/", {
+      method: "POST",
+      body: JSON.stringify({
+        email,
+        ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
+      }),
+    }),
 
   passwordResetConfirm: (uid: string, token: string, new_password: string) =>
     request("/password-reset/confirm/", { method: "POST", body: JSON.stringify({ uid, token, new_password }) }),

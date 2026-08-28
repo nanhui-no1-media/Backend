@@ -277,7 +277,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 PRIVATE_MEDIA_ROOT = BASE_DIR / "private_media"
 
 # ---- Cloudflare Turnstile（人机校验，自助注册用）----
-# sitekey 公开（前端常量）；secret 走 .env。DEBUG 或未配 secret 时跳过校验（本地可测）。
+# 两项都空 → 功能关闭。都配了才启用：sitekey 经 GET /site-policy/ 下发，secret 只留进程内。
 TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "")
 TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "")
 

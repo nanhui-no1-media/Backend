@@ -38,6 +38,7 @@ export interface FeedbackFormData {
   category: FeedbackCategory;
   contact?: string;
   disclose_identity?: boolean;
+  turnstile_token?: string;
 }
 
 export const FEEDBACK_STATUS_LABELS: Record<FeedbackStatus, string> = {

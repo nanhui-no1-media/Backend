@@ -8,7 +8,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- Cloudflare Turnstile（自助注册人机校验，#28）。async + 显式 render（见 lib/turnstile.ts）。 -->
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <!-- Turnstile api.js 按需加载（见 src/turnstile.ts），未启用时不请求 Cloudflare。 -->
   </body>
 </html>

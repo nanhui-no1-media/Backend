@@ -186,18 +186,40 @@ class RegisterViewTest(TestCase):
         self.assertEqual(resp.status_code, 429)
 
     # ---- Turnstile 接线 ----
-    @override_settings(DEBUG=False, TURNSTILE_SECRET_KEY="test-secret")
+    @override_settings(TURNSTILE_SITE_KEY="", TURNSTILE_SECRET_KEY="")
+    def test_turnstile_skipped_when_keys_empty(self):
+        payload = valid_payload()
+        payload.pop("turnstile_token")
+        resp = self.post(payload)
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    @override_settings(TURNSTILE_SITE_KEY="site", TURNSTILE_SECRET_KEY="")
+    def test_turnstile_skipped_when_only_sitekey(self):
+        payload = valid_payload()
+        payload.pop("turnstile_token")
+        resp = self.post(payload)
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    @override_settings(TURNSTILE_SITE_KEY="site", TURNSTILE_SECRET_KEY="test-secret")
+    def test_turnstile_empty_token_rejected_when_enabled(self):
+        payload = valid_payload()
+        payload["turnstile_token"] = ""
+        resp = self.post(payload)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("人机校验", str(resp.json()["error"]))
+
+    @override_settings(TURNSTILE_SITE_KEY="site", TURNSTILE_SECRET_KEY="test-secret")
     def test_turnstile_failure_rejected_when_configured(self):
         import accounts.views as views
 
-        orig = views.verify_turnstile
-        views.verify_turnstile = lambda token, ip="": False
+        orig = views.passes_turnstile
+        views.passes_turnstile = lambda request, token="": False
         try:
             resp = self.post(valid_payload())
             self.assertEqual(resp.status_code, 400)
             self.assertIn("人机校验", str(resp.json()["error"]))
         finally:
-            views.verify_turnstile = orig
+            views.passes_turnstile = orig
 
 
 class IdentityProofStorageTest(TestCase):

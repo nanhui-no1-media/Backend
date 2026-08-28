@@ -237,7 +237,7 @@ DELETE /tutorials/tutorials/<id>/
 
 本节是消息重置后的 HTTP / WebSocket 契约（[ADR 0015](adr/0015-channels-without-redis.md)、[ADR 0016](adr/0016-comment-thread-vs-dm.md)）。实现按此对齐；**不要**另起 `/messages/` 等前缀。会话子资源沿用现网路径；评论区 / 通知 / 禁言 / 横幅按下列资源名落地。
 
-公开 `GET /site-policy/` 已返回站点策略快照；`comment_max_depth` 随快照出现，不另开接口。
+公开 `GET /site-policy/` 已返回站点策略快照；`comment_max_depth` 与 Turnstile（`turnstile_enabled` / `turnstile_site_key`）随快照出现，不另开接口。secret 不下发；两项密钥都空则关闭。
 
 ### 8.1 评论区
 

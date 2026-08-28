@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useSitePolicy } from "../api/sitePolicy";
 import AppShell from "../components/AppShell";
 import PasswordInput from "../components/PasswordInput";
 import { useLoginModal } from "../components/LoginModalProvider";
-import { isTurnstileEnabled, renderTurnstile } from "../turnstile";
+import { useTurnstile } from "../turnstile";
 
 /**
  * 注册页（ADR-0006 注册↔验证分离）：只建登录身份（用户名 + 双密码 + Turnstile）。
@@ -17,39 +17,20 @@ export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
-  const [turnstileToken, setTurnstileToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const navigate = useNavigate();
   const { openLogin } = useLoginModal();
   const policy = useSitePolicy();
-
-  const turnstileRef = useRef<HTMLDivElement>(null);
-  const widgetIdRef = useRef<string | null>(null);
-
-  // 渲染 Turnstile 挂件（仅在配了 sitekey 时；本地留空跳过，后端 DEBUG 下不校验）。
-  useEffect(() => {
-    if (!isTurnstileEnabled() || !turnstileRef.current) return;
-    widgetIdRef.current = renderTurnstile(
-      turnstileRef.current,
-      (token) => setTurnstileToken(token),
-      () => setTurnstileToken("")
-    );
-    return () => {
-      const id = widgetIdRef.current;
-      if (id && window.turnstile) window.turnstile.remove(id);
-    };
-  }, []);
-
-  const resetTurnstile = () => {
-    setTurnstileToken("");
-    if (widgetIdRef.current && window.turnstile) window.turnstile.reset(widgetIdRef.current);
-  };
+  const { containerRef, token: turnstileToken, reset: resetTurnstile, enabled: turnstileOn, policyReady } =
+    useTurnstile();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (!policyReady) return;
 
     if (!username.trim()) {
       setError("请填写用户名。");
@@ -63,7 +44,7 @@ export default function RegisterPage() {
       setError("密码至少 8 位。");
       return;
     }
-    if (isTurnstileEnabled() && !turnstileToken) {
+    if (turnstileOn && !turnstileToken) {
       setError("请先完成人机校验。");
       return;
     }
@@ -160,9 +141,13 @@ export default function RegisterPage() {
                         autoComplete="new-password"
                       />
                     </div>
-                    <div ref={turnstileRef} />
-                    <button className="btn btn-primary btn-block" type="submit" disabled={loading}>
-                      {loading ? "提交中…" : "注册"}
+                    <div ref={containerRef} />
+                    <button
+                      className="btn btn-primary btn-block"
+                      type="submit"
+                      disabled={loading || !policyReady}
+                    >
+                      {loading ? "提交中…" : !policyReady ? "加载中…" : "注册"}
                     </button>
                   </form>
                   <div className="hint center" style={{ marginTop: "var(--s-4)" }}>

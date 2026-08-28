@@ -9,7 +9,7 @@ import json
 from django.contrib.auth.models import User
 from django.core import mail
 from django.core.cache import cache
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
@@ -140,6 +140,17 @@ class ResendVerificationViewTest(TestCase):
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 429)
+
+    @override_settings(TURNSTILE_SITE_KEY="site", TURNSTILE_SECRET_KEY="secret")
+    def test_resend_rejected_without_turnstile_when_enabled(self):
+        resp = self.client.post(
+            "/auth/resend-verification/",
+            data=json.dumps({"email": "someone@example.com"}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("人机校验", str(resp.json()["error"]))
+        self.assertEqual(len(mail.outbox), 0)
 
 
 class LoginStateTest(TestCase):

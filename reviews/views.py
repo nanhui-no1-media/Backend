@@ -5,6 +5,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.permissions import IsVerified
+from accounts.turnstile import passes_turnstile, turnstile_error_response
 
 from .feedback_lifecycle import FeedbackDenied, close as close_feedback, submit as submit_feedback
 from .lifecycle import APPROVE, REJECT, REMOVE, TransitionDenied, apply
@@ -97,6 +98,9 @@ class FeedbackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
         """意见反馈：可匿名（默认）或署名（登录后显式选择）提交。"""
         data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
         disclose_identity = bool(data.pop("disclose_identity", False))
+        token = data.pop("turnstile_token", "") or ""
+        if not request.user.is_authenticated and not passes_turnstile(request, token):
+            return turnstile_error_response(drf=True)
         if disclose_identity and not request.user.is_authenticated:
             return Response(
                 {"detail": "署名提交需要登录"}, status=status.HTTP_400_BAD_REQUEST,

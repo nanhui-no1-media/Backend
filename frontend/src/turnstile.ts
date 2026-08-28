@@ -1,16 +1,15 @@
 /**
- * Cloudflare Turnstile（自助注册人机校验）前端集成（#28）。
+ * Cloudflare Turnstile 前端集成。
  *
- * sitekey 公开。生产部署时填入实际 sitekey（与后端 .env 的 TURNSTILE_SECRET_KEY 配对）；
- * 留空（本地开发默认）→ 不渲染挂件、不发送 token，后端在 DEBUG / 未配 secret 时跳过校验，
- * 便于不联网走通注册流程。
- *
- * api.js 由 template.html 以 <script async defer> 引入，挂载 window.turnstile。
+ * sitekey 由 ``GET /site-policy/`` 下发。未启用时不加载 Cloudflare 脚本、不渲染挂件。
+ * 脚本按需注入（注册 / 找回密码 / 重发验证信 / 匿名反馈），避免全站预载。
  */
-export const TURNSTILE_SITE_KEY = "";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { useSitePolicy, useSitePolicyReady } from "./api/sitePolicy";
 
-/** 本地是否启用 Turnstile（配了 sitekey 才渲染挂件）。 */
-export const isTurnstileEnabled = () => !!TURNSTILE_SITE_KEY;
+const SCRIPT_ID = "cf-turnstile-api";
+const SCRIPT_SRC =
+  "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 
 export interface TurnstileRenderOptions {
   sitekey: string;
@@ -30,19 +29,103 @@ declare global {
   }
 }
 
-/** 渲染挂件；返回 widgetId（用于 reset / remove）。window.turnstile 未就绪时返回 null。 */
+function loadTurnstileScript(): Promise<void> {
+  if (window.turnstile) return Promise.resolve();
+  const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
+  if (existing) {
+    return new Promise((resolve, reject) => {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("turnstile")), { once: true });
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.id = SCRIPT_ID;
+    script.src = SCRIPT_SRC;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("turnstile"));
+    document.head.appendChild(script);
+  });
+}
+
 export function renderTurnstile(
   container: HTMLElement,
+  sitekey: string,
   onToken: (token: string) => void,
   onError?: () => void
 ): string | null {
   const api = window.turnstile;
-  if (!api || !TURNSTILE_SITE_KEY) return null;
+  if (!api || !sitekey) return null;
   return api.render(container, {
-    sitekey: TURNSTILE_SITE_KEY,
+    sitekey,
     callback: onToken,
     "error-callback": onError,
     "expired-callback": onError,
     theme: "auto",
   });
+}
+
+export function useTurnstile(active = true): {
+  containerRef: RefObject<HTMLDivElement | null>;
+  token: string;
+  reset: () => void;
+  enabled: boolean;
+  policyReady: boolean;
+} {
+  const policy = useSitePolicy();
+  const policyReady = useSitePolicyReady();
+  const enabled = Boolean(active && policy.turnstile_enabled && policy.turnstile_site_key);
+  const [token, setToken] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setToken("");
+      return;
+    }
+    const sitekey = policy.turnstile_site_key;
+    let cancelled = false;
+    let poll = 0;
+    let timeout = 0;
+
+    const tryRender = () => {
+      if (cancelled || widgetIdRef.current) return true;
+      const container = containerRef.current;
+      if (!container) return false;
+      const id = renderTurnstile(container, sitekey, setToken, () => setToken(""));
+      if (id) widgetIdRef.current = id;
+      return !!id;
+    };
+
+    const start = () => {
+      if (cancelled) return;
+      if (tryRender()) return;
+      poll = window.setInterval(() => {
+        if (tryRender()) window.clearInterval(poll);
+      }, 100);
+      timeout = window.setTimeout(() => window.clearInterval(poll), 10000);
+    };
+
+    loadTurnstileScript().then(start).catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (poll) window.clearInterval(poll);
+      if (timeout) window.clearTimeout(timeout);
+      const id = widgetIdRef.current;
+      widgetIdRef.current = null;
+      if (id && window.turnstile) window.turnstile.remove(id);
+    };
+  }, [enabled, policy.turnstile_site_key]);
+
+  const reset = () => {
+    setToken("");
+    if (widgetIdRef.current && window.turnstile) {
+      window.turnstile.reset(widgetIdRef.current);
+    }
+  };
+
+  return { containerRef, token, reset, enabled, policyReady };
 }

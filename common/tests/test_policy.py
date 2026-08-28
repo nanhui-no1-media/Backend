@@ -1,7 +1,7 @@
 """Site policy singleton: defaults, cache invalidation, public GET."""
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from common.admin import SiteSettingsAdmin
@@ -195,6 +195,22 @@ class SitePolicyPublicGetTest(TestCase):
         self.assertEqual(data["update_release_keep"], 3)
         self.assertEqual(data["update_db_backup_keep"], 5)
         self.assertEqual(data["comment_max_depth"], 8)
+        self.assertEqual(data["turnstile_enabled"], False)
+        self.assertEqual(data["turnstile_site_key"], "")
+
+    @override_settings(TURNSTILE_SITE_KEY="public-sitekey", TURNSTILE_SECRET_KEY="secret")
+    def test_get_overlays_turnstile_when_both_keys_set(self):
+        data = APIClient().get("/site-policy/").json()
+        self.assertTrue(data["turnstile_enabled"])
+        self.assertEqual(data["turnstile_site_key"], "public-sitekey")
+        self.assertNotIn("turnstile_secret", data)
+        self.assertNotIn("TURNSTILE_SECRET_KEY", data)
+
+    @override_settings(TURNSTILE_SITE_KEY="public-sitekey", TURNSTILE_SECRET_KEY="")
+    def test_get_hides_sitekey_when_secret_missing(self):
+        data = APIClient().get("/site-policy/").json()
+        self.assertFalse(data["turnstile_enabled"])
+        self.assertEqual(data["turnstile_site_key"], "")
 
     def test_get_reflects_saved_row(self):
         obj, _ = SiteSettings.objects.get_or_create(pk=1)

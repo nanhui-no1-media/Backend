@@ -9,6 +9,7 @@ import {
   FEEDBACK_CATEGORY_LABELS,
 } from "../types/feedback";
 import AppShell from "../components/AppShell";
+import { useTurnstile } from "../turnstile";
 import "../styles/list.css";
 
 export default function FeedbackPage() {
@@ -34,11 +35,16 @@ export default function FeedbackPage() {
   }, []);
 
   const isLoggedIn = !!user;
+  const { containerRef, token, reset, enabled, policyReady } = useTurnstile(user === null);
 
   const submitFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fbTitle.trim() || !fbDesc.trim()) {
       setError("标题和内容不能为空");
+      return;
+    }
+    if (user === null && enabled && !token) {
+      setError("请先完成人机校验。");
       return;
     }
     setFbSubmitting(true);
@@ -50,6 +56,7 @@ export default function FeedbackPage() {
     };
     if (fbContact.trim()) data.contact = fbContact.trim();
     if (fbAttributed) data.disclose_identity = true;
+    if (token) data.turnstile_token = token;
     try {
       const created = await feedbackApi.submit(data);
       if (fbAttributed && fbFiles.length) {
@@ -75,6 +82,7 @@ export default function FeedbackPage() {
       setError(err.status === 429
         ? "今日提交次数已达上限，请明天再试。"
         : err.message);
+      reset();
     } finally {
       setFbSubmitting(false);
       setFbUploading(false);
@@ -159,7 +167,16 @@ export default function FeedbackPage() {
                     )}
                   </div>
                 )}
-                <div><button className="btn btn-primary" type="submit" disabled={fbSubmitting || fbUploading}>{fbUploading ? "上传附件中…" : fbSubmitting ? "提交中…" : fbAttributed ? "署名提交" : "匿名提交"}</button></div>
+                <div ref={containerRef} />
+                <div>
+                  <button
+                    className="btn btn-primary"
+                    type="submit"
+                    disabled={fbSubmitting || fbUploading || user === undefined || !policyReady}
+                  >
+                    {fbUploading ? "上传附件中…" : fbSubmitting ? "提交中…" : fbAttributed ? "署名提交" : "匿名提交"}
+                  </button>
+                </div>
                 {fbUploadProgress != null && (
                   <div style={{ height: 6, background: "#e5e7eb", borderRadius: 4, overflow: "hidden", margin: "8px 0 0" }} aria-label="上传进度">
                     <div style={{ width: `${Math.round(fbUploadProgress * 100)}%`, height: "100%", background: "#2563eb", transition: "width .2s" }} />

@@ -24,6 +24,8 @@ export interface SitePolicy {
   update_release_keep: number;
   update_db_backup_keep: number;
   comment_max_depth: number;
+  turnstile_enabled: boolean;
+  turnstile_site_key: string;
 }
 
 const DEFAULTS: SitePolicy = {
@@ -47,9 +49,12 @@ const DEFAULTS: SitePolicy = {
   update_release_keep: 3,
   update_db_backup_keep: 5,
   comment_max_depth: 8,
+  turnstile_enabled: false,
+  turnstile_site_key: "",
 };
 
 let snapshot: SitePolicy = DEFAULTS;
+let hydrated = false;
 const listeners = new Set<() => void>();
 
 export function getSitePolicy(): SitePolicy {
@@ -73,6 +78,15 @@ export function useSitePolicy(): SitePolicy {
   return policy;
 }
 
+export function useSitePolicyReady(): boolean {
+  const [ready, setReady] = useState(hydrated);
+  useEffect(() => {
+    setReady(hydrated);
+    return subscribeSitePolicy(() => setReady(hydrated));
+  }, []);
+  return ready;
+}
+
 export function fetchSitePolicy(): Promise<void> {
   return request<SitePolicy>("/site-policy/")
     .then((data) => {
@@ -81,5 +95,11 @@ export function fetchSitePolicy(): Promise<void> {
     })
     .catch(() => {
       // Keep defaults if the public endpoint is unreachable.
+    })
+    .finally(() => {
+      if (!hydrated) {
+        hydrated = true;
+        notify();
+      }
     });
 }
