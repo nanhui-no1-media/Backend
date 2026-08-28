@@ -489,22 +489,43 @@ def previous_local_archive(paths: UpdaterPaths) -> Path | None:
     return newest
 
 
+def _same_sha(got: str, want: str) -> bool:
+    """Exact match, or unique-length prefix (same 7-char floor as ``archive_for_sha``)."""
+    if got == want:
+        return True
+    if len(want) >= 7 and got.startswith(want):
+        return True
+    if len(got) >= 7 and want.startswith(got):
+        return True
+    return False
+
+
 def pending_archive(paths: UpdaterPaths, remote_sha: str | None = None) -> Path | None:
+    """Next tarball to apply, or None if already on the target.
+
+    With a GitHub SHA: that archive only — never a different kept rollback
+    package. Without: the newest local complete archive, and only if it is
+    not already applied. Falling through to "any other local tarball" ping-
+    pongs between Latest and the previous release every tick.
+    """
     applied = read_applied_sha(paths)
-    if remote_sha and remote_sha != applied:
-        match = archive_for_sha(paths.releases_dir, remote_sha)
-        if match is not None:
-            return match
+    if remote_sha:
+        if applied and _same_sha(applied, remote_sha):
+            return None
+        return archive_for_sha(paths.releases_dir, remote_sha)
+
     newest = None
     newest_mtime = -1.0
     for path in complete_archives(paths.releases_dir):
-        sha = archive_sha(path)
-        if sha is None or sha == applied:
-            continue
         mtime = path.stat().st_mtime
         if mtime > newest_mtime:
             newest = path
             newest_mtime = mtime
+    if newest is None:
+        return None
+    sha = archive_sha(newest)
+    if sha is None or sha == applied:
+        return None
     return newest
 
 

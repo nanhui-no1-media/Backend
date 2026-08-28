@@ -418,6 +418,22 @@ class UnpackExcludeRollbackTest(SimpleTestCase):
         self.assertEqual(pending_archive(self.paths, remote_sha="ffffffffffff"), other)
         self.assertEqual(pending_archive(self.paths), other)
 
+    def test_pending_does_not_fall_through_to_previous_when_already_on_latest(self):
+        """Kept rollback tarballs must not become the next apply target.
+
+        After applying GitHub latest, prune still retains older packages. The
+        next tick must not treat the previous tarball as pending, or the
+        daemon ping-pongs (503 every ~20s) until the window closes.
+        """
+        previous = self._tarball("69dd1bdcf436", {"app.py": b"prev\n"})
+        latest = self._tarball("2508a65374aa", {"app.py": b"latest\n"})
+        os.utime(previous, (previous.stat().st_mtime - 10, previous.stat().st_mtime - 10))
+        os.utime(latest, None)
+        self.paths.applied_file.write_text("2508a65374aa\n", encoding="utf-8")
+        self.assertIsNone(pending_archive(self.paths, remote_sha="2508a65374aa"))
+        self.assertIsNone(pending_archive(self.paths))
+        self.assertIsNone(pending_archive(self.paths, remote_sha="deadbeefcafebabe"))
+
     def test_prune_keeps_newest_n(self):
         files = []
         for i, name in enumerate(("a", "b", "c", "d")):
