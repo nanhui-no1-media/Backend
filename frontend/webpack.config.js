@@ -47,7 +47,7 @@ module.exports = {
       chunks: "all",
       cacheGroups: {
         vendor: {
-          test: /[\\/]node_modules[\\/]/,
+          test: /[\\/]node_modules[\\/](?!l2d(?:$|[\\/]))/,
           name: "vendor",
           chunks: "all",
         },
