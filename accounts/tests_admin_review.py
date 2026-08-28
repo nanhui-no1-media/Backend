@@ -10,7 +10,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from accounts.models import IdentityProof, Profile, UserSession, Verification, is_verified
-from accounts.admin import IdentityProofAdmin, ProfileAdmin, approve_identity, disable_account
+from accounts.admin import CustomUserAdmin, IdentityProofAdmin, ProfileAdmin, approve_identity, disable_account
 
 PNG_BYTES = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
@@ -161,3 +161,58 @@ class IdentityProofAdminListTest(TestCase):
         self.assertIn("240px", html)
         self.assertIn(f"/auth/identity-proof/{self.proof.pk}/", html)
         self.assertIn("<a ", html)
+
+
+class UserAdminBanMuteTest(TestCase):
+    def setUp(self):
+        self.actor = User.objects.create_superuser("adm", "a@e.com", "x")
+        self.staff = User.objects.create_user(username="staff", password="p")
+        self.target = User.objects.create_user(username="tgt", password="p", email="t@e.com")
+        self.other = User.objects.create_user(username="other", password="p")
+        self.factory = RequestFactory()
+        self.ma = CustomUserAdmin(User, admin.site)
+        self.ma.message_user = lambda *a, **k: None
+
+    def _req(self, user):
+        req = self.factory.post("/")
+        req.user = user
+        return req
+
+    def test_ban_disables_and_skips_self_and_superuser(self):
+        qs = User.objects.filter(pk__in=[self.target.pk, self.actor.pk])
+        self.ma.ban_users(self._req(self.actor), qs)
+        self.target.refresh_from_db()
+        self.actor.refresh_from_db()
+        self.assertFalse(self.target.is_active)
+        self.assertTrue(self.actor.is_active)
+
+    def test_mute_action_hidden_without_perm(self):
+        actions = self.ma.get_actions(self._req(self.staff))
+        self.assertNotIn("mute_users", actions)
+
+    def test_mute_creates_site_mute(self):
+        self.actor.user_permissions.add(
+            Permission.objects.get(content_type__app_label="messaging", codename="mute_user"),
+        )
+        self.actor = User.objects.get(pk=self.actor.pk)
+        from messaging.services import is_muted
+        self.ma.mute_users(self._req(self.actor), User.objects.filter(pk=self.target.pk))
+        self.assertTrue(is_muted(self.target))
+
+    def test_mute_skips_self(self):
+        self.actor.user_permissions.add(
+            Permission.objects.get(content_type__app_label="messaging", codename="mute_user"),
+        )
+        self.actor = User.objects.get(pk=self.actor.pk)
+        from messaging.services import is_muted
+        self.ma.mute_users(self._req(self.actor), User.objects.filter(pk=self.actor.pk))
+        self.assertFalse(is_muted(self.actor))
+
+    def test_changelist_shows_ban_and_mute(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.actor)
+        resp = c.get("/admin/auth/user/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "封禁")
+        self.assertContains(resp, "全站禁言")

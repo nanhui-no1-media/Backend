@@ -1,10 +1,10 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html
 
 from common.surveyjs_admin import SurveyJSAdminMixin, SurveyJSResponseViewMixin
 
-from .lifecycle import can_edit_schema
+from .lifecycle import archive, can_edit_schema
 from .models import (
     Activity, Ballot, BallotSelection, Questionnaire, QuestionnaireResponse,
     Submission, VoteOption,
@@ -21,6 +21,21 @@ class ActivityAdmin(admin.ModelAdmin):
     search_fields = ["title", "body"]
     autocomplete_fields = ["questionnaire", "creator"]
     date_hierarchy = "created_at"
+    actions = ["archive_selected"]
+
+    @admin.action(description="归档")
+    def archive_selected(self, request, queryset):
+        """批量归档征集：收件中 / 复审中 → 已归档。其它类型跳过。"""
+        if not request.user.has_perm("activities.change_activity"):
+            self.message_user(request, "没有归档权限。", level=messages.ERROR)
+            return
+        ok = skip = 0
+        for activity in queryset:
+            if archive(activity, request.user):
+                ok += 1
+            else:
+                skip += 1
+        self.message_user(request, f"已归档 {ok} 个征集。跳过 {skip} 个。")
 
     @admin.display(description="问卷")
     def questionnaire_link(self, obj):

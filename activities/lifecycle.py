@@ -155,6 +155,35 @@ def can_close(activity, user):
     return False
 
 
+def can_archive(activity, user):
+    """归档守卫：发起人或持 activities.change_activity；仅征集 collecting / reviewing。
+
+    众议 / 展示 / 调研没有归档态（截止走 closed）。后台批量归档走本谓词。
+    """
+    if not user.is_authenticated:
+        return False
+    if not (activity.creator_id == user.pk or user.has_perm("activities.change_activity")):
+        return False
+    return activity.type == "collection" and activity.status in (COLLECTING, REVIEWING)
+
+
+def archive(activity, user):
+    """征集归档：collecting / reviewing → archived。非法则 False。
+
+    收件中带复审的征集走本路径会跳过复审——后台批量归档的显式覆盖，不是 close 的别名。
+    """
+    if not can_archive(activity, user):
+        return False
+    now = timezone.now()
+    changed = Activity.objects.filter(
+        pk=activity.pk, type="collection", status__in=(COLLECTING, REVIEWING),
+    ).update(status=ARCHIVED, updated_at=now)
+    if changed:
+        activity.status = ARCHIVED
+        activity.updated_at = now
+    return bool(changed)
+
+
 def transition_overdue():
     """惰性结算：把已到 ``end_at`` 的开放态众议/展示/调研从 open 流转到 closed。
 

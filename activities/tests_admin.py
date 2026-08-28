@@ -1,9 +1,12 @@
 """Django admin SurveyJS editor + results dashboard for 问卷 / 问卷结果."""
 import json
 
-from django.contrib.auth.models import User
-from django.test import Client, TestCase
+from django.contrib import admin
+from django.contrib.auth.models import Permission, User
+from django.test import Client, RequestFactory, TestCase
 
+from .admin import ActivityAdmin
+from .lifecycle import ARCHIVED, COLLECTING, OPEN
 from .models import Activity, Questionnaire, QuestionnaireResponse
 
 
@@ -177,3 +180,43 @@ class QuestionnaireAdminDashboardTest(TestCase):
         self.assertEqual(saved.status_code, 200)
         self.join.refresh_from_db()
         self.assertEqual(self.join.schema["title"], "加入改")
+
+
+class ActivityAdminArchiveTest(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="owner", password="x")
+        self.staff = User.objects.create_user(username="staff", password="x")
+        self.staff.user_permissions.add(
+            Permission.objects.get(content_type__app_label="activities", codename="change_activity"),
+        )
+        self.staff = User.objects.get(pk=self.staff.pk)
+        self.collection = Activity.objects.create(
+            type="collection", status=COLLECTING, title="待归档征集", creator=self.owner,
+        )
+        self.deliberation = Activity.objects.create(
+            type="deliberation", status=OPEN, title="众议", creator=self.owner,
+        )
+        self.factory = RequestFactory()
+        self.ma = ActivityAdmin(Activity, admin.site)
+        self.ma.message_user = lambda *a, **k: None
+
+    def _req(self, user):
+        req = self.factory.post("/")
+        req.user = user
+        return req
+
+    def test_archives_collection_and_skips_deliberation(self):
+        qs = Activity.objects.filter(pk__in=[self.collection.pk, self.deliberation.pk])
+        self.ma.archive_selected(self._req(self.staff), qs)
+        self.collection.refresh_from_db()
+        self.deliberation.refresh_from_db()
+        self.assertEqual(self.collection.status, ARCHIVED)
+        self.assertEqual(self.deliberation.status, OPEN)
+
+    def test_hidden_without_change_perm(self):
+        self.ma.archive_selected(
+            self._req(self.owner),
+            Activity.objects.filter(pk=self.collection.pk),
+        )
+        self.collection.refresh_from_db()
+        self.assertEqual(self.collection.status, COLLECTING)

@@ -214,6 +214,42 @@ class CustomUserAdmin(UserAdmin):
     search_fields = ("username", "email", "first_name", "last_name")
     ordering = ("username",)
     inlines = [ProfileInline]
+    actions = ["ban_users", "mute_users"]
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not request.user.has_perm("messaging.mute_user"):
+            actions.pop("mute_users", None)
+        return actions
+
+    @admin.action(description="封禁")
+    def ban_users(self, request, queryset):
+        """批量封禁：停用账号、吊销会话、发邮件。不可封禁自己或超级管理员。"""
+        ok = skip = 0
+        for user in queryset:
+            if user.pk == request.user.pk or user.is_superuser or not user.is_active:
+                skip += 1
+                continue
+            disable_user(user)
+            ok += 1
+        self.message_user(request, f"已封禁 {ok} 个账号。跳过 {skip} 个。")
+
+    @admin.action(description="全站禁言")
+    def mute_users(self, request, queryset):
+        """批量全站禁言（永久）。需 messaging.mute_user；已禁言 / 自己跳过。"""
+        from messaging.services import MessagingError, mute_user
+
+        if not request.user.has_perm("messaging.mute_user"):
+            self.message_user(request, "没有全站禁言权限。", level=messages.ERROR)
+            return
+        ok = skip = 0
+        for user in queryset:
+            try:
+                mute_user(request.user, user, reason="后台批量禁言")
+                ok += 1
+            except MessagingError:
+                skip += 1
+        self.message_user(request, f"已禁言 {ok} 个账号。跳过 {skip} 个。")
 
 
 admin.site.unregister(User)

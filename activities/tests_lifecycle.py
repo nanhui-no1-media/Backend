@@ -6,17 +6,21 @@ T2：initial_status / can_vote / transition_overdue。
 
 from datetime import timedelta
 
-from django.contrib.auth.models import AnonymousUser, User
+from django.contrib.auth.models import AnonymousUser, Permission, User
 from django.test import TestCase
 from django.utils import timezone
 
 from accounts.test_helpers import grant_verification
 
 from .lifecycle import (
+    ARCHIVED,
     CLOSED,
     COLLECTING,
     OPEN,
+    REVIEWING,
     SCHEDULED,
+    archive,
+    can_archive,
     can_curate,
     can_edit_exhibit,
     can_edit_schema,
@@ -234,3 +238,54 @@ class CanRespondTest(TestCase):
 
     def test_non_survey_blocks_respond(self):
         self.assertFalse(can_respond(self.deliberation, self.user))
+
+
+class ArchiveTest(TestCase):
+    def setUp(self):
+        self.owner = grant_verification(User.objects.create_user(username="owner", password="x"))
+        self.other = grant_verification(User.objects.create_user(username="other", password="x"))
+        self.staff = grant_verification(User.objects.create_user(username="staff", password="x"))
+        self.staff.user_permissions.add(
+            Permission.objects.get(
+                content_type__app_label="activities", codename="change_activity",
+            )
+        )
+        self.staff = User.objects.get(pk=self.staff.pk)
+
+    def test_collecting_archives(self):
+        activity = Activity.objects.create(
+            type="collection", status=COLLECTING, title="c", creator=self.owner,
+        )
+        self.assertTrue(archive(activity, self.owner))
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, ARCHIVED)
+
+    def test_reviewing_archives(self):
+        activity = Activity.objects.create(
+            type="collection", status=REVIEWING, title="r", creator=self.owner,
+        )
+        self.assertTrue(can_archive(activity, self.owner))
+        self.assertTrue(archive(activity, self.owner))
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, ARCHIVED)
+
+    def test_staff_with_change_activity_can_archive(self):
+        activity = Activity.objects.create(
+            type="collection", status=COLLECTING, title="c", creator=self.owner,
+        )
+        self.assertTrue(archive(activity, self.staff))
+
+    def test_outsider_cannot_archive(self):
+        activity = Activity.objects.create(
+            type="collection", status=COLLECTING, title="c", creator=self.owner,
+        )
+        self.assertFalse(archive(activity, self.other))
+        activity.refresh_from_db()
+        self.assertEqual(activity.status, COLLECTING)
+
+    def test_deliberation_cannot_archive(self):
+        activity = Activity.objects.create(
+            type="deliberation", status=OPEN, title="d", creator=self.owner,
+        )
+        self.assertFalse(can_archive(activity, self.owner))
+        self.assertFalse(archive(activity, self.owner))

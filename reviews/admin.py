@@ -1,6 +1,7 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.utils.html import format_html
 
+from .lifecycle import APPROVE, REJECT, REMOVE, TransitionDenied, apply
 from .models import Feedback, ReportCase, Review
 
 _TARGET_HASH = (
@@ -24,9 +25,43 @@ class ReviewAdmin(admin.ModelAdmin):
         ("对象", {"fields": ("news", "activity", "tutorial")}),
         ("预览", {"fields": ("target_preview",)}),
     )
+    actions = ["approve_selected", "reject_selected", "remove_selected"]
 
     class Media:
         css = {"all": ["reviews/admin_preview.css"]}
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not request.user.has_perm("reviews.moderate"):
+            for name in ("approve_selected", "reject_selected", "remove_selected"):
+                actions.pop(name, None)
+        return actions
+
+    def _bulk_apply(self, request, queryset, action, *, comment=""):
+        if not request.user.has_perm("reviews.moderate"):
+            self.message_user(request, "没有审核权限。", level=messages.ERROR)
+            return
+        ok = skip = 0
+        for review in queryset.select_related("news", "activity", "tutorial"):
+            try:
+                apply(action, review, request.user, comment=comment)
+                ok += 1
+            except TransitionDenied:
+                skip += 1
+        labels = {APPROVE: "通过", REJECT: "驳回", REMOVE: "下架"}
+        self.message_user(request, f"已{labels[action]} {ok} 条。跳过 {skip} 条。")
+
+    @admin.action(description="通过")
+    def approve_selected(self, request, queryset):
+        self._bulk_apply(request, queryset, APPROVE)
+
+    @admin.action(description="驳回")
+    def reject_selected(self, request, queryset):
+        self._bulk_apply(request, queryset, REJECT, comment="后台批量驳回")
+
+    @admin.action(description="下架")
+    def remove_selected(self, request, queryset):
+        self._bulk_apply(request, queryset, REMOVE)
 
     @admin.display(description="对象界面")
     def target_preview(self, obj):
