@@ -68,9 +68,7 @@ export default function MascotHost() {
         }
         unmount = handle.unmount;
       })
-      .catch(() => {
-        // Catalog / script failure: leave the corner empty this session.
-      });
+      .catch(() => undefined);
 
     return () => {
       cancelled = true;

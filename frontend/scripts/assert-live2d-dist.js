@@ -8,9 +8,11 @@ const path = require("path");
 const distRoot = path.join(__dirname, "..", "dist", "live2d");
 const required = [
   "runtime/live2d.min.js",
+  "runtime/live2dcubismcore.min.js",
   "catalog.json",
   "widget/waifu.css",
   "widget/waifu-tips.js",
+  "widget/waifu-tips.json",
   "widget/chunk/index.js",
   "widget/chunk/index2.js",
 ];

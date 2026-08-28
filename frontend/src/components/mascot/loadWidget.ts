@@ -1,33 +1,35 @@
 /**
- * Cubism 2 blog-widget adapter. Lives in the "mascot-widget" chunk only.
- * Cubism (`live2d.min.js`) is injected as a script tag so ts-loader never parses it.
+ * 看板娘 overlay adapter. Lives in the "mascot-widget" chunk only.
  *
- * Models are driven from the local catalog.json via loadlive2d.
+ * live2d-widget supplies chrome (tips, tools). Cubism 2's `loadlive2d` cannot
+ * parse `.model3.json`, and pixi-live2d-display 0.4's Cubism 4 framework does
+ * not draw against Cubism 5/6 Core. Rendering goes through `l2d` (official
+ * Cubism 2 & 6 SDK wrapper) so `.model.json` and `.model3.json` share one API.
+ *
+ * Catalog: `/static/live2d/catalog.json`. Widget cubism*Path is omitted so
+ * live2d-widget does not also attach a WebGL context to #live2d.
  */
+
+import { init, type L2D } from "l2d";
 
 const LIVE2D_BASE = "/static/live2d/";
 const WIDGET_BASE = `${LIVE2D_BASE}widget/`;
-const RUNTIME_JS = `${LIVE2D_BASE}runtime/live2d.min.js`;
-const CUBISM5_CORE_JS = `${LIVE2D_BASE}runtime/live2dcubismcore.min.js`;
 const CATALOG_URL = `${LIVE2D_BASE}catalog.json`;
 const WAIFU_DISPLAY_KEY = "waifu-display";
+const WAIFU_DISABLED_KEY = "waifu-disabled";
+const MODEL_ID_KEY = "modelId";
 const SENTINEL_ATTR = "data-mascot-sentinel";
 
 type CatalogModel = { id: string; name: string; entry: string };
 type Catalog = { version: number; models: CatalogModel[] };
 
-type Live2dLoader = (canvasId: string, modelPath: string) => void;
-
 declare global {
   interface Window {
     initWidget?: (config: {
       waifuPath: string;
-      apiPath?: string;
-      cubism2Path?: string;
-      cubism5Path?: string;
       tools?: string[];
+      logLevel?: string;
     }) => void;
-    loadlive2d?: Live2dLoader;
   }
 }
 
@@ -70,8 +72,6 @@ function ensureScripts(): Promise<void> {
   if (!scriptsPromise) {
     scriptsPromise = Promise.all([
       loadCss(`${WIDGET_BASE}waifu.css`),
-      loadScript(RUNTIME_JS),
-      loadScript(CUBISM5_CORE_JS),
       loadScript(`${WIDGET_BASE}waifu-tips.js`, true),
     ]).then(() => undefined);
   }
@@ -79,34 +79,57 @@ function ensureScripts(): Promise<void> {
 }
 
 function modelUrl(entry: string): string {
-  return `${LIVE2D_BASE}${entry}`;
+  return `${LIVE2D_BASE}${entry.split("/").map(encodeURIComponent).join("/")}`;
 }
 
-/** Cubism sample tapEvent reads these arrays; most demo packs omit them and throw on click. */
-const FALLBACK_HIT_AREAS_CUSTOM = {
-  head_x: [-0.35, 0.6],
-  head_y: [0.19, -0.2],
-  body_x: [-0.3, -0.25],
-  body_y: [0.3, -0.9],
-};
-
-export function fillHitAreasCustom(data: unknown): unknown {
-  if (!data || typeof data !== "object") return data;
-  const rec = data as Record<string, unknown>;
-  if (typeof rec.model !== "string" || !Array.isArray(rec.textures)) return data;
-  if (rec.hit_areas_custom != null) return data;
-  rec.hit_areas_custom = { ...FALLBACK_HIT_AREAS_CUSTOM };
-  return data;
+function waitForId(id: string, timeoutMs = 5000): Promise<HTMLElement> {
+  return new Promise((resolve, reject) => {
+    const hit = document.getElementById(id);
+    if (hit) {
+      resolve(hit);
+      return;
+    }
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      const el = document.getElementById(id);
+      if (el) {
+        window.clearInterval(timer);
+        resolve(el);
+        return;
+      }
+      if (Date.now() - started > timeoutMs) {
+        window.clearInterval(timer);
+        reject(new Error(`#${id} not found`));
+      }
+    }, 40);
+  });
 }
 
-function installHitAreasFallback(): () => void {
-  const original = JSON.parse.bind(JSON);
-  const wrapped = ((text: string, reviver?: (this: unknown, key: string, value: unknown) => unknown) =>
-    fillHitAreasCustom(original(text, reviver as never))) as typeof JSON.parse;
-  JSON.parse = wrapped;
-  return () => {
-    if (JSON.parse === wrapped) JSON.parse = original;
-  };
+function pinLive2dId(engine: L2D): void {
+  const canvas = engine.getCanvas();
+  const existing = document.getElementById("live2d");
+  if (existing && existing !== canvas) existing.removeAttribute("id");
+  canvas.id = "live2d";
+}
+
+/**
+ * Cubism 2 and Cubism 6 cannot share a WebGL context. `l2d.load()` clones the
+ * canvas only when one L2D instance switches versions. destroy()+init() zeros
+ * `currentVersion`, so that clone never runs — leftover GL state draws the next
+ * model's atlas as exploded mesh fragments. Always start from a virgin canvas.
+ */
+function replaceLive2dCanvas(old: HTMLCanvasElement): HTMLCanvasElement {
+  const next = document.createElement("canvas");
+  next.id = "live2d";
+  next.className = old.className;
+  next.style.cssText = old.style.cssText;
+  const size = Math.max(300, Math.round(old.clientWidth) || 300);
+  next.width = size;
+  next.height = size;
+  next.style.width = `${size}px`;
+  next.style.height = `${size}px`;
+  old.parentNode?.replaceChild(next, old);
+  return next;
 }
 
 function removeStockNodes(): void {
@@ -125,8 +148,10 @@ function placeTipsSentinel(): void {
   document.body.appendChild(sentinel);
 }
 
-function loadCatalogModel(loader: Live2dLoader, entry: string): void {
-  loader("live2d", modelUrl(entry));
+function readModelIndex(length: number): number {
+  const raw = parseInt(localStorage.getItem(MODEL_ID_KEY) ?? "0", 10);
+  if (Number.isNaN(raw) || raw < 0 || raw >= length) return 0;
+  return raw;
 }
 
 export async function mountMascotWidget(
@@ -143,39 +168,52 @@ export async function mountMascotWidget(
     throw new Error("catalog.json has no models");
   }
 
-  if (typeof window.initWidget !== "function" || typeof window.loadlive2d !== "function") {
+  if (typeof window.initWidget !== "function") {
     throw new Error("Live2D widget globals missing after script injection");
   }
 
-  const restoreJsonParse = installHitAreasFallback();
-
   removeStockNodes();
   localStorage.removeItem(WAIFU_DISPLAY_KEY);
-
-  let index = 0;
-  const origLoadlive2d = window.loadlive2d.bind(window);
-  window.loadlive2d = (canvasId: string, path: string) => {
-    if (typeof path === "string" && path.includes(`${LIVE2D_BASE}models/`)) {
-      origLoadlive2d(canvasId, path);
-      return;
-    }
-    const entry = models[index]?.entry ?? models[0].entry;
-    origLoadlive2d(canvasId, modelUrl(entry));
-  };
+  localStorage.removeItem(WAIFU_DISABLED_KEY);
 
   window.initWidget({
     waifuPath: `${WIDGET_BASE}waifu-tips.json`,
-    cubism2Path: RUNTIME_JS,
-    cubism5Path: CUBISM5_CORE_JS,
     tools: ["hitokoto", "switch-model", "photo", "info", "quit"],
+    logLevel: "error",
   });
 
   document.getElementById("waifu-toggle")?.setAttribute("hidden", "");
 
-  loadCatalogModel(origLoadlive2d, models[0].entry);
+  let engine: L2D | null = null;
+  let index = readModelIndex(models.length);
+  let loading = false;
 
-  // Capture on document so we run before stock span listeners and so SVG
-  // hits inside the icons still match. stopPropagation keeps waifu-display idle.
+  const loadAt = async (nextIndex: number): Promise<void> => {
+    if (loading) return;
+    loading = true;
+    try {
+      engine?.destroy();
+      engine = null;
+      const stale = (await waitForId("live2d")) as HTMLCanvasElement;
+      const canvas = replaceLive2dCanvas(stale);
+      const next = init(canvas);
+      if (!next) throw new Error("l2d init failed");
+      engine = next;
+      await engine.load({
+        path: modelUrl(models[nextIndex].entry),
+        volume: 0,
+        logLevel: "error",
+      });
+      pinLive2dId(engine);
+      index = nextIndex;
+      localStorage.setItem(MODEL_ID_KEY, String(index));
+    } finally {
+      loading = false;
+    }
+  };
+
+  await loadAt(index);
+
   const onToolClick = (event: Event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -183,8 +221,7 @@ export async function mountMascotWidget(
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      index = (index + 1) % models.length;
-      loadCatalogModel(origLoadlive2d, models[index].entry);
+      void loadAt((index + 1) % models.length);
       return;
     }
     if (target.closest("#waifu-tool-quit")) {
@@ -192,6 +229,7 @@ export async function mountMascotWidget(
       event.stopPropagation();
       event.stopImmediatePropagation();
       localStorage.removeItem(WAIFU_DISPLAY_KEY);
+      localStorage.removeItem(WAIFU_DISABLED_KEY);
       options.onClose();
     }
   };
@@ -203,8 +241,8 @@ export async function mountMascotWidget(
       if (unmounted) return;
       unmounted = true;
       document.removeEventListener("click", onToolClick, true);
-      window.loadlive2d = origLoadlive2d;
-      restoreJsonParse();
+      engine?.destroy();
+      engine = null;
       removeStockNodes();
       placeTipsSentinel();
       localStorage.removeItem(WAIFU_DISPLAY_KEY);
