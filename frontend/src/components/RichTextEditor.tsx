@@ -203,7 +203,10 @@ export default function RichTextEditor({
     ],
     content,
     editable,
-    onCreate: ({ editor }) => onStatsRef.current?.(editor.getText().length),
+    onCreate: ({ editor }) => {
+      onChangeRef.current?.(editor.getHTML());
+      onStatsRef.current?.(editor.getText().length);
+    },
     onUpdate: ({ editor }) => {
       onChangeRef.current?.(editor.getHTML());
       onStatsRef.current?.(editor.getText().length);

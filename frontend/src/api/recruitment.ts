@@ -12,7 +12,7 @@ export interface RecruitmentLanding {
 export const recruitmentApi = {
   landing: () => request("/") as Promise<RecruitmentLanding>,
   updateNotice: (content: string) =>
-    request("/notice/", { method: "PUT", body: JSON.stringify({ content }) }),
+    request("/notice/", { method: "PUT", body: JSON.stringify({ content }) }) as Promise<{ content: string; updated_at: string }>,
   getSchema: () => request("/schema/") as Promise<{ schema: Record<string, unknown>; updated_at: string }>,
   updateSchema: (schema: Record<string, unknown>) =>
     request("/schema/", { method: "PUT", body: JSON.stringify({ schema }) }),

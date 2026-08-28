@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { messagingApi } from "../api/messaging";
-import { onMessagingEvent, onMessagingOpen } from "../api/messagingSocket";
+import { emitMessagingEvent, onMessagingEvent, onMessagingOpen } from "../api/messagingSocket";
 import type { DirectMessage } from "../types/messaging";
 import { withinRetractWindow } from "../types/messaging";
 import type { TaskUser } from "../types/tasks";
@@ -36,6 +36,7 @@ export default function MessageThread({
   const [now, setNow] = useState(Date.now());
   const listRef = useRef<HTMLDivElement>(null);
   const countRef = useRef(0);
+  const pinToBottom = useRef(true);
 
   const mergeLatest = (latest: DirectMessage[]) => {
     const chronological = [...latest].reverse();
@@ -49,8 +50,20 @@ export default function MessageThread({
     });
   };
 
+  const markRead = () =>
+    messagingApi.markRead(conversationId).then(() => {
+      emitMessagingEvent({ event: "unread", payload: { conversation_id: conversationId } });
+    }).catch(() => {});
+
+  useLayoutEffect(() => {
+    if (!autoScroll || loading || !pinToBottom.current) return;
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, loading, autoScroll]);
+
   useEffect(() => {
     let cancelled = false;
+    pinToBottom.current = true;
     setLoading(true);
     setMessages([]);
     setPage(1);
@@ -63,11 +76,10 @@ export default function MessageThread({
         setHasMore(d.next != null);
         countRef.current = d.count;
         onCountChange?.(d.count);
-        if (autoScroll) listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
       })
       .catch(console.error)
       .finally(() => { if (!cancelled) setLoading(false); });
-    messagingApi.markRead(conversationId).catch(() => {});
+    markRead();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
@@ -87,13 +99,15 @@ export default function MessageThread({
         mergeLatest(d.results);
         countRef.current = d.count;
         onCountChange?.(d.count);
-        if (autoScroll) listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
       }).catch(() => {});
     };
     const offOpen = onMessagingOpen(pull);
     const offEv = onMessagingEvent((ev) => {
       if (ev.event !== "dm") return;
-      if (Number(ev.payload?.conversation_id) === conversationId) pull();
+      if (Number(ev.payload?.conversation_id) === conversationId) {
+        pull();
+        markRead();
+      }
     });
     return () => { offOpen(); offEv(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,6 +116,7 @@ export default function MessageThread({
   const loadEarlier = async () => {
     if (loadingMore) return;
     setLoadingMore(true);
+    pinToBottom.current = false;
     const next = page + 1;
     const prevHeight = listRef.current?.scrollHeight ?? 0;
     try {
@@ -126,11 +141,11 @@ export default function MessageThread({
     setError("");
     try {
       const m = await messagingApi.sendMessage(conversationId, input.trim());
+      pinToBottom.current = true;
       setMessages((prev) => [...prev, m]);
       setInput("");
       countRef.current += 1;
       onCountChange?.(countRef.current);
-      if (autoScroll) listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
     } catch (err: any) {
       setError(err?.message || "发送失败");
     } finally {
@@ -150,7 +165,15 @@ export default function MessageThread({
 
   return (
     <>
-      <div className="msg-bubbles" ref={listRef}>
+      <div
+        className="msg-bubbles"
+        ref={listRef}
+        onScroll={() => {
+          const el = listRef.current;
+          if (!el) return;
+          pinToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+      >
         {loading ? (
           <div className="msg-empty">加载中…</div>
         ) : (

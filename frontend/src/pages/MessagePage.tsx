@@ -69,7 +69,7 @@ export default function MessagePage() {
     };
     const offOpen = onMessagingOpen(refresh);
     const offEv = onMessagingEvent((ev) => {
-      if (ev.event === "dm") refresh();
+      if (ev.event === "dm" || ev.event === "unread") refresh();
     });
     return () => { offOpen(); offEv(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps

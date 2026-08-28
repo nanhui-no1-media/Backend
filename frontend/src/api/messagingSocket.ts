@@ -4,7 +4,7 @@
  * 服务端未就绪时连接失败不影响页面——评论 / 私信 / 通知仍走 HTTP。
  */
 
-export type MessagingPushKind = "dm" | "notification" | "comment";
+export type MessagingPushKind = "dm" | "notification" | "comment" | "unread";
 
 export interface MessagingPushEvent {
   event: MessagingPushKind;
@@ -34,7 +34,7 @@ function parseEvent(raw: string): MessagingPushEvent | null {
   try {
     const data = JSON.parse(raw);
     const event = data?.event ?? data?.type;
-    if (event !== "dm" && event !== "notification" && event !== "comment") return null;
+    if (event !== "dm" && event !== "notification" && event !== "comment" && event !== "unread") return null;
     const payload = data?.payload && typeof data.payload === "object" && !Array.isArray(data.payload)
       ? data.payload
       : data;
@@ -140,4 +140,9 @@ export function onMessagingOpen(fn: () => void): Unsub {
 export function onMessagingEvent(fn: (ev: MessagingPushEvent) => void): Unsub {
   eventListeners.add(fn);
   return () => { eventListeners.delete(fn); };
+}
+
+/** 本地发出与 WS 同形的事件（如 mark_read 完成后刷新未读徽标）。 */
+export function emitMessagingEvent(ev: MessagingPushEvent) {
+  eventListeners.forEach((fn) => fn(ev));
 }

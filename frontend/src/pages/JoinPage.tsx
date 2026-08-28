@@ -17,24 +17,40 @@ export default function JoinPage() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [rteKey, setRteKey] = useState(0);
+
+  const applyNotice = (html: string) => {
+    setContent(html);
+    setDraft(html);
+  };
 
   useEffect(() => {
     document.title = "加入社团 · 南汇一中传媒社";
-    recruitmentApi.landing().then((d) => {
-      setContent(d.notice.content || "");
-      setDraft(d.notice.content || "");
-    });
+    recruitmentApi.landing()
+      .then((d) => applyNotice(d.notice.content || ""))
+      .catch(() => {});
     api.me()
       .then((d: any) => setCanEdit(!!d.user?.permissions?.can_edit_about))
       .catch(() => setCanEdit(false));
   }, []);
 
+  const startEdit = () => {
+    setDraft(content);
+    setSaveError("");
+    setRteKey((k) => k + 1);
+    setEditing(true);
+  };
+
   const save = async () => {
     setSaving(true);
+    setSaveError("");
     try {
-      await recruitmentApi.updateNotice(draft);
-      setContent(draft);
+      const saved = await recruitmentApi.updateNotice(draft);
+      applyNotice(saved.content || draft);
       setEditing(false);
+    } catch (e: any) {
+      setSaveError(e?.message || "保存失败");
     } finally {
       setSaving(false);
     }
@@ -54,7 +70,7 @@ export default function JoinPage() {
             {canEdit && !editing && (
               <div style={{ display: "flex", gap: 8 }}>
                 <button className="btn btn-ghost btn-sm" onClick={() => navigate("/join/editor")}>编辑问卷</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setEditing(true)}>编辑公告</button>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={startEdit}>编辑公告</button>
               </div>
             )}
           </div>
@@ -72,15 +88,16 @@ export default function JoinPage() {
           ) : (
             <>
               <RichTextEditor
-                key="e"
+                key={`e-${rteKey}`}
                 content={draft}
                 onChange={setDraft}
                 imageUpload={(f: File) => newsApi.uploadImage(f).then((d) => d.url)}
                 minHeight={280}
               />
+              {saveError && <div className="alert alert-danger" style={{ marginTop: 12 }}>{saveError}</div>}
               <div className="form-actions" style={{ marginTop: 12 }}>
-                <button className="btn btn-ghost" onClick={() => setEditing(false)}>取消</button>
-                <button className="btn btn-primary" disabled={saving} onClick={save}>保存</button>
+                <button className="btn btn-ghost" type="button" onClick={() => { setEditing(false); setSaveError(""); }}>取消</button>
+                <button className="btn btn-primary" type="button" disabled={saving} onClick={save}>{saving ? "保存中…" : "保存"}</button>
               </div>
             </>
           )}
