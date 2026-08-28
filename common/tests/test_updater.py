@@ -32,6 +32,7 @@ from common.updater import (
     UpdaterError,
     UpdaterPaths,
     WindowClosed,
+    apply_now,
     apply_release,
     archive_for_sha,
     archive_sha,
@@ -378,6 +379,30 @@ class UnpackExcludeRollbackTest(SimpleTestCase):
         self.assertEqual((self.root / "app.py").read_text(encoding="utf-8"), "ok\n")
         self.assertEqual(self.paths.applied_file.read_text(encoding="utf-8").strip(), "cccccccccccc")
         self.assertFalse(self.paths.maintenance_flag.exists())
+
+    def test_apply_now_named_sha_uses_that_tarball_not_newest(self):
+        """`--apply-now SHA` installs that already-uploaded package, not GitHub latest."""
+        self._seed_live()
+        named = self._tarball("222222222222", {"app.py": b"named\n"})
+        decoy = self._tarball("ffffffffffff", {"app.py": b"decoy\n"})
+        os.utime(named, (named.stat().st_mtime - 20, named.stat().st_mtime - 20))
+        self.paths.applied_file.write_text("111111111111\n", encoding="utf-8")
+        with (
+            mock.patch("common.updater.load_policy", return_value=_policy()),
+            mock.patch("common.updater.github_token", return_value=""),
+        ):
+            rc = apply_now(
+                self.paths,
+                target="222222222222",
+                run=lambda argv, *, check=True: 0,
+                sleep=lambda _s: None,
+            )
+        self.assertEqual(rc, 0)
+        self.assertEqual((self.root / "app.py").read_text(encoding="utf-8"), "named\n")
+        self.assertEqual(
+            self.paths.applied_file.read_text(encoding="utf-8").strip(), "222222222222"
+        )
+        self.assertTrue(decoy.is_file())
 
     def test_spawned_apply_sighups_parent_instead_of_restart(self):
         self._seed_live()

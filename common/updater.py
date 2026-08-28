@@ -1707,16 +1707,49 @@ def poll_tick(
     return remote
 
 
+def local_archive_for_ref(paths: UpdaterPaths, target: str) -> Path | None:
+    """A complete ``club-*.tar.gz`` already on disk: path, filename, or SHA/tag."""
+    raw = target.strip()
+    if not raw:
+        return None
+    candidate = Path(raw)
+    looks_like_path = (
+        candidate.is_absolute()
+        or raw.endswith(".tar.gz")
+        or ("/" in raw)
+        or ("\\" in raw)
+    )
+    if looks_like_path:
+        probes = [candidate]
+        if not candidate.is_absolute():
+            probes.extend(
+                [
+                    paths.root / candidate,
+                    paths.releases_dir / candidate,
+                    paths.releases_dir / candidate.name,
+                ]
+            )
+        for probe in probes:
+            if is_complete_archive(probe):
+                return probe
+    return archive_for_sha(paths.releases_dir, raw)
+
+
 def apply_now(
     paths: UpdaterPaths | None = None,
     *,
+    target: str | None = None,
     service: str | None = None,
     run: Runner | None = None,
     sleep: SleepFn = time.sleep,
     get_json=None,
     download=None,
 ) -> int:
-    """Manual path: download latest if needed, apply regardless of window."""
+    """Manual path: apply a named local/GitHub package, or GitHub latest.
+
+    ``target`` is a SHA, ``club-…`` tag, or path to an already-uploaded
+    ``club-*.tar.gz``. Empty ``target`` keeps the old “download latest” behaviour.
+    """
     from django.conf import settings as dj_settings
 
     paths = paths or UpdaterPaths.from_root(Path(dj_settings.BASE_DIR))
@@ -1724,13 +1757,55 @@ def apply_now(
     service = service or os.environ.get("SERVICE_NAME", "club")
     policy = load_policy()
     token = github_token()
+    repo = github_repo()
+    want = (target or "").strip() or None
+    if want:
+        try:
+            archive = resolve_rollback_archive(
+                paths,
+                want,
+                token,
+                repo,
+                get_json=get_json,
+                download=download,
+                sleep=sleep,
+            )
+        except UpdaterError:
+            log.exception("could not locate package %s", want)
+            return 1
+        if archive is None:
+            return 1
+        sha = archive_sha(archive)
+        applied = read_applied_sha(paths)
+        if sha and sha == applied:
+            log.info("already on %s", applied)
+            return 0
+        try:
+            with update_lock(paths.lock_file, blocking=True):
+                apply_release(
+                    paths,
+                    archive,
+                    policy,
+                    run=run,
+                    sleep=sleep,
+                    respect_window=False,
+                    service=service,
+                )
+        except ApplyInterrupted as exc:
+            log.warning("--apply-now interrupted (%s)", exc.action)
+            return 130
+        except Exception:
+            log.exception("--apply-now failed")
+            return 1
+        return 0
+
     remote = None
     if token:
         try:
             remote = poll_and_download(
                 paths,
                 token,
-                github_repo(),
+                repo,
                 get_json=get_json,
                 download=download,
                 sleep=sleep,
@@ -1781,10 +1856,10 @@ def resolve_rollback_archive(
 ) -> Path | None:
     """Locate a previous release tarball: local first, then GitHub."""
     if target:
-        want = normalize_sha(target)
-        archive = archive_for_sha(paths.releases_dir, want)
+        archive = local_archive_for_ref(paths, target)
         if archive is not None:
             return archive
+        want = normalize_sha(target)
         if not token:
             log.error("no local tarball for %s and UPDATE_GITHUB_TOKEN is empty", want)
             return None
@@ -1886,8 +1961,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Club GitHub-release updater")
     parser.add_argument(
         "--apply-now",
-        action="store_true",
-        help="download latest if needed and apply immediately (ignore window)",
+        nargs="?",
+        const="",
+        metavar="SHA",
+        help=(
+            "apply immediately (ignore window). "
+            "SHA may be a full hash, 7+ hex prefix, club-… tag, or path to a "
+            "club-*.tar.gz already on disk; omit SHA to download+apply GitHub latest"
+        ),
     )
     parser.add_argument(
         "--rollback",
@@ -1909,11 +1990,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     paths.ensure_dirs()
     service = os.environ.get("SERVICE_NAME", "club")
 
-    if args.apply_now and args.rollback is not None:
+    if args.apply_now is not None and args.rollback is not None:
         log.error("use either --apply-now or --rollback, not both")
         return 2
-    if args.apply_now:
-        return apply_now(paths, service=service)
+    if args.apply_now is not None:
+        target = args.apply_now.strip() or None
+        return apply_now(paths, target=target, service=service)
     if args.rollback is not None:
         target = args.rollback.strip() or None
         return rollback_now(paths, target=target, service=service)

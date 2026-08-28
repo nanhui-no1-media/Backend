@@ -769,6 +769,7 @@ if [ -n "$GENERATED_ADMIN_PASSWORD" ]; then
   echo "          ↑ 随机生成，只显示一次，登录后请立刻修改。"
 fi
 echo "   日志： sudo journalctl -u $SERVICE_NAME -f"
+echo "   更新： sudo -u $APP_USER HOME=$APP_HOME bash -lc 'cd \"$DIR\" && set -a;. ./.env;set +a && .venv/bin/python scripts/updater.py --apply-now [SHA]'"
 echo "   回滚： sudo -u $APP_USER HOME=$APP_HOME bash -lc 'cd \"$DIR\" && set -a;. ./.env;set +a && .venv/bin/python scripts/updater.py --rollback [SHA]'"
 echo
 echo "⚠️  可选收尾："

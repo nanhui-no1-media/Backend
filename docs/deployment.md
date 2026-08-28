@@ -247,6 +247,14 @@ set -a; . ./.env; set +a
 .venv/bin/python scripts/updater.py --apply-now
 ```
 
+已经上传过的包（本地 `backups/releases/`，或 GitHub 上指定 tag）用同一条命令加 SHA / 路径，不会去追 Latest：
+
+```bash
+.venv/bin/python scripts/updater.py --apply-now a03abc2
+.venv/bin/python scripts/updater.py --apply-now club-<fullsha>
+.venv/bin/python scripts/updater.py --apply-now backups/releases/club-<fullsha>.tar.gz
+```
+
 回滚到任意一个以往的 Release（代码树；**不**还原 SQLite，以免丢上线后的数据）。SHA 可以是完整 hash、7 位以上前缀、或 `club-…` 标签；省略 SHA 则用本地最新的非当前包，否则用 GitHub 上当前版本的前一个 Release：
 
 ```bash
