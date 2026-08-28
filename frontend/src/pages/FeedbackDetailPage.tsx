@@ -1,48 +1,32 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
-import { proposalApi } from "../api/proposals";
+import { feedbackApi } from "../api/feedback";
 import { attachmentApi } from "../api/attachments";
 import { api } from "../api/client";
 import {
-  ProposalDetail,
+  type FeedbackDetail,
   FEEDBACK_CATEGORY_LABELS,
-  PROPOSAL_STATUS_LABELS,
-  PROPOSAL_STATUS_BADGE_CLASS,
-} from "../types/proposals";
+  FEEDBACK_STATUS_LABELS,
+  FEEDBACK_STATUS_BADGE,
+} from "../types/feedback";
 import Avatar from "../components/Avatar";
 import AppShell from "../components/AppShell";
 import "../styles/detail.css";
 
-interface CurrentUser {
-  id: number;
-  can_approve_proposals?: boolean;
-  can_change_proposals?: boolean;
-  can_view_feedback?: boolean;
-}
-
-export default function ProposalDetailPage() {
+export default function FeedbackDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-
-  const [proposal, setProposal] = useState<ProposalDetail | null>(null);
+  const [item, setItem] = useState<FeedbackDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [actionLoading, setActionLoading] = useState(false);
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: number; can_view_feedback?: boolean } | null>(null);
   const [attUploading, setAttUploading] = useState(false);
   const [attProgress, setAttProgress] = useState<number | null>(null);
-
-  // 拒绝理由表单（反馈不可打回，仅通过/拒绝）
-  const [showReasonForm, setShowReasonForm] = useState(false);
-  const [reason, setReason] = useState("");
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.me().then((d) => setCurrentUser({
       id: d.user.id,
-      can_approve_proposals: d.user.permissions?.can_approve_proposals,
-      can_change_proposals: d.user.permissions?.can_change_proposals,
       can_view_feedback: d.user.permissions?.can_view_feedback,
     })).catch(() => {});
   }, []);
@@ -50,60 +34,30 @@ export default function ProposalDetailPage() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    proposalApi.get(Number(id))
-      .then(setProposal)
+    feedbackApi.get(Number(id))
+      .then(setItem)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
 
-  const canApproveProposals = !!currentUser?.can_approve_proposals;
-  const canChangeProposals = !!currentUser?.can_change_proposals;
   const canViewFeedback = !!currentUser?.can_view_feedback;
-  const isCreator = !!proposal && !!currentUser && proposal.creator?.id === currentUser.id;
-
-  const handleApprove = async () => {
-    if (!proposal) return;
-    setActionLoading(true);
-    try { setProposal(await proposalApi.approve(proposal.id)); }
-    catch (err: any) { setError(err.message); }
-    finally { setActionLoading(false); }
-  };
-
-  const submitReason = async () => {
-    if (!proposal) return;
-    const r = reason.trim();
-    if (!r) { setError("请填写拒绝理由"); return; }
-    setActionLoading(true);
-    try {
-      setProposal(await proposalApi.reject(proposal.id, r));
-      setShowReasonForm(false);
-      setReason("");
-    } catch (err: any) { setError(err.message); }
-    finally { setActionLoading(false); }
-  };
-
-  const handleWithdraw = async () => {
-    if (!proposal) return;
-    if (!window.confirm("确定撤回此反馈吗？")) return;
-    setActionLoading(true);
-    try { setProposal(await proposalApi.withdraw(proposal.id)); }
-    catch (err: any) { setError(err.message); }
-    finally { setActionLoading(false); }
-  };
+  const isCreator = !!item && !!currentUser && item.creator?.id === currentUser.id;
+  const canDeleteAttachment = canViewFeedback || isCreator;
+  const canUploadAttachment = isCreator && item?.status === "pending";
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !proposal) return;
+    if (!file || !item) return;
     setAttUploading(true);
     setAttProgress(null);
     try {
       const att = await attachmentApi.uploadRouted({
-        parentType: "proposal", parentId: proposal.id, file, onProgress: setAttProgress,
+        parentType: "feedback", parentId: item.id, file, onProgress: setAttProgress,
       });
       if (att) {
-        setProposal({ ...proposal, attachments: [...proposal.attachments, att] });
+        setItem({ ...item, attachments: [...item.attachments, att] });
       } else {
-        setProposal(await proposalApi.get(proposal.id));
+        setItem(await feedbackApi.get(item.id));
       }
     } catch (err: any) { setError(err.message); }
     finally { setAttUploading(false); setAttProgress(null); }
@@ -111,10 +65,10 @@ export default function ProposalDetailPage() {
   };
 
   const handleDeleteAttachment = async (attachmentId: number) => {
-    if (!proposal) return;
+    if (!item) return;
     try {
       await attachmentApi.delete(attachmentId);
-      setProposal({ ...proposal, attachments: proposal.attachments.filter((a) => a.id !== attachmentId) });
+      setItem({ ...item, attachments: item.attachments.filter((a) => a.id !== attachmentId) });
     } catch (err: any) { setError(err.message); }
   };
 
@@ -125,15 +79,10 @@ export default function ProposalDetailPage() {
   };
 
   if (loading) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">加载中...</p></div></AppShell>;
-  if (error && !proposal) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">{error}</p></div></AppShell>;
-  if (!proposal) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">反馈不存在或无权查看</p></div></AppShell>;
+  if (error && !item) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">{error}</p></div></AppShell>;
+  if (!item) return <AppShell><div className="container detail-container detail-body"><p className="empty-text">反馈不存在或无权查看</p></div></AppShell>;
 
-  const p = proposal;
-  const canApprove = canApproveProposals && p.status === "pending_approval";
-  const canWithdraw = isCreator && p.status === "pending_approval";
-  // 附件：反馈 carve-out —— 仅署名创建者 + 待审批可传；删除：创建者或 change_proposal（社长能删不能传）
-  const canDeleteAttachment = canChangeProposals || isCreator;
-  const canUploadAttachment = isCreator && p.status === "pending_approval";
+  const p = item;
 
   return (
     <AppShell>
@@ -149,16 +98,16 @@ export default function ProposalDetailPage() {
           <div className="detail-head-row">
             <div className="detail-head-main">
               <h1 className="detail-title">{p.title}</h1>
-              <span className={"badge " + PROPOSAL_STATUS_BADGE_CLASS[p.status]}>
-                <span className="badge-dot" />{PROPOSAL_STATUS_LABELS[p.status]}
+              <span className={"badge " + FEEDBACK_STATUS_BADGE[p.status]}>
+                <span className="badge-dot" />{FEEDBACK_STATUS_LABELS[p.status]}
               </span>
             </div>
             <div className="detail-head-actions">
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate("/feedback")}>返回列表</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate("/feedback")}>返回</button>
             </div>
           </div>
           <p className="detail-sub">
-            {FEEDBACK_CATEGORY_LABELS[p.feedback_category as keyof typeof FEEDBACK_CATEGORY_LABELS] || "反馈"}
+            {FEEDBACK_CATEGORY_LABELS[p.category] || "反馈"}
             {" · "}提交人 {p.creator ? (p.creator.nickname || p.creator.username) : "匿名"}
             {" · "}{new Date(p.created_at).toLocaleDateString("zh-CN")}
           </p>
@@ -168,54 +117,23 @@ export default function ProposalDetailPage() {
       <div className="container detail-container detail-body">
         {error && <div className="alert alert-danger">{error}</div>}
 
-        {p.status === "rejected" && p.reject_reason && (
-          <div className="alert alert-danger"><b>已拒绝：</b>{p.reject_reason}</div>
-        )}
-
-        {(canApprove || canWithdraw) && (
-          <div className="detail-actions">
-            {canWithdraw && (
-              <button className="btn btn-ghost" onClick={handleWithdraw} disabled={actionLoading}>撤回</button>
-            )}
-            {canApprove && (
-              <>
-                <button className="btn btn-primary" onClick={handleApprove} disabled={actionLoading}>
-                  {actionLoading ? "处理中…" : "通过"}
-                </button>
-                <button className="btn btn-danger" onClick={() => setShowReasonForm(true)} disabled={actionLoading}>拒绝</button>
-              </>
-            )}
-          </div>
-        )}
-
-        {showReasonForm && (
-          <div className="card card-pad detail-section">
-            <h3 className="section-h">拒绝理由</h3>
-            <textarea className="textarea" value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                      placeholder="说明拒绝原因..." rows={3} />
-            <div className="detail-row">
-              <button className="btn btn-primary" onClick={submitReason} disabled={actionLoading}>
-                {actionLoading ? "处理中…" : "确认拒绝"}
-              </button>
-              <button className="btn btn-ghost" onClick={() => { setShowReasonForm(false); setReason(""); }} disabled={actionLoading}>取消</button>
-            </div>
-          </div>
+        {p.status === "closed" && p.close_note && (
+          <div className="alert alert-success"><b>了结说明：</b>{p.close_note}</div>
         )}
 
         <div className="card card-pad detail-section">
           <h3 className="section-h">基本信息</h3>
           <div className="meta-grid">
-            <div className="meta-cell"><span className="meta-k">反馈类别</span><span className="meta-v">{FEEDBACK_CATEGORY_LABELS[p.feedback_category as keyof typeof FEEDBACK_CATEGORY_LABELS] || "-"}</span></div>
+            <div className="meta-cell"><span className="meta-k">反馈类别</span><span className="meta-v">{FEEDBACK_CATEGORY_LABELS[p.category] || "-"}</span></div>
             <div className="meta-cell"><span className="meta-k">提交人</span><span className="meta-v">{p.creator ? (p.creator.nickname || p.creator.username) : "匿名"}</span></div>
             {p.contact && canViewFeedback && (
               <div className="meta-cell"><span className="meta-k">联系方式</span><span className="meta-v">{p.contact}</span></div>
             )}
             <div className="meta-cell"><span className="meta-k">提交时间</span><span className="meta-v">{new Date(p.created_at).toLocaleString("zh-CN")}</span></div>
-            {p.reviewed_by && (
+            {p.closed_by && (
               <div className="meta-cell">
-                <span className="meta-k">审核人</span>
-                <span className="meta-v user-with-avatar"><Link to={`/u/${p.reviewed_by.id}`}><Avatar user={p.reviewed_by} size="sm" /></Link>{p.reviewed_by.nickname || p.reviewed_by.username}</span>
+                <span className="meta-k">了结人</span>
+                <span className="meta-v user-with-avatar"><Link to={`/u/${p.closed_by.id}`}><Avatar user={p.closed_by} size="sm" /></Link>{p.closed_by.nickname || p.closed_by.username}</span>
               </div>
             )}
           </div>

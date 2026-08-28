@@ -7,6 +7,7 @@ import { useSitePolicy } from "../api/sitePolicy";
 import { useEmbedMode } from "../embed";
 import { useLoginModal } from "./LoginModalProvider";
 import { highlightMentions, MentionTextarea } from "./MentionField";
+import ReportButton from "./ReportButton";
 import Avatar from "./Avatar";
 import type { Comment, CommentHost, CommentThread, ThreadStatus } from "../types/messaging";
 import { THREAD_STATUS_LABELS, hostQuery, withinRetractWindow } from "../types/messaging";
@@ -68,6 +69,7 @@ function CommentItem({
   const showRetract = isMine && !gone && leaf && withinRetractWindow(comment.created_at, now);
   const showDelete = canManage && !comment.deleted_at;
   const showReply = canReply && depth < maxDepth && !comment.retracted_at;
+  const showReport = !gone && !isMine;
 
   return (
     <div className={"comment-item" + (depth > 1 ? " is-nested" : "")}>
@@ -79,7 +81,7 @@ function CommentItem({
       <div className={"comment-body" + (gone ? " is-gone" : "")}>
         {gone ? body : renderBody(body)}
       </div>
-      {(showReply || showRetract || showDelete) && (
+      {(showReply || showRetract || showDelete || showReport) && (
         <div className="comment-actions">
           {showReply && (
             <button className="btn btn-ghost" type="button" onClick={() => onReply(comment)}>回复</button>
@@ -89,6 +91,9 @@ function CommentItem({
           )}
           {showDelete && (
             <button className="btn btn-ghost" type="button" disabled={busyId === comment.id} onClick={() => onDelete(comment)}>删除</button>
+          )}
+          {showReport && (
+            <ReportButton targetType="comment" targetId={comment.id} ownerId={comment.author.id} compact />
           )}
         </div>
       )}

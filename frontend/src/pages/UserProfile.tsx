@@ -14,6 +14,7 @@ import ContentListPanel from "../components/profile/ContentListPanel";
 import PermissionsPanel from "../components/profile/PermissionsPanel";
 import VerificationPanel from "../components/profile/VerificationPanel";
 import MuteUserPanel from "../components/profile/MuteUserPanel";
+import ReportButton from "../components/ReportButton";
 import { messagingApi } from "../api/messaging";
 import type { UserProfileData } from "../types/profile";
 import "../styles/profile.css";
@@ -26,7 +27,7 @@ const SELF_TABS = [
   { key: "news", label: "我的新闻", divider: true },
   { key: "activities", label: "我的活动" },
   { key: "tutorials", label: "我的教程" },
-  { key: "proposals", label: "我的申报" },
+  { key: "feedback", label: "我的反馈" },
   { key: "tasks", label: "我的任务" },
   { key: "permissions", label: "我的权限", divider: true },
 ];
@@ -93,7 +94,6 @@ export default function UserProfile() {
         { key: "news", label: "ta 的新闻" },
         { key: "activities", label: "ta 的活动" },
         { key: "tutorials", label: "ta 的教程" },
-        { key: "proposals", label: "ta 的申报" },
         ...(isAdmin ? [{ key: "permissions", label: "权限" }] : []),
       ];
 
@@ -142,7 +142,7 @@ export default function UserProfile() {
               {active === "news" && <ContentListPanel userId={uid} type="news" selfView />}
               {active === "activities" && <ContentListPanel userId={uid} type="activities" selfView />}
               {active === "tutorials" && <ContentListPanel userId={uid} type="tutorials" selfView />}
-              {active === "proposals" && <ContentListPanel userId={uid} type="proposals" selfView />}
+              {active === "feedback" && <ContentListPanel userId={uid} type="feedback" selfView />}
               {active === "tasks" && <ContentListPanel userId={uid} type="tasks" selfView />}
               {active === "permissions" && <PermissionsPanel profile={profile} />}
             </div>
@@ -152,18 +152,18 @@ export default function UserProfile() {
             <ProfileTabs tabs={tabs} active={active} onPick={setTab} />
             <div className="profile-panel">
               {canDm && (
-                <div style={{ marginBottom: "var(--s-4)" }}>
+                <div style={{ marginBottom: "var(--s-4)", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
                   {dmError && <div className="alert alert-danger" style={{ marginBottom: 8 }}><span>{dmError}</span></div>}
                   <button className="btn btn-secondary btn-sm" type="button" onClick={startDm} disabled={dmBusy}>
                     {dmBusy ? "打开中…" : "发私信"}
                   </button>
+                  <ReportButton targetType="user" targetId={uid} isOwn={false} compact />
                 </div>
               )}
               {canMute && <MuteUserPanel userId={uid} />}
               {active === "news" && <ContentListPanel userId={uid} type="news" selfView={false} />}
               {active === "activities" && <ContentListPanel userId={uid} type="activities" selfView={false} />}
               {active === "tutorials" && <ContentListPanel userId={uid} type="tutorials" selfView={false} />}
-              {active === "proposals" && <ContentListPanel userId={uid} type="proposals" selfView={false} />}
               {active === "permissions" && <PermissionsPanel profile={profile} />}
             </div>
           </div>

@@ -2,7 +2,7 @@
 
 单一接缝：HTTP API（``POST /attachments/``、``DELETE /attachments/{id}/``）。
 只测外部行为（状态码、响应体、``refresh_from_db`` 后的模型状态、磁盘文件存在性），
-不测信号/校验函数的内部实现。风格仿 ``tasks/tests.py`` / ``proposals/tests.py``。
+不测信号/校验函数的内部实现。风格仿 ``tasks/tests.py`` / ``reviews/tests_feedback.py``。
 
 所有用例经 ``_AttachmentTestCase`` 把 ``MEDIA_ROOT`` 重定向到临时目录，并在结束时兜底
 清理真实 ``media/attachments/``（Django 可能缓存 FileField 存储、使 override 不生效）。
@@ -22,14 +22,14 @@ from rest_framework.test import APIClient
 
 from accounts.test_helpers import grant_verification
 from common.policy import SitePolicy
-from proposals.models import Proposal
+from reviews.models import Feedback
 from tasks.models import Task
 
 from .models import Attachment, TusUpload
 
 
 def make_president(user):
-    """加入「社长」组：已含 manage_tasks / change_proposal 等管理权限。"""
+    """加入「社长」组：已含 manage_tasks / view_feedback 等管理权限。"""
     group, _ = Group.objects.get_or_create(name="社长")
     user.groups.add(group)
     return user
@@ -129,16 +129,16 @@ class FeedbackUploadPermissionTest(_AttachmentTestCase):
         self.outsider = User.objects.create_user(username="outsider", password="x")
         self.president = make_president(User.objects.create_user(username="pres", password="x"))
         self.client = APIClient()
-        self.feedback = Proposal.objects.create(
-            proposal_type="feedback", status="pending_approval",
-            title="f", feedback_category="report", creator=self.creator,
+        self.feedback = Feedback.objects.create(
+            category="complaint", status="pending",
+            title="f", creator=self.creator,
         )
 
     def _post(self, user, proposal=None):
         self.client.force_authenticate(user) # pyright: ignore[reportAttributeAccessIssue]
         return self.client.post(
             "/attachments/",
-            {"file": upload(), "proposal_id": (proposal or self.feedback).pk},
+            {"file": upload(), "feedback_id": (proposal or self.feedback).pk},
             format="multipart",
         )
 
@@ -151,19 +151,8 @@ class FeedbackUploadPermissionTest(_AttachmentTestCase):
     def test_outsider_cannot_upload_to_feedback(self):
         self.assertEqual(self._post(self.outsider).status_code, 403)
 
-    def test_upload_locked_after_feedback_approved(self):
-        self.feedback.status = "approved"
-        self.feedback.save()
-        self.assertEqual(self._post(self.creator).status_code, 403)
-
-    def test_upload_locked_after_feedback_rejected(self):
-        self.feedback.status = "rejected"
-        self.feedback.save()
-        self.assertEqual(self._post(self.creator).status_code, 403)
-
-    def test_upload_locked_after_feedback_withdrawn(self):
-        # 仅 pending_approval 期间可传；其余状态（含 withdrawn）一律锁死
-        self.feedback.status = "withdrawn"
+    def test_upload_locked_after_feedback_closed(self):
+        self.feedback.status = "closed"
         self.feedback.save()
         self.assertEqual(self._post(self.creator).status_code, 403)
 
@@ -175,14 +164,14 @@ class FeedbackQuotaTest(_AttachmentTestCase):
         self.creator = User.objects.create_user(username="creator", password="x")
         self.client = APIClient()
         self.client.force_authenticate(self.creator)
-        self.feedback = Proposal.objects.create(
-            proposal_type="feedback", status="pending_approval",
+        self.feedback = Feedback.objects.create(
+            category="suggestion", status="pending",
             title="f", creator=self.creator,
         )
 
     def _post(self):
         return self.client.post(
-            "/attachments/", {"file": upload(), "proposal_id": self.feedback.pk}, format="multipart",
+            "/attachments/", {"file": upload(), "feedback_id": self.feedback.pk}, format="multipart",
         )
 
     def test_count_cap_rejects_extra(self):
@@ -204,14 +193,14 @@ class DeletePermissionFeedbackTest(_AttachmentTestCase):
         self.president = make_president(User.objects.create_user(username="pres", password="x"))
         self.outsider = User.objects.create_user(username="outsider", password="x")
         self.client = APIClient()
-        self.feedback = Proposal.objects.create(
-            proposal_type="feedback", status="pending_approval",
+        self.feedback = Feedback.objects.create(
+            category="suggestion", status="pending",
             title="f", creator=self.creator,
         )
         # creator 在待审期上传一张
         self.client.force_authenticate(self.creator)
         resp = self.client.post(
-            "/attachments/", {"file": upload(), "proposal_id": self.feedback.pk}, format="multipart",
+            "/attachments/", {"file": upload(), "feedback_id": self.feedback.pk}, format="multipart",
         )
         self.attachment_id = resp.data["id"] # pyright: ignore[reportAttributeAccessIssue]
 
@@ -232,14 +221,14 @@ class ParentValidationTest(_AttachmentTestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.creator)
         self.task = Task.objects.create(title="t", creator=self.creator, status="pending")
-        self.prop = Proposal.objects.create(
-            proposal_type="feedback", status="pending_approval", title="p", creator=self.creator,
+        self.prop = Feedback.objects.create(
+            category="suggestion", status="pending", title="p", creator=self.creator,
         )
 
     def test_both_parents_rejected(self):  # 故事 #20
         resp = self.client.post(
             "/attachments/",
-            {"file": upload(), "task_id": self.task.pk, "proposal_id": self.prop.pk},
+            {"file": upload(), "task_id": self.task.pk, "feedback_id": self.prop.pk},
             format="multipart",
         )
         self.assertEqual(resp.status_code, 400)
@@ -373,8 +362,8 @@ class CascadeReclaimTest(_AttachmentTestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.creator)
         self.task = Task.objects.create(title="t", creator=self.creator, status="pending")
-        self.prop = Proposal.objects.create(
-            proposal_type="feedback", status="pending_approval", title="p", creator=self.creator,
+        self.prop = Feedback.objects.create(
+            category="suggestion", status="pending", title="p", creator=self.creator,
         )
 
     def _upload_and_capture(self, parent_key, parent_pk):
@@ -396,12 +385,11 @@ class CascadeReclaimTest(_AttachmentTestCase):
         self.assertFalse(Attachment.objects.filter(pk=att_id).exists())
         self.assertFalse(storage.exists(name))
 
-    def test_deleting_proposal_removes_attachment_and_file(self):  # 故事 #16
-        att_id, storage, name = self._upload_and_capture("proposal_id", self.prop.pk)
+    def test_deleting_feedback_removes_attachment_and_file(self):  # 故事 #16
+        att_id, storage, name = self._upload_and_capture("feedback_id", self.prop.pk)
         self.assertTrue(storage.exists(name))
 
-        resp = self.client.delete(f"/proposals/proposals/{self.prop.pk}/")  # creator 删 returned 申报
-        self.assertEqual(resp.status_code, 204)
+        self.prop.delete()
         self.assertFalse(Attachment.objects.filter(pk=att_id).exists())
         self.assertFalse(storage.exists(name))
 
@@ -421,8 +409,8 @@ class ParentDetailRendersAttachmentsTest(_AttachmentTestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.creator)
         self.task = Task.objects.create(title="t", creator=self.creator, status="pending")
-        self.prop = Proposal.objects.create(
-            proposal_type="feedback", status="pending_approval", title="p", creator=self.creator,
+        self.prop = Feedback.objects.create(
+            category="suggestion", status="pending", title="p", creator=self.creator,
         )
 
     def test_task_detail_inlines_attachments(self):  # 故事 #23
@@ -444,16 +432,16 @@ class ParentDetailRendersAttachmentsTest(_AttachmentTestCase):
         self.assertEqual(attachments[0]["uploaded_by"]["username"], "creator")
         self.assertIn("file_url", attachments[0])
 
-    def test_proposal_detail_inlines_attachments(self):  # 故事 #24
+    def test_feedback_detail_inlines_attachments(self):  # 故事 #24
         resp = self.client.post(
             "/attachments/",
-            {"file": upload("a.pdf", b"x", "application/pdf"), "proposal_id": self.prop.pk},
+            {"file": upload("a.pdf", b"x", "application/pdf"), "feedback_id": self.prop.pk},
             format="multipart",
         )
         self.assertEqual(resp.status_code, 201)
         att_id = resp.data["id"] # pyright: ignore[reportAttributeAccessIssue]
 
-        resp = self.client.get(f"/proposals/proposals/{self.prop.pk}/")
+        resp = self.client.get(f"/reviews/feedbacks/{self.prop.pk}/")
         self.assertEqual(resp.status_code, 200)
         attachments = resp.data["attachments"] # pyright: ignore[reportAttributeAccessIssue]
         self.assertEqual(len(attachments), 1)
@@ -473,9 +461,9 @@ class TusUploadTest(_AttachmentTestCase):
         self.creator = User.objects.create_user(username="creator", password="x")
         self.outsider = User.objects.create_user(username="outsider", password="x")
         self.president = make_president(User.objects.create_user(username="pres", password="x"))
-        self.feedback = Proposal.objects.create(
-            proposal_type="feedback", status="pending_approval",
-            title="f", feedback_category="report", creator=self.creator,
+        self.feedback = Feedback.objects.create(
+            category="complaint", status="pending",
+            title="f", creator=self.creator,
         )
         self.client = APIClient()
 
@@ -484,7 +472,7 @@ class TusUploadTest(_AttachmentTestCase):
         super().tearDown()
 
     def _create(self, user, *, length, filetype="image/png", filename="t.png",
-                parent_type="proposal", parent_id=None):
+                parent_type="feedback", parent_id=None):
         self.client.force_authenticate(user)  # pyright: ignore[reportAttributeAccessIssue]
         meta = tus_meta(
             filename=filename, filetype=filetype, parent_type=parent_type,
@@ -511,7 +499,7 @@ class TusUploadTest(_AttachmentTestCase):
         resp2 = self._patch(location, chunk)
         self.assertEqual(resp2.status_code, 204)
 
-        att = Attachment.objects.get(proposal=self.feedback)
+        att = Attachment.objects.get(feedback=self.feedback)
         self.assertEqual(att.uploaded_by, self.creator)
         self.assertEqual(att.file_type, "image")
         self.assertEqual(att.file_size, len(chunk))
@@ -526,7 +514,7 @@ class TusUploadTest(_AttachmentTestCase):
         resp = self.client.post(
             "/uploads/files/", content_type="application/octet-stream",
             HTTP_TUS_RESUMABLE="1.0.0", HTTP_UPLOAD_LENGTH="4",
-            HTTP_UPLOAD_METADATA=tus_meta(parent_type="proposal", parent_id=self.feedback.pk),
+            HTTP_UPLOAD_METADATA=tus_meta(parent_type="feedback", parent_id=self.feedback.pk),
         )
         self.assertEqual(resp.status_code, 403)
 
@@ -552,16 +540,16 @@ class TusUploadTest(_AttachmentTestCase):
         resp = self._create(self.creator, length=60 * 1024 * 1024, filetype="application/pdf")
         self.assertEqual(resp.status_code, 400)
 
-    def test_completion_reverify_rejects_when_feedback_approved(self):
-        # 创建时 pending（通过）；打补丁前反馈被审结 → 完成时复核失败，不建附件
+    def test_completion_reverify_rejects_when_feedback_closed(self):
+        # 创建时 pending（通过）；打补丁前反馈被了结 → 完成时复核失败，不建附件
         chunk = b"x" * 8
         resp = self._create(self.creator, length=len(chunk), filetype="image/png")
         self.assertEqual(resp.status_code, 201)
-        self.feedback.status = "approved"
+        self.feedback.status = "closed"
         self.feedback.save()
         resp2 = self._patch(resp.get("Location") or resp["Location"], chunk)  # type: ignore[attr-defined]
         self.assertEqual(resp2.status_code, 204)
-        self.assertFalse(Attachment.objects.filter(proposal=self.feedback).exists())
+        self.assertFalse(Attachment.objects.filter(feedback=self.feedback).exists())
 
     def test_tus_quota_enforced_at_create(self):
         with mock.patch("attachments.validation.FEEDBACK_MAX_ATTACHMENTS", 0):
@@ -580,18 +568,18 @@ class TusUploadTest(_AttachmentTestCase):
         self.assertEqual(att.uploaded_by, self.creator)
         self.assertEqual(att.file_type, "image")
 
-    def test_tus_upload_to_feedback_proposal_creates_attachment(self):  # 反馈申报父级路径
-        prop = Proposal.objects.create(
-            proposal_type="feedback", status="pending_approval", title="p", creator=self.creator,
+    def test_tus_upload_to_feedback_creates_attachment(self):  # 反馈父级路径
+        fb = Feedback.objects.create(
+            category="suggestion", status="pending", title="p", creator=self.creator,
         )
         chunk = b"prop-bytes"
         resp = self._create(
             self.creator, length=len(chunk), filetype="image/png",
-            parent_type="proposal", parent_id=prop.pk,
+            parent_type="feedback", parent_id=fb.pk,
         )
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(self._patch(resp.get("Location") or resp["Location"], chunk).status_code, 204)  # type: ignore[attr-defined]
-        att = Attachment.objects.get(proposal=prop)
+        att = Attachment.objects.get(feedback=fb)
         self.assertEqual(att.uploaded_by, self.creator)
         self.assertEqual(att.file_type, "image")
 
@@ -621,7 +609,7 @@ class TusUploadTest(_AttachmentTestCase):
 
 # ── news 父级（#新闻视频）──
 class AttachmentNewsParentTest(_AttachmentTestCase):
-    """Attachment 可挂 news 父级；task/proposal/news 三选一。"""
+    """Attachment 可挂 news 父级；task/feedback/news 三选一。"""
 
     def setUp(self):
         super().setUp()

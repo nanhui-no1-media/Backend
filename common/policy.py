@@ -22,6 +22,7 @@ DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR = 5
 DEFAULT_LOGIN_PER_IP_PER_HOUR = 30
 DEFAULT_LOGIN_PER_USERNAME_PER_HOUR = 10
 DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY = 10
+DEFAULT_REPORTS_PER_USER_PER_DAY = 10
 DEFAULT_SYNC_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 DEFAULT_TUS_MEDIA_MAX_BYTES = 500 * 1024 * 1024
 DEFAULT_AUTO_UPDATE_ENABLED = True
@@ -45,6 +46,7 @@ class SitePolicy:
     login_per_ip_per_hour: int
     login_per_username_per_hour: int
     feedback_anon_per_ip_per_day: int
+    reports_per_user_per_day: int
     sync_upload_max_bytes: int
     tus_media_max_bytes: int
     auto_update_enabled: bool
@@ -68,6 +70,7 @@ class SitePolicy:
             login_per_ip_per_hour=DEFAULT_LOGIN_PER_IP_PER_HOUR,
             login_per_username_per_hour=DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
             feedback_anon_per_ip_per_day=DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
+            reports_per_user_per_day=DEFAULT_REPORTS_PER_USER_PER_DAY,
             sync_upload_max_bytes=DEFAULT_SYNC_UPLOAD_MAX_BYTES,
             tus_media_max_bytes=DEFAULT_TUS_MEDIA_MAX_BYTES,
             auto_update_enabled=DEFAULT_AUTO_UPDATE_ENABLED,
@@ -103,6 +106,9 @@ def _snapshot(row) -> SitePolicy:
         login_per_ip_per_hour=row.login_per_ip_per_hour,
         login_per_username_per_hour=row.login_per_username_per_hour,
         feedback_anon_per_ip_per_day=row.feedback_anon_per_ip_per_day,
+        reports_per_user_per_day=getattr(
+            row, "reports_per_user_per_day", DEFAULT_REPORTS_PER_USER_PER_DAY,
+        ),
         sync_upload_max_bytes=row.sync_upload_max_bytes,
         tus_media_max_bytes=row.tus_media_max_bytes,
         auto_update_enabled=row.auto_update_enabled,

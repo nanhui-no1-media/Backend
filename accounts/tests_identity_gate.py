@@ -2,8 +2,8 @@
 
 未验证 = 无 approved Verification 行（访客）；已验证 = 有一条 approved 通道（用户）。
 
-URL 前缀注意：config 把各 app 挂在 `tasks/` `proposals/` `messaging/` 下，各 app 路由器又
-注册同名 resource，故为 `/tasks/tasks/`、`/proposals/proposals/`、`/messaging/conversations/`。
+URL 前缀注意：config 把各 app 挂在 `tasks/` `reviews/` `messaging/` 下，各 app 路由器又
+注册同名 resource，故为 `/tasks/tasks/`、`/reviews/feedbacks/`、`/messaging/conversations/`。
 用 APIClient.force_authenticate（与既有 tests 一致，绕过 CSRF，仍走 DRF 权限链）。
 """
 import json
@@ -16,11 +16,11 @@ from rest_framework.test import APIClient
 
 from accounts.test_helpers import grant_verification
 from messaging.models import Conversation
-from proposals.models import Proposal
 from tasks.models import Task
 
 TASKS = "/tasks/tasks/"
-PROPOSALS = "/proposals/proposals/"
+FEEDBACK_SUBMIT = "/reviews/feedbacks/submit/"
+REPORTS = "/reviews/reports/"
 CONV = "/messaging/conversations/"
 
 
@@ -120,29 +120,18 @@ class MessagingGateTest(TestCase):
             self.assertEqual(c.get(f"{CONV}{action}/").status_code, 404)
 
 
-class ProposalsGateTest(TestCase):
+class FeedbackAndReportGateTest(TestCase):
     def setUp(self):
         self.tier2 = make_unverified("tier2")
         self.tier3 = make_verified("tier3")
-        self.creator = make_verified("pcreator")
-
-    def test_tier2_create_proposal_blocked(self):
-        resp = _post(_client(self.tier2), PROPOSALS, {"title": "x", "proposal_type": "feedback"})
-        self.assertEqual(resp.status_code, 403)
-
-    def test_tier2_withdraw_blocked(self):
-        # tier2 自己的反馈也撤不了（gate 先于 owner 校验）
-        mine = Proposal.objects.create(
-            title="mine", proposal_type="feedback", status="pending_approval", creator=self.tier2,
-        )
-        resp = _post(_client(self.tier2), f"{PROPOSALS}{mine.id}/withdraw/")
-        self.assertEqual(resp.status_code, 403)
-
-    def test_tier2_list_proposals_unaffected(self):
-        self.assertEqual(_client(self.tier2).get(PROPOSALS).status_code, 200)
 
     def test_submit_feedback_still_anonymous(self):
-        # submit_feedback 故意保留 AllowAny（匿名举报通道），不被身份门槛影响
-        c = APIClient()  # 不认证
-        resp = _post(c, f"{PROPOSALS}submit_feedback/", {"title": "匿名举报", "description": "..."})
-        self.assertNotEqual(resp.status_code, 403)
+        c = APIClient()
+        resp = _post(c, FEEDBACK_SUBMIT, {"title": "匿名", "description": "...", "category": "suggestion"})
+        self.assertEqual(resp.status_code, 201)
+
+    def test_unverified_cannot_file_report(self):
+        resp = _post(_client(self.tier2), REPORTS, {
+            "target_type": "user", "target_id": self.tier3.id, "reason": "x",
+        })
+        self.assertEqual(resp.status_code, 403)

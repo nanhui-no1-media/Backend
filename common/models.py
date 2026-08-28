@@ -6,6 +6,7 @@ from .policy import (
     DEFAULT_COMMENT_MAX_DEPTH,
     DEFAULT_CONTENT_REVIEW_ENABLED,
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
+    DEFAULT_REPORTS_PER_USER_PER_DAY,
     DEFAULT_LOGIN_PER_IP_PER_HOUR,
     DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
@@ -68,6 +69,12 @@ class SiteSettings(models.Model):
     feedback_anon_per_ip_per_day = models.PositiveIntegerField(
         "每 IP 每日匿名反馈次数",
         default=DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
+    )
+    reports_per_user_per_day = models.PositiveIntegerField(
+        "每用户每日举报次数",
+        default=DEFAULT_REPORTS_PER_USER_PER_DAY,
+        validators=[MinValueValidator(1)],
+        help_text="已验证成员提交举报的日上限。",
     )
     sync_upload_max_bytes = models.PositiveBigIntegerField(
         "同步上传单文件上限（字节）",

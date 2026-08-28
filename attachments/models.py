@@ -1,6 +1,6 @@
 """统一附件模型。
 
-一张表可挂在任务、申报或新闻上（三个可空外键，CASCADE），用 DB CheckConstraint
+一张表可挂在任务、意见反馈或新闻上（三个可空外键，CASCADE），用 DB CheckConstraint
 强制「恰好一个父级」。删除父级时 CASCADE 连带删除附件行，再由 post_delete
 信号（见 signals.py）同步删除磁盘文件——自动回收，无需定时任务。
 
@@ -25,7 +25,7 @@ def attachment_upload_path(instance, filename):
 
 
 class Attachment(models.Model):
-    """统一附件：恰好挂在一个父级（任务、申报或新闻）上。"""
+    """统一附件：恰好挂在一个父级（任务、意见反馈或新闻）上。"""
 
     FILE_TYPE_CHOICES = [
         ("image", "图片"),
@@ -43,9 +43,9 @@ class Attachment(models.Model):
         "tasks.Task", on_delete=models.CASCADE,
         null=True, blank=True, related_name="attachments", verbose_name="任务",
     )
-    proposal = models.ForeignKey(
-        "proposals.Proposal", on_delete=models.CASCADE,
-        null=True, blank=True, related_name="attachments", verbose_name="申报",
+    feedback = models.ForeignKey(
+        "reviews.Feedback", on_delete=models.CASCADE,
+        null=True, blank=True, related_name="attachments", verbose_name="意见反馈",
     )
     news = models.ForeignKey(
         "news.News", on_delete=models.CASCADE,
@@ -72,15 +72,15 @@ class Attachment(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    # 恰好一个父级：任务 / 申报 / 新闻 / 作品(征集) / 展品(展示)
-                    models.Q(task__isnull=False, proposal__isnull=True, news__isnull=True, submission__isnull=True, exhibit__isnull=True)
-                    | models.Q(task__isnull=True, proposal__isnull=False, news__isnull=True, submission__isnull=True, exhibit__isnull=True)
-                    | models.Q(task__isnull=True, proposal__isnull=True, news__isnull=False, submission__isnull=True, exhibit__isnull=True)
-                    | models.Q(task__isnull=True, proposal__isnull=True, news__isnull=True, submission__isnull=False, exhibit__isnull=True)
-                    | models.Q(task__isnull=True, proposal__isnull=True, news__isnull=True, submission__isnull=True, exhibit__isnull=False)
+                    # 恰好一个父级：任务 / 意见反馈 / 新闻 / 作品(征集) / 展品(展示)
+                    models.Q(task__isnull=False, feedback__isnull=True, news__isnull=True, submission__isnull=True, exhibit__isnull=True)
+                    | models.Q(task__isnull=True, feedback__isnull=False, news__isnull=True, submission__isnull=True, exhibit__isnull=True)
+                    | models.Q(task__isnull=True, feedback__isnull=True, news__isnull=False, submission__isnull=True, exhibit__isnull=True)
+                    | models.Q(task__isnull=True, feedback__isnull=True, news__isnull=True, submission__isnull=False, exhibit__isnull=True)
+                    | models.Q(task__isnull=True, feedback__isnull=True, news__isnull=True, submission__isnull=True, exhibit__isnull=False)
                 ),
                 name="attachment_exactly_one_parent",
-                violation_error_message="附件必须且只能挂在一个父级（任务/申报/新闻/作品/展品）上。",
+                violation_error_message="附件必须且只能挂在一个父级（任务/意见反馈/新闻/作品/展品）上。",
             ),
         ]
 

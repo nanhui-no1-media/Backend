@@ -13,6 +13,7 @@ from common.policy import (
     DEFAULT_LOGIN_PER_IP_PER_HOUR,
     DEFAULT_LOGIN_PER_USERNAME_PER_HOUR,
     DEFAULT_REGISTER_PER_IP_PER_DAY,
+    DEFAULT_REPORTS_PER_USER_PER_DAY,
     DEFAULT_RESEND_VERIFICATION_PER_IP_PER_HOUR,
     DEFAULT_SYNC_UPLOAD_MAX_BYTES,
     DEFAULT_TUS_MEDIA_MAX_BYTES,
@@ -51,6 +52,7 @@ class SitePolicyDefaultsTest(TestCase):
         self.assertEqual(p.login_per_ip_per_hour, DEFAULT_LOGIN_PER_IP_PER_HOUR)
         self.assertEqual(p.login_per_username_per_hour, DEFAULT_LOGIN_PER_USERNAME_PER_HOUR)
         self.assertEqual(p.feedback_anon_per_ip_per_day, DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY)
+        self.assertEqual(p.reports_per_user_per_day, DEFAULT_REPORTS_PER_USER_PER_DAY)
         self.assertEqual(p.sync_upload_max_bytes, DEFAULT_SYNC_UPLOAD_MAX_BYTES)
         self.assertEqual(p.tus_media_max_bytes, DEFAULT_TUS_MEDIA_MAX_BYTES)
         self.assertEqual(p.auto_update_enabled, DEFAULT_AUTO_UPDATE_ENABLED)
@@ -125,6 +127,7 @@ class SitePolicyDefaultsTest(TestCase):
                 "login_per_ip_per_hour",
                 "login_per_username_per_hour",
                 "feedback_anon_per_ip_per_day",
+                "reports_per_user_per_day",
             ),
         )
 
@@ -180,6 +183,7 @@ class SitePolicyPublicGetTest(TestCase):
         self.assertEqual(data["login_per_ip_per_hour"], 30)
         self.assertEqual(data["login_per_username_per_hour"], 10)
         self.assertEqual(data["feedback_anon_per_ip_per_day"], 10)
+        self.assertEqual(data["reports_per_user_per_day"], 10)
         self.assertEqual(data["sync_upload_max_bytes"], 50 * 1024 * 1024)
         self.assertEqual(data["tus_media_max_bytes"], 500 * 1024 * 1024)
         self.assertEqual(data["auto_update_enabled"], True)

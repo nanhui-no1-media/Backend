@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import Review
+from .models import Feedback, ReportCase, Review
 
 _TARGET_HASH = (
     ("news_id", "/news/{}"),
@@ -50,3 +50,19 @@ class ReviewAdmin(admin.ModelAdmin):
             src,
             src,
         )
+
+
+@admin.register(Feedback)
+class FeedbackAdmin(admin.ModelAdmin):
+    list_display = ["id", "title", "category", "status", "creator", "closed_by", "created_at"]
+    list_filter = ["status", "category"]
+    search_fields = ["title", "description"]
+    readonly_fields = ["created_at", "updated_at", "closed_at"]
+
+
+@admin.register(ReportCase)
+class ReportCaseAdmin(admin.ModelAdmin):
+    list_display = ["id", "status", "news", "activity", "tutorial", "comment", "reported_user", "resolved_by", "created_at"]
+    list_filter = ["status"]
+    search_fields = ["resolution_comment"]
+    readonly_fields = ["created_at", "updated_at", "resolved_at"]

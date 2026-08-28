@@ -7,10 +7,9 @@ const CAP_LABELS: Record<string, string> = {
   can_manage_tasks: "管理任务",
   can_assign_task: "指派任务",
   can_manage_tags: "管理标签",
-  can_approve_proposals: "审批申报",
-  can_change_proposals: "修改申报",
   can_change_activity: "管理活动",
-  can_view_feedback: "查看反馈",
+  can_view_feedback: "查看并了结反馈",
+  can_handle_reports: "处理举报案",
   can_review_collections: "复审征集",
   can_edit_about: "编辑关于",
   can_manage_exam: "管理考试看板",
@@ -60,18 +59,6 @@ const CAP_ICONS: Record<string, ReactNode> = {
       <circle cx={7.5} cy={7.5} r={1.2} />
     </Svg>
   ),
-  can_approve_proposals: (
-    <Svg>
-      <circle cx={12} cy={12} r={8.5} />
-      <path d="M8.5 12.2l2.3 2.3 4.7-5" />
-    </Svg>
-  ),
-  can_change_proposals: (
-    <Svg>
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
-    </Svg>
-  ),
   can_change_activity: (
     <Svg>
       <rect x={3} y={4} width={18} height={16} rx={2} />
@@ -83,6 +70,14 @@ const CAP_ICONS: Record<string, ReactNode> = {
   can_view_feedback: (
     <Svg>
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </Svg>
+  ),
+  can_handle_reports: (
+    <Svg>
+      <path d="M6 4h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+      <path d="M14 4v6h6" />
+      <path d="M8 14h8" />
+      <path d="M8 17h5" />
     </Svg>
   ),
   can_edit_about: (

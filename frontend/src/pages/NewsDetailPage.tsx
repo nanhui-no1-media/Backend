@@ -8,6 +8,7 @@ import { type NewsDetail } from "../types/news";
 import { useEmbedMode } from "../embed";
 import AuthorReviewBanner from "../components/AuthorReviewBanner";
 import CommentSection from "../components/CommentSection";
+import ReportButton from "../components/ReportButton";
 import "../styles/news.css";
 import "../styles/form.css";
 
@@ -117,6 +118,7 @@ export default function NewsDetailPage() {
               <button className="btn btn-ghost" onClick={copyLink}>
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a4 4 0 0 0 5.7.4l3-3a4 4 0 0 0-5.7-5.7l-1.4 1.4" /><path d="M14 11a4 4 0 0 0-5.7-.4l-3 3a4 4 0 0 0 5.7 5.7l1.4-1.4" /></svg> {copied ? "已复制" : "复制链接"}
               </button>
+              <ReportButton targetType="news" targetId={news.id} ownerId={news.author.id} compact />
             </div>
             )}
 

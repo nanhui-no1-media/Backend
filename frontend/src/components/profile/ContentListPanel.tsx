@@ -7,14 +7,17 @@ import "../../styles/form.css";
 
 const DETAIL_PATH: Record<ContentType, string> = {
   news: "/news",
-  proposals: "/activity",
+  feedback: "/feedback",
   tasks: "/tasks",
   activities: "/activity",
   tutorials: "/tutorials",
 };
 
-const PROPOSAL_TYPE: Record<string, string> = {
-  feedback: "意见反馈",
+const FEEDBACK_STATUS: Record<string, string> = {
+  pending: "待处理", closed: "已了结",
+};
+const FEEDBACK_CATEGORY: Record<string, string> = {
+  suggestion: "建议", complaint: "投诉", other: "其他",
 };
 const TASK_STATUS: Record<string, string> = {
   pending: "待处理", in_progress: "进行中", reviewing: "待验收", review: "审核中", completed: "已完成", cancelled: "已取消",
@@ -35,9 +38,10 @@ function metaFor(type: ContentType, it: ContentItem): string {
     const draft = it.is_published === false ? " · 草稿" : "";
     return (it.published_at?.slice(0, 10) || "") + draft + reviewMeta(it);
   }
-  if (type === "proposals") {
-    return [it.proposal_type ? PROPOSAL_TYPE[it.proposal_type] ?? it.proposal_type : "", it.created_at?.slice(0, 10)]
-      .filter(Boolean).join(" · ");
+  if (type === "feedback") {
+    const cat = it.category ? FEEDBACK_CATEGORY[it.category] ?? it.category : "";
+    const st = it.status ? FEEDBACK_STATUS[it.status] ?? it.status : "";
+    return [cat, st, it.created_at?.slice(0, 10)].filter(Boolean).join(" · ");
   }
   if (type === "activities") {
     const kind = it.type ? ACTIVITY_TYPE_LABELS[it.type as ActivityType] ?? it.type : "";

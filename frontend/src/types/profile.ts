@@ -15,7 +15,7 @@ export interface UserProfileData {
   groups?: string[];
 }
 
-export type ContentType = "news" | "proposals" | "tasks" | "activities" | "tutorials";
+export type ContentType = "news" | "feedback" | "tasks" | "activities" | "tutorials";
 
 export interface ContentItem {
   id: number;
@@ -25,7 +25,7 @@ export interface ContentItem {
   cover_image?: string | null;
   is_published?: boolean;
   review_status?: string | null;
-  proposal_type?: string;
+  category?: string;
   status?: string;
   priority?: string;
   type?: string;

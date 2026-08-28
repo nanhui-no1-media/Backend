@@ -5,7 +5,6 @@ from django.test import TestCase, RequestFactory
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from proposals.models import Proposal
 from activities.models import Activity
 from tasks.models import Task
 

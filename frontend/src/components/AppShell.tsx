@@ -13,7 +13,12 @@ interface AppShellUser {
   id: number;
   username: string;
   email: string;
-  permissions?: { can_review_content?: boolean; can_review_identity?: boolean };
+  permissions?: {
+    can_review_content?: boolean;
+    can_review_identity?: boolean;
+    can_view_feedback?: boolean;
+    can_handle_reports?: boolean;
+  };
 }
 interface AppShellProfile {
   nickname?: string;
@@ -218,6 +223,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
   };
   const name = profile.nickname || user?.username || "";
   const initial = (user?.username || "?").charAt(0).toUpperCase();
+  const showReviewQueue = !!(
+    user?.permissions?.can_review_content
+    || user?.permissions?.can_review_identity
+    || user?.permissions?.can_view_feedback
+    || user?.permissions?.can_handle_reports
+  );
 
   if (embed) {
     return <div className="cs appshell">{children}</div>;
@@ -289,7 +300,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                         {m.label}
                       </button>
                     ))}
-                    {(user?.permissions?.can_review_content || user?.permissions?.can_review_identity) && (
+                    {showReviewQueue && (
                       <button className="user-menu-item" type="button" onClick={() => go("/reviews")}>
                         审核队列
                       </button>
@@ -334,7 +345,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <button className="sheet-item" type="button" onClick={() => go("/tasks")}>任务管理</button>
               <button className="sheet-item" type="button" onClick={() => go("/activity")}>活动</button>
               <button className="sheet-item" type="button" onClick={() => go("/feedback")}>意见反馈</button>
-              {(user.permissions?.can_review_content || user.permissions?.can_review_identity) && (
+              {showReviewQueue && (
                 <button className="sheet-item" type="button" onClick={() => go("/reviews")}>审核队列</button>
               )}
               <button className="sheet-item" type="button" onClick={logout}>退出登录</button>

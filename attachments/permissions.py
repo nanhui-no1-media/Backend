@@ -4,7 +4,7 @@
 > **管理权限**者。
 
 - 任务：活跃参与者 = 进行中（in_progress）时的负责人 / 协作者；管理权限 = tasks.manage_tasks。
-- 申报：活跃参与者 = 空（创建者即唯一参与者）；管理权限 = proposals.change_proposal。
+- 意见反馈：活跃参与者 = 空（创建者即唯一参与者）；管理权限 = reviews.view_feedback（能删不能传）。
 - 新闻：创建者 = ``author``；管理权限 = news.change_news。
 - 作品：策展/复审 = 活动发起人 / change_activity / review_collection。
 - 展品：策展人 = 活动发起人 / change_activity。
@@ -40,8 +40,8 @@ def has_parent_manage_permission(user, parent):
         return False
     if spec.key == "task":
         return user.has_perm("tasks.manage_tasks")
-    if spec.key == "proposal":
-        return user.has_perm("proposals.change_proposal")
+    if spec.key == "feedback":
+        return user.has_perm("reviews.view_feedback")
     if spec.key == "news":
         return user.has_perm("news.change_news")
     if spec.key == "submission":
@@ -79,12 +79,12 @@ def can_manage_parent_attachments(user, parent):
 def can_upload_to_parent(user, parent):
     """上传附件到父级的权限（ADR 0002 单一规则的反馈 carve-out）。
 
-    反馈特例：仅**署名创建者**、且仅 ``pending_approval`` 期间可上传——社长被排除
-    （不上传证据到别人反馈），审结（通过/拒绝）即锁死。其余父级沿用通用规则。
+    反馈特例：仅**署名创建者**、且仅 ``pending`` 期间可上传——持 view_feedback 者被排除
+    （不上传证据到别人反馈），了结即锁死。其余父级沿用通用规则。
     """
     if not user.is_authenticated:
         return False
     spec = spec_for(parent)
-    if spec is not None and spec.key == "proposal" and parent.proposal_type == "feedback":
-        return is_parent_creator(user, parent) and parent.status == "pending_approval"
+    if spec is not None and spec.key == "feedback":
+        return is_parent_creator(user, parent) and parent.status == "pending"
     return can_manage_parent_attachments(user, parent)

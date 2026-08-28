@@ -12,6 +12,7 @@ export interface SitePolicy {
   login_per_ip_per_hour: number;
   login_per_username_per_hour: number;
   feedback_anon_per_ip_per_day: number;
+  reports_per_user_per_day: number;
   sync_upload_max_bytes: number;
   tus_media_max_bytes: number;
   auto_update_enabled: boolean;
@@ -34,6 +35,7 @@ const DEFAULTS: SitePolicy = {
   login_per_ip_per_hour: 30,
   login_per_username_per_hour: 10,
   feedback_anon_per_ip_per_day: 10,
+  reports_per_user_per_day: 10,
   sync_upload_max_bytes: 50 * 1024 * 1024,
   tus_media_max_bytes: 500 * 1024 * 1024,
   auto_update_enabled: true,

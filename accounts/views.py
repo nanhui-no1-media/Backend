@@ -625,10 +625,9 @@ def _capabilities(user):
         "can_manage_tasks": user.has_perm("tasks.manage_tasks"),
         "can_assign_task": user.has_perm("tasks.assign_task"),
         "can_manage_tags": user.has_perm("tasks.manage_tags"),
-        "can_approve_proposals": user.has_perm("proposals.approve_proposal"),
-        "can_change_proposals": user.has_perm("proposals.change_proposal"),
         "can_change_activity": user.has_perm("activities.change_activity"),
-        "can_view_feedback": user.has_perm("proposals.view_feedback"),
+        "can_view_feedback": user.has_perm("reviews.view_feedback"),
+        "can_handle_reports": user.has_perm("reviews.handle_report"),
         "can_review_collections": user.has_perm("activities.review_collection"),
         "can_edit_about": user.has_perm("about.change_aboutpage"),
         "can_manage_exam": user.has_perm("exam_board.add_examdata"),
@@ -827,7 +826,7 @@ def user_content_view(request, id):
         return JsonResponse({"error": "用户不存在"}, status=404)
 
     type_ = request.GET.get("type")
-    if type_ not in ("news", "proposals", "tasks", "activities", "tutorials"):
+    if type_ not in ("news", "feedback", "tasks", "activities", "tutorials"):
         return JsonResponse({"error": "无效的 type"}, status=400)
 
     visibility = content_visibility(request.user, viewed, type_)
@@ -838,9 +837,9 @@ def user_content_view(request, id):
     if type_ == "news":
         from news.models import News
         qs = News.objects.filter(author=viewed).filter(visibility.extra_q).select_related("review").order_by("-created_at", "-id")
-    elif type_ == "proposals":
-        from proposals.models import Proposal
-        qs = Proposal.objects.filter(creator=viewed).filter(visibility.extra_q).order_by("-created_at", "-id")
+    elif type_ == "feedback":
+        from reviews.models import Feedback
+        qs = Feedback.objects.filter(creator=viewed).filter(visibility.extra_q).order_by("-created_at", "-id")
     elif type_ == "activities":
         from activities.models import Activity
         qs = Activity.objects.filter(creator=viewed).filter(visibility.extra_q).select_related("publication_review").order_by("-created_at", "-id")
@@ -867,11 +866,11 @@ def user_content_view(request, id):
             "review_status": status_of(n),
             "published_at": (n.published_at or n.created_at).isoformat(),
         } for n in page]
-    elif type_ == "proposals":
+    elif type_ == "feedback":
         results = [{
             "id": p.id,
             "title": p.title,
-            "proposal_type": p.proposal_type,
+            "category": p.category,
             "status": p.status,
             "created_at": p.created_at.isoformat(),
         } for p in page]

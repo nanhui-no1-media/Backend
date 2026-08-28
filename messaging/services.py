@@ -211,6 +211,20 @@ def delete_comment(comment: Comment, user) -> Comment:
         raise MessagingForbidden("没有管理该评论区的权限")
     if comment.deleted_at:
         raise MessagingError("评论已删除")
+    return _tombstone_comment(comment, user)
+
+
+def delete_comment_for_report(comment: Comment, user) -> Comment:
+    """举报成立时的特权墓碑：跳过 ``can_manage_thread``。仅 ``report_lifecycle`` 可调用。
+
+    已删除则幂等返回。
+    """
+    if comment.deleted_at:
+        return comment
+    return _tombstone_comment(comment, user)
+
+
+def _tombstone_comment(comment: Comment, user) -> Comment:
     comment.deleted_at = timezone.now()
     comment.deleted_by = user
     comment.save(update_fields=["deleted_at", "deleted_by", "updated_at"])
@@ -237,6 +251,18 @@ def is_muted(user) -> bool:
 def mute_user(actor, user, *, reason: str = "", ends_at=None) -> UserMute:
     if not actor.has_perm("messaging.mute_user"):
         raise MessagingForbidden("没有全站禁言权限")
+    return _create_mute(actor, user, reason=reason, ends_at=ends_at)
+
+
+def mute_user_for_report(actor, user, *, reason: str = "", ends_at=None) -> UserMute:
+    """举报成立时的特权禁言：跳过 ``mute_user`` 权限。仅 ``report_lifecycle`` 可调用。
+
+    仍禁止自禁；已禁言则拒绝。
+    """
+    return _create_mute(actor, user, reason=reason, ends_at=ends_at)
+
+
+def _create_mute(actor, user, *, reason: str = "", ends_at=None) -> UserMute:
     if actor.pk == user.pk:
         raise MessagingError("不能禁言自己")
     if is_muted(user):
