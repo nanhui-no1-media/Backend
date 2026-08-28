@@ -1,0 +1,182 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background-color: #eef0f2;
+    color: #111111;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+.board-container {
+    width: 90%;
+    max-width: 1200px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+}
+
+/* 第一行 */
+.row1 {
+    width: 100%;
+    text-align: center;
+    font-size: 15rem;
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: 0px;
+    margin-bottom: 10px;
+}
+
+/* 第二、三行：双列网格布局 */
+.info-grid {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    font-size: 3.2rem;
+    font-weight: 400;
+    gap: 80px;
+}
+
+.left-col,
+.right-col,
+.empty-col {
+    width: 420px;
+    display: flex;
+    align-items: center;
+}
+
+/* 靠右对齐 */
+.left-col {
+    justify-content: flex-end;
+}
+
+/* 靠左对齐 */
+.right-col {
+    justify-content: flex-start;
+}
+
+
+.empty-col {
+    visibility: hidden;
+}
+
+/* 右上角固定齿轮按钮 */
+.settings-btn {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    font-size: 24px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 1000;
+}
+
+.settings-btn:hover {
+    opacity: 1;
+    transform: rotate(45deg);
+}
+
+/* 弹窗遮罩背景 */
+.modal {
+    display: none; /* 默认隐藏 */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: 1001;
+    justify-content: center;
+    align-items: center;
+}
+
+/* 弹窗主体内容 */
+.modal-content {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    width: 500px;
+    max-width: 90%;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    position: relative;
+    color: #333;
+}
+
+.close-btn {
+    position: absolute;
+    right: 15px;
+    top: 10px;
+    font-size: 24px;
+    cursor: pointer;
+}
+
+/* 表格与输入框样式 */
+#schedule-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    table-layout: fixed;
+}
+
+/* 重新分配各列宽度 */
+#schedule-table th:nth-child(1),
+#schedule-table td:nth-child(1) {
+    width: 28%; /* 缩小科目列 */
+}
+
+#schedule-table th:nth-child(2),
+#schedule-table td:nth-child(2),
+#schedule-table th:nth-child(3),
+#schedule-table td:nth-child(3) {
+    width: 28%; /* 加宽开始时间与结束时间列 */
+}
+
+#schedule-table th:nth-child(4),
+#schedule-table td:nth-child(4) {
+    width: 16%; /* 操作按钮列 */
+}
+
+#schedule-table th, #schedule-table td {
+    border: 1px solid #ddd;
+    padding: 6px 4px;
+    text-align: center;
+}
+
+#schedule-table input {
+    width: 95%;
+    padding: 5px 2px;
+    box-sizing: border-box;
+    font-size: 14px;
+    text-align: center;
+}
+#schedule-table input[type='time'] {
+    padding-right: 0;
+}
+
+.btn-add, .btn-save, .btn-delete {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-add { background-color: #4CAF50; color: white; }
+.btn-save { background-color: #2196F3; color: white; }
+.btn-delete { background-color: #f44336; color: white; }
+
+.modal-actions {
+    text-align: right;
+    margin-top: 15px;
+}
