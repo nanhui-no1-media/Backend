@@ -143,7 +143,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     };
     const offOpen = onMessagingOpen(refreshBadges);
     const offEv = onMessagingEvent((ev) => {
-      if (ev.event === "dm") {
+      if (ev.event === "dm" || ev.event === "unread") {
         messagingApi.unreadCount().then((d) => setDmCount(Number(d?.total) || 0)).catch(() => {});
       }
       if (ev.event === "notification") {

@@ -55,6 +55,14 @@ class UnreadCountTest(TestCase):
         MessageReadStatus.objects.create(message=msg, user=self.alice)
         self.assertEqual(self._total(), 0)
 
+    def test_mark_read_clears_unread_via_http(self):
+        Message.objects.create(conversation=self.conv, sender=self.bob, content="在吗")
+        Message.objects.create(conversation=self.conv, sender=self.bob, content="还有个事")
+        self.assertEqual(self._total(), 2)
+        resp = self.client.post(f"/messaging/conversations/{self.conv.pk}/mark_read/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._total(), 0)
+
     def test_only_counts_conversations_user_joined(self):
         # alice 不参与的会话里的消息，不计入 alice 的未读
         carol = User.objects.create_user(username="carol", password="secret123")

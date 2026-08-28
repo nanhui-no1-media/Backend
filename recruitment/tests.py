@@ -90,6 +90,7 @@ class SchemaPersistTest(TestCase):
         resp = client.put("/recruitment/notice/", {"content": "<p>2026 招生</p>"}, format="json")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(RecruitmentNotice.objects.get_solo().content, "<p>2026 招生</p>")
+        self.assertEqual(resp.data["content"], "<p>2026 招生</p>")
 
     def test_invalid_schema_rejected(self):
         client = APIClient()

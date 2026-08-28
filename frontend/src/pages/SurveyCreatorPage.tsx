@@ -45,6 +45,21 @@ export default function SurveyCreatorPage({
         if (!alive) return;
         const c = new SurveyCreator({ showLogicTab: true, locale: SURVEY_LOCALE });
         c.JSON = schema || EMPTY_SCHEMA;
+        // Creator 工具栏「保存」默认只提示本地已保存；接到后端才算真正落库。
+        c.saveSurveyFunc = (saveNo: number, callback: (no: number, success: boolean) => void) => {
+          saveRef.current(c.JSON as Record<string, unknown>)
+            .then(() => {
+              if (!alive) return;
+              setMsg("已保存");
+              setError("");
+              callback(saveNo, true);
+            })
+            .catch((err: unknown) => {
+              if (!alive) return;
+              setError(err instanceof Error ? err.message : "保存失败");
+              callback(saveNo, false);
+            });
+        };
         setCreator(c);
       })
       .catch((e: unknown) => {
