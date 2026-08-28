@@ -66,8 +66,8 @@ export default function HomePage() {
       <section className="hero">
         <div className="hero-inner">
           <span className="hero-badge"><EqBars /> 上海市南汇第一中学 · 传媒社</span>
-          <h1>用镜头记录青春<br /><span className="accent">用设计诠释创意</span></h1>
-          <p className="hero-sub">校园影像、短视频与新媒体作品的策展窗口；社团动态、活动申报与站内通信，一站式直达。</p>
+          <h1>用镜头记录青春<br /><span className="accent">以创新展望未来</span></h1>
+          <p className="hero-sub">校园影像、新媒体作品的策展窗口；加入社团、社团动态与活动申报，一站式直达。</p>
           <div className="hero-actions">
             <button className="btn btn-primary btn-lg" type="button" onClick={() => navigate("/join")}>
               加入社团
