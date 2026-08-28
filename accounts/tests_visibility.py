@@ -120,16 +120,16 @@ class ContentVisibilityTest(TestCase):
             ContentVisibility(denied=False, extra_q=public_q("news") & Q(is_published=True)),
         )
 
-    def test_proposals_owner_sees_all(self):
+    def test_feedback_owner_sees_all(self):
         self.assertEqual(
-            content_visibility(self.owner, self.owner, "proposals"),
+            content_visibility(self.owner, self.owner, "feedback"),
             ContentVisibility(denied=False, extra_q=Q()),
         )
 
-    def test_proposals_other_only_approved(self):
+    def test_feedback_other_sees_none(self):
         self.assertEqual(
-            content_visibility(self.other, self.owner, "proposals"),
-            ContentVisibility(denied=False, extra_q=Q(status="approved")),
+            content_visibility(self.other, self.owner, "feedback"),
+            ContentVisibility(denied=False, extra_q=Q(pk__in=[])),
         )
 
     def test_tasks_owner_ok(self):

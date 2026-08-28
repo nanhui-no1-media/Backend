@@ -1,0 +1,50 @@
+"""意见反馈状态机（ADR-0003：状态转移不是访问控制，与 permission_classes 分离）。"""
+from django.utils import timezone
+
+from messaging.services import notify
+
+from .models import Feedback
+
+
+class FeedbackDenied(Exception):
+    """当前状态不允许该反馈动作。"""
+
+
+def submit(*, title, description="", category, contact="", creator=None):
+    """创建一条待处理反馈。匿名 ``creator=None``；署名才记创建人。"""
+    return Feedback.objects.create(
+        title=title,
+        description=description or "",
+        category=category,
+        contact=contact or "",
+        creator=creator,
+        status=Feedback.STATUS_PENDING,
+    )
+
+
+def close(feedback, actor, *, note=""):
+    """了结一条待处理反馈。非法转移抛 FeedbackDenied。"""
+    if feedback.status != Feedback.STATUS_PENDING:
+        raise FeedbackDenied("当前状态不可了结")
+    note = (note or "").strip()
+    feedback.status = Feedback.STATUS_CLOSED
+    feedback.closed_by = actor
+    feedback.closed_at = timezone.now()
+    feedback.close_note = note
+    feedback.save(update_fields=["status", "closed_by", "closed_at", "close_note", "updated_at"])
+    if feedback.creator_id is not None:
+        payload = {
+            "type": "feedback",
+            "id": feedback.pk,
+            "url": f"/feedback/{feedback.pk}",
+        }
+        if note:
+            payload["reason"] = note
+        notify(
+            feedback.creator,
+            "review",
+            "closed",
+            actor=actor,
+            payload=payload,
+        )
+    return feedback

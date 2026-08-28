@@ -21,8 +21,8 @@ const TaskDetailPage = lazy(() => import("./pages/TaskDetailPage"));
 const TaskFormPage = lazy(() => import("./pages/TaskFormPage"));
 const MessagePage = lazy(() => import("./pages/MessagePage"));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage"));
-const ProposalListPage = lazy(() => import("./pages/ProposalListPage"));
-const ProposalDetailPage = lazy(() => import("./pages/ProposalDetailPage"));
+const FeedbackPage = lazy(() => import("./pages/FeedbackPage"));
+const FeedbackDetailPage = lazy(() => import("./pages/FeedbackDetailPage"));
 const ActivityListPage = lazy(() => import("./pages/ActivityListPage"));
 const ActivityFormPage = lazy(() => import("./pages/ActivityFormPage"));
 const ActivityDetailPage = lazy(() => import("./pages/ActivityDetailPage"));
@@ -85,8 +85,8 @@ export default function App() {
           <Route path="/activity/:id/edit" element={<ProtectedRoute><ActivityFormPage /></ProtectedRoute>} />
           <Route path="/activity/:id/survey-edit" element={<ProtectedRoute><SurveyEditorPage /></ProtectedRoute>} />
           <Route path="/inbox" element={<ProtectedRoute><InboxPage /></ProtectedRoute>} />
-          <Route path="/feedback" element={<ProposalListPage />} />
-          <Route path="/feedback/:id" element={<ProtectedRoute><ProposalDetailPage /></ProtectedRoute>} />
+          <Route path="/feedback" element={<FeedbackPage />} />
+          <Route path="/feedback/:id" element={<ProtectedRoute><FeedbackDetailPage /></ProtectedRoute>} />
           <Route path="/news" element={<NewsListPage />} />
           <Route path="/news/new" element={<ProtectedRoute><NewsFormPage /></ProtectedRoute>} />
           <Route path="/news/:id" element={<NewsDetailPage />} />

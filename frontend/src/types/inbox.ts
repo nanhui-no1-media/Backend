@@ -15,7 +15,6 @@ export interface InboxConversation {
   id: number;
   conversation_type: string;
   task: number | null;
-  proposal: number | null;
   title: string;
   participants: TaskUser[];
   last_message: Message | null;

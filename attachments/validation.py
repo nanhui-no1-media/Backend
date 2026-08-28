@@ -69,9 +69,9 @@ def feedback_quota_error(parent, incoming_size):
 
     同步与 tus 两条上传通路共用（#19）。``incoming_size`` 为本次即将新增的字节数。
     """
-    from proposals.models import Proposal  # 延迟导入，避免 attachments↔proposals 循环
+    from reviews.models import Feedback  # 延迟导入，避免 attachments↔reviews 循环
 
-    if not (isinstance(parent, Proposal) and parent.proposal_type == "feedback"):
+    if not isinstance(parent, Feedback):
         return None
     stats = parent.attachments.aggregate(n=Count("id"), total=Sum("file_size")) # pyright: ignore[reportAttributeAccessIssue]
     if (stats["n"] or 0) >= FEEDBACK_MAX_ATTACHMENTS:

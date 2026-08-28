@@ -57,7 +57,7 @@ def _request_upload_length(request):
 def _resolve_parent(meta):
     """从 tus metadata 解析父级对象；返回 (parent, kind) 或 (None, None)。
 
-    只认注册表 ``endpoint=True`` 的增量父级（task / proposal / news）；作品 / 展品
+    只认注册表 ``endpoint=True`` 的增量父级（task / feedback / news）；作品 / 展品
     不走 tus（ADR 0012）。
     """
     ptype = (meta.get("parent_type") or "").strip()

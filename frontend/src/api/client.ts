@@ -69,7 +69,7 @@ export const api = {
   getUserProfile: (id: number) =>
     request(`/users/${id}/profile/`),
 
-  getUserContent: (id: number, type: "news" | "proposals" | "tasks" | "activities" | "tutorials", page = 1) =>
+  getUserContent: (id: number, type: "news" | "feedback" | "tasks" | "activities" | "tutorials", page = 1) =>
     request(`/users/${id}/content/?type=${type}&page=${page}`),
 
   inbox: () => request("/inbox/"),

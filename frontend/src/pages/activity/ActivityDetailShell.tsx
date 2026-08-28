@@ -10,6 +10,7 @@ import Avatar from "../../components/Avatar";
 import PageChrome from "../../components/PageChrome";
 import AuthorReviewBanner from "../../components/AuthorReviewBanner";
 import CommentSection from "../../components/CommentSection";
+import ReportButton from "../../components/ReportButton";
 import { activityApi } from "../../api/activities";
 import { useEmbedMode } from "../../embed";
 import CollectionPanel, { CollectionSubmitCard } from "./CollectionPanel";
@@ -161,6 +162,7 @@ export default function ActivityDetailShell({
             )}
           </div>
           <h1 style={{ margin: "0 0 var(--s-4)" }}>{a.title}</h1>
+          {!embed && <ReportButton targetType="activity" targetId={a.id} isOwn={isOwner} compact />}
         </div>
 
         {!embed && (

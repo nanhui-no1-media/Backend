@@ -153,24 +153,21 @@ class MeViewTest(TestCase):
         self.client.login(username="testuser", password="secret123")
         perms = self.client.get("/auth/me/").json()["user"]["permissions"]
         self.assertTrue(perms["can_manage_tasks"])
-        self.assertTrue(perms["can_approve_proposals"])
-        self.assertTrue(perms["can_change_proposals"])
         self.assertTrue(perms["can_view_feedback"])
+        self.assertTrue(perms["can_handle_reports"])
         self.assertFalse(perms["can_manage_news"])
         self.assertTrue(perms["can_manage_comment_thread"])
         self.assertTrue(perms["can_mute_user"])
         self.assertFalse(perms["can_manage_announcement"])
 
-    def test_can_change_activity_decoupled_from_proposals(self):
-        # #52：活动管理门禁须与申报解耦——社长有 change_proposals 但无 change_activity，
-        # 故 can_change_activity 为 False（不该看到他人活动的编辑/关闭按钮）。
+    def test_can_change_activity_decoupled_from_president_seed(self):
+        # 活动管理门禁与社长种子包解耦——社长无 change_activity，故看不到他人活动编辑按钮。
         from django.contrib.auth.models import Group
         grp, _ = Group.objects.get_or_create(name="社长")
         self.user.groups.add(grp)
         self.client.login(username="testuser", password="secret123")
         perms = self.client.get("/auth/me/").json()["user"]["permissions"]
         self.assertIn("can_change_activity", perms)
-        self.assertTrue(perms["can_change_proposals"])
         self.assertFalse(perms["can_change_activity"])
 
     def test_can_change_activity_true_when_perm_held(self):
@@ -709,10 +706,9 @@ class CapabilityKeysContractTest(TestCase):
             "can_manage_tasks",
             "can_assign_task",
             "can_manage_tags",
-            "can_approve_proposals",
-            "can_change_proposals",
             "can_change_activity",
             "can_view_feedback",
+            "can_handle_reports",
             "can_review_collections",
             "can_edit_about",
             "can_manage_exam",
@@ -791,13 +787,13 @@ class UserContentViewTest(TestCase):
         self.owner = User.objects.create_user(username="owner", password="p")
         self.other = User.objects.create_user(username="other", password="p")
         from news.models import News
-        from proposals.models import Proposal
+        from reviews.models import Feedback
         from tasks.models import Task
         from reviews.test_helpers import approve_news, approve_activity, approve_tutorial
         approve_news(News.objects.create(title="published", author=self.owner, is_published=True))
         News.objects.create(title="draft", author=self.owner, is_published=False)
-        Proposal.objects.create(title="approved", proposal_type="feedback", status="approved", creator=self.owner)
-        Proposal.objects.create(title="pending", proposal_type="feedback", status="pending_approval", creator=self.owner)
+        Feedback.objects.create(title="closed", category="suggestion", status="closed", creator=self.owner)
+        Feedback.objects.create(title="pending", category="suggestion", status="pending", creator=self.owner)
         Task.objects.create(title="t", creator=self.owner, assignee=self.owner)
         from activities.models import Activity
         from tutorials.models import Tutorial
@@ -855,7 +851,7 @@ class UserContentViewTest(TestCase):
         c = self._login(self.owner)
         news = {r["title"] for r in self._get(c, "news").json()["results"]}
         self.assertIn("draft", news)
-        self.assertEqual(len(self._get(c, "proposals").json()["results"]), 2)
+        self.assertEqual(len(self._get(c, "feedback").json()["results"]), 2)
         self.assertEqual(len(self._get(c, "tasks").json()["results"]), 1)
         acts = {r["title"] for r in self._get(c, "activities").json()["results"]}
         self.assertIn("pending-act", acts)
@@ -865,12 +861,12 @@ class UserContentViewTest(TestCase):
         self.assertIn("approved-tut", tuts)
 
     def test_other_smoke_filtered_and_tasks_forbidden(self):
-        # 他人冒烟：news 草稿不可见、proposals 未通过不可见（收窄生效）、tasks 403（边界）
+        # 他人冒烟：news 草稿不可见、feedback 邮箱对他人不可见、tasks 403（边界）
         c = self._login(self.other)
         news = {r["title"] for r in self._get(c, "news").json()["results"]}
         self.assertNotIn("draft", news)
-        proposals = {r["title"] for r in self._get(c, "proposals").json()["results"]}
-        self.assertNotIn("pending", proposals)
+        feedback = {r["title"] for r in self._get(c, "feedback").json()["results"]}
+        self.assertEqual(feedback, set())
         self.assertEqual(self._get(c, "tasks").status_code, 403)
         acts = {r["title"] for r in self._get(c, "activities").json()["results"]}
         self.assertNotIn("pending-act", acts)

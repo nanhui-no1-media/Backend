@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { tutorialApi, type TutorialItem } from "../api/tutorials";
 import { useEmbedMode } from "../embed";
 import AuthorReviewBanner from "../components/AuthorReviewBanner";
+import ReportButton from "../components/ReportButton";
 import "../styles/detail.css";
 
 export default function TutorialDetailPage() {
@@ -66,9 +67,12 @@ export default function TutorialDetailPage() {
               </p>
             </div>
             {authed && (
-              <button className="btn btn-secondary" disabled={busy} onClick={toggleFav}>
-                {item.favorited ? "已收藏" : "收藏"}
-              </button>
+              <div className="detail-head-actions">
+                <button className="btn btn-secondary" disabled={busy} onClick={toggleFav}>
+                  {item.favorited ? "已收藏" : "收藏"}
+                </button>
+                <ReportButton targetType="tutorial" targetId={item.id} ownerId={item.uploader.id} compact />
+              </div>
             )}
           </div>
         </div>

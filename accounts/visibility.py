@@ -85,7 +85,7 @@ def content_visibility(viewer, viewed, content_type):
     """某类内容对查看者的可见性裁定（:class:`ContentVisibility`）。
 
     - news：他人仅已发布且过审；本人全部。
-    - proposals：他人仅已通过；本人全部。
+    - feedback：仅本人（署名投递箱）；他人不可见。
     - activities：他人仅公开审核轴（含无审核行夹具例外）；本人全部。
     - tutorials：他人仅已过审；本人全部。
     - tasks：仅本人；他人无权（denied）。
@@ -97,8 +97,8 @@ def content_visibility(viewer, viewed, content_type):
     if content_type == "news":
         extra = Q() if owner else public_q("news") & Q(is_published=True)
         return ContentVisibility(denied=False, extra_q=extra)
-    if content_type == "proposals":
-        extra = Q() if owner else Q(status="approved")
+    if content_type == "feedback":
+        extra = Q() if owner else Q(pk__in=[])
         return ContentVisibility(denied=False, extra_q=extra)
     if content_type == "activities":
         extra = Q() if owner else public_q("activity")

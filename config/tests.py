@@ -17,6 +17,7 @@ class SettingsHygieneTest(TestCase):
         self.assertNotIn("register", rates)
         self.assertNotIn("resend_verification", rates)
         self.assertNotIn("feedback_anon", rates)
+        self.assertNotIn("reports_user", rates)
         self.assertNotIn("login", rates)
         self.assertEqual(settings.REST_FRAMEWORK.get("NUM_PROXIES"), 1)
 

@@ -1,6 +1,6 @@
 """附件创建接缝：create_attachment / copy_attachment / parent_of。
 
-HTTP 与 tus 是增量父级（task / proposal / news）适配器；活动投稿 / 布展是批量
+HTTP 与 tus 是增量父级（task / feedback / news）适配器；活动投稿 / 布展是批量
 适配器。作品与展品不走 ``POST /attachments/``（提交 / 布展是原子批量）。见 ADR 0012。
 """
 import os
@@ -10,7 +10,7 @@ from django.core.files.base import ContentFile
 
 from activities.models import Exhibit, Submission
 from news.models import News
-from proposals.models import Proposal
+from reviews.models import Feedback
 from tasks.models import Task
 
 from .models import Attachment
@@ -38,7 +38,7 @@ class ParentSpec:
 
 PARENTS = {
     "task": ParentSpec("task", "task", Task, True, "creator_id"),
-    "proposal": ParentSpec("proposal", "proposal", Proposal, True, "creator_id"),
+    "feedback": ParentSpec("feedback", "feedback", Feedback, True, "creator_id"),
     "news": ParentSpec("news", "news", News, True, "author_id"),
     "submission": ParentSpec("submission", "submission", Submission, False),
     "exhibit": ParentSpec("exhibit", "exhibit", Exhibit, False),

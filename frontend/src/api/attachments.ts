@@ -5,18 +5,18 @@ import { Attachment } from "../types/tasks";
 
 const request = createRequest("/attachments");
 
-// 上传必须且只能指定一个父级（task_id 或 proposal_id 或 news_id），用联合类型在编译期固化这条后端约束。
+// 上传必须且只能指定一个父级（task_id 或 feedback_id 或 news_id），用联合类型在编译期固化这条后端约束。
 type UploadParams = { file: File } & (
-  | { taskId: number; proposalId?: undefined; newsId?: undefined }
-  | { proposalId: number; taskId?: undefined; newsId?: undefined }
-  | { newsId: number; taskId?: undefined; proposalId?: undefined }
+  | { taskId: number; feedbackId?: undefined; newsId?: undefined }
+  | { feedbackId: number; taskId?: undefined; newsId?: undefined }
+  | { newsId: number; taskId?: undefined; feedbackId?: undefined }
 );
 
 // 大文件（超过同步上限的图/视频）走 tus 可续传：POST /uploads/files/ … 完成后由后端 finished 钩子
 // 自动挂成统一 Attachment。parent_type/parent_id 经 Upload-Metadata 声明、创建时即校验权限。
 type UploadLargeParams = {
   file: File;
-  parentType: "task" | "proposal" | "news";
+  parentType: "task" | "feedback" | "news";
   parentId: number;
   onProgress?: (ratio: number) => void;
 };
@@ -26,7 +26,7 @@ export const attachmentApi = {
     const formData = new FormData();
     formData.append("file", params.file);
     if (params.taskId != null) formData.append("task_id", String(params.taskId));
-    if (params.proposalId != null) formData.append("proposal_id", String(params.proposalId));
+    if (params.feedbackId != null) formData.append("feedback_id", String(params.feedbackId));
     if (params.newsId != null) formData.append("news_id", String(params.newsId));
     return request("/", { method: "POST", body: formData });
   },
@@ -53,7 +53,7 @@ export const attachmentApi = {
   // 按大小选路：≤ sync_upload_max_bytes 走同步（返回新建的 Attachment）、超过走 tus 可续传
   // （完成时由后端 finished 钩子建附件、返回 void，调用方需重新拉取父级以拿到该附件）。
   uploadRouted: (params: {
-    parentType: "task" | "proposal" | "news";
+    parentType: "task" | "feedback" | "news";
     parentId: number;
     file: File;
     onProgress?: (ratio: number) => void;
@@ -62,8 +62,8 @@ export const attachmentApi = {
       return attachmentApi.upload(
         params.parentType === "task"
           ? { taskId: params.parentId, file: params.file }
-          : params.parentType === "proposal"
-            ? { proposalId: params.parentId, file: params.file }
+          : params.parentType === "feedback"
+            ? { feedbackId: params.parentId, file: params.file }
             : { newsId: params.parentId, file: params.file },
       );
     }
