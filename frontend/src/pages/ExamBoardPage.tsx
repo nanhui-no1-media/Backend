@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import "../styles/exam-board.css";
 
 interface ScheduleItem {
@@ -174,92 +175,94 @@ export default function ExamBoardPage() {
         ⚙️
       </button>
 
-      {/* 设置弹窗面板 */}
-      {isModalOpen && (
-        <div id="settings-modal" className="modal style-modal-open">
-          <div className="modal-content">
-            <span
-              className="close-btn"
-              id="close-modal"
-              onClick={() => setIsModalOpen(false)}
-            >
-              &times;
-            </span>
-            <h3>考试时间配置列表</h3>
-            <table id="schedule-table">
-              <thead>
-                <tr>
-                  <th>科目</th>
-                  <th>开始时间</th>
-                  <th>结束时间</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody id="schedule-body">
-                {schedules.map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      <input
-                        type="text"
-                        className="inp-subject"
-                        value={row.subject}
-                        placeholder="科目"
-                        onChange={(e) =>
-                          handleInputChange(row.id, "subject", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="time"
-                        className="inp-start"
-                        value={row.startTime}
-                        onChange={(e) =>
-                          handleInputChange(row.id, "startTime", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="time"
-                        className="inp-end"
-                        value={row.endTime}
-                        onChange={(e) =>
-                          handleInputChange(row.id, "endTime", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <button
-                        className="btn-delete"
-                        onClick={() => handleDeleteRow(row.id)}
-                      >
-                        删除
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <button
-              id="add-row-btn"
-              className="btn-add"
-              onClick={handleAddRow}
-            >
-              + 添加科目
-            </button>
-            <div className="modal-actions">
-              <button
-                id="save-settings-btn"
-                className="btn-save"
-                onClick={handleSaveSettings}
+      {/* 设置弹窗面板：使用 Portal 挂载到 body 下 */}
+      {isModalOpen &&
+        createPortal(
+          <div id="settings-modal" className="modal style-modal-open">
+            <div className="modal-content">
+              <span
+                className="close-btn"
+                id="close-modal"
+                onClick={() => setIsModalOpen(false)}
               >
-                保存
+                &times;
+              </span>
+              <h3>考试时间配置列表</h3>
+              <table id="schedule-table">
+                <thead>
+                  <tr>
+                    <th>科目</th>
+                    <th>开始时间</th>
+                    <th>结束时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="schedule-body">
+                  {schedules.map((row) => (
+                    <tr key={row.id}>
+                      <td>
+                        <input
+                          type="text"
+                          className="inp-subject"
+                          value={row.subject}
+                          placeholder="科目"
+                          onChange={(e) =>
+                            handleInputChange(row.id, "subject", e.target.value)
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="time"
+                          className="inp-start"
+                          value={row.startTime}
+                          onChange={(e) =>
+                            handleInputChange(row.id, "startTime", e.target.value)
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="time"
+                          className="inp-end"
+                          value={row.endTime}
+                          onChange={(e) =>
+                            handleInputChange(row.id, "endTime", e.target.value)
+                          }
+                        />
+                      </td>
+                      <td>
+                        <button
+                          className="btn-delete"
+                          onClick={() => handleDeleteRow(row.id)}
+                        >
+                          删除
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button
+                id="add-row-btn"
+                className="btn-add"
+                onClick={handleAddRow}
+              >
+                + 添加科目
               </button>
+              <div className="modal-actions">
+                <button
+                  id="save-settings-btn"
+                  className="btn-save"
+                  onClick={handleSaveSettings}
+                >
+                  保存
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* 页面核心展示区域 */}
       <div className="board-container">

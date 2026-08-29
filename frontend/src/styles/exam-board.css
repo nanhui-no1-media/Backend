@@ -48,9 +48,11 @@ body {
 .left-col,
 .right-col,
 .empty-col {
-    width: 420px;
+    width: auto;
+    min-width: 450px;
     display: flex;
     align-items: center;
+    white-space: nowrap;
 }
 
 /* 靠右对齐 */
@@ -89,7 +91,8 @@ body {
 
 /* 弹窗遮罩背景 */
 .modal {
-    display: none; /* 默认隐藏 */
+    display: none;
+    /* 默认隐藏 */
     position: fixed;
     top: 0;
     left: 0;
@@ -100,6 +103,7 @@ body {
     justify-content: center;
     align-items: center;
 }
+
 .modal.style-modal-open {
     display: flex !important;
     position: fixed;
@@ -113,18 +117,21 @@ body {
     z-index: 9999;
     justify-content: center;
     align-items: center;
+    margin: 0 !important;
+    padding: 0 !important;
 }
+
 /* 弹窗主体内容 */
 .modal-content {
-    background-color: #fff;
-    padding: 20px;
-    border-radius: 8px;
-    width: 500px;
-    max-width: 90%;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    position: relative;
-    color: #333;
-    margin: 0 auto;
+    background-color: #ffffff !important;
+    padding: 24px !important;
+    border-radius: 12px !important;
+    width: 520px !important;
+    max-width: 90vw !important;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2) !important;
+    position: relative !important;
+    color: #333333 !important;
+    margin: auto !important;
 }
 
 .close-btn {
@@ -147,22 +154,26 @@ body {
 /* 重新分配各列宽度 */
 #schedule-table th:nth-child(1),
 #schedule-table td:nth-child(1) {
-    width: 28%; /* 缩小科目列 */
+    width: 28%;
+    /* 缩小科目列 */
 }
 
 #schedule-table th:nth-child(2),
 #schedule-table td:nth-child(2),
 #schedule-table th:nth-child(3),
 #schedule-table td:nth-child(3) {
-    width: 28%; /* 加宽开始时间与结束时间列 */
+    width: 28%;
+    /* 加宽开始时间与结束时间列 */
 }
 
 #schedule-table th:nth-child(4),
 #schedule-table td:nth-child(4) {
-    width: 16%; /* 操作按钮列 */
+    width: 16%;
+    /* 操作按钮列 */
 }
 
-#schedule-table th, #schedule-table td {
+#schedule-table th,
+#schedule-table td {
     border: 1px solid #ddd;
     padding: 6px 4px;
     text-align: center;
@@ -175,20 +186,34 @@ body {
     font-size: 14px;
     text-align: center;
 }
+
 #schedule-table input[type='time'] {
     padding-right: 0;
 }
 
-.btn-add, .btn-save, .btn-delete {
+.btn-add,
+.btn-save,
+.btn-delete {
     padding: 6px 12px;
     border: none;
     border-radius: 4px;
     cursor: pointer;
 }
 
-.btn-add { background-color: #4CAF50; color: white; }
-.btn-save { background-color: #2196F3; color: white; }
-.btn-delete { background-color: #f44336; color: white; }
+.btn-add {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.btn-save {
+    background-color: #2196F3;
+    color: white;
+}
+
+.btn-delete {
+    background-color: #f44336;
+    color: white;
+}
 
 .modal-actions {
     text-align: right;
