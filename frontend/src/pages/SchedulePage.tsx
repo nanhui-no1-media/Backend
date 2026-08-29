@@ -35,10 +35,15 @@ export default function SchedulePage() {
       {/* 页面核心 */}
       <div className="container" style={{ paddingTop: 24, paddingBottom: 40 }}>
         <div style={{ backgroundColor: "var(--card-bg, #fff)", padding: "24px 32px", borderRadius: "8px" }}>
+          <a href="/file/ClassIsland快速使用指南.pdf" download>
+            <p>点击下载ClassIsland快速使用指南</p>
+          </a>
           <h1>ClassIsland压缩包下载</h1>
           <a href="/file/ClassIsland.zip" download>
             <p>点击下载ClassIsland压缩包</p>
           </a>
+          
+          <h1> </h1>
 
           <h1>各班课程表文件下载</h1>
 
@@ -67,7 +72,8 @@ export default function SchedulePage() {
           <a href="/file/高一8.yml" download>
             <p>点击下载高一8班课程表文件</p>
           </a>
-
+          <h1> </h1>
+          
           <h2>高二年级</h2>
           <a href="/file/高二1.yml" download>
             <p>点击下载高二1班课程表文件</p>
@@ -93,6 +99,8 @@ export default function SchedulePage() {
           <a href="/file/高二8.yml" download>
             <p>点击下载高二8班课程表文件</p>
           </a>
+          <h1> </h1>
+
 
           <h2>高三年级</h2>
           <a href="/file/高三1.yml" download>
