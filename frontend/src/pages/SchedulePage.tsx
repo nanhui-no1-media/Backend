@@ -2,7 +2,7 @@
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/AppShell";
 
-export default function ScheduleDownloadPage() {
+export default function SchedulePage() {
   const navigate = useNavigate();
 
   return (
