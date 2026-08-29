@@ -101,7 +101,18 @@ body {
     align-items: center;
 }
 .modal.style-modal-open {
-    display: flex;
+    display: flex !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: 9999;
+    justify-content: center;
+    align-items: center;
 }
 /* 弹窗主体内容 */
 .modal-content {
@@ -110,9 +121,10 @@ body {
     border-radius: 8px;
     width: 500px;
     max-width: 90%;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     position: relative;
     color: #333;
+    margin: 0 auto;
 }
 
 .close-btn {
@@ -181,4 +193,14 @@ body {
 .modal-actions {
     text-align: right;
     margin-top: 15px;
+}
+
+.exam-board-wrapper {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
 }
