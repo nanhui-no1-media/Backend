@@ -100,7 +100,9 @@ body {
     justify-content: center;
     align-items: center;
 }
-
+.modal.style-modal-open {
+    display: flex;
+}
 /* 弹窗主体内容 */
 .modal-content {
     background-color: #fff;
