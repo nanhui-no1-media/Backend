@@ -33,6 +33,7 @@ const NewsFormPage = lazy(() => import("./pages/NewsFormPage"));
 const ReviewQueuePage = lazy(() => import("./pages/ReviewQueuePage"));
 const AboutPage = lazy(() => import("./pages/AboutPage"));
 const ExamBoardPage = lazy(() => import("./pages/ExamBoardPage"));
+const SchedulePage = lazy(() => import("./pages/SchedulePage"));
 const TutorialListPage = lazy(() => import("./pages/TutorialListPage"));
 const TutorialDetailPage = lazy(() => import("./pages/TutorialDetailPage"));
 const TutorialFormPage = lazy(() => import("./pages/TutorialFormPage"));
@@ -94,6 +95,7 @@ export default function App() {
           <Route path="/reviews" element={<ProtectedRoute><ReviewQueuePage /></ProtectedRoute>} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/exam" element={<ExamBoardPage />} />
+          <Route path="/schedule" element={<SchedulePage />} />
           <Route path="/tutorials" element={<TutorialListPage />} />
           <Route path="/tutorials/new" element={<ProtectedRoute><TutorialFormPage /></ProtectedRoute>} />
           <Route path="/tutorials/:id" element={<TutorialDetailPage />} />
@@ -102,6 +104,7 @@ export default function App() {
           <Route path="/join/editor" element={<ProtectedRoute><JoinEditorPage /></ProtectedRoute>} />
           <Route path="/" element={<HomePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
+          
         </Routes>
       </Suspense>
       </SessionGuard>

@@ -132,6 +132,7 @@ export default function HomePage() {
               <div className="widget-links">
                 <button className="btn btn-secondary btn-sm" type="button" onClick={() => navigate("/exam")}>考试看板</button>
                 <button className="btn btn-ghost btn-sm" type="button" onClick={() => navigate("/tutorials")}>教程集锦</button>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => navigate("/schedule")}>课表下载</button>
               </div>
             </div>
             <div className="rail-card rail-actions">
