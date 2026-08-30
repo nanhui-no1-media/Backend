@@ -137,22 +137,73 @@
     color: #6b7280;
 }
 
-.exam-board-wrapper .settings-btn {
+.exam-board-wrapper .board-tools {
     position: fixed;
-    top: 20px;
-    right: 20px;
-    font-size: 24px;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    opacity: 0.6;
-    transition: opacity 0.2s, transform 0.2s;
-    z-index: 1000;
+    top: 16px;
+    right: 16px;
+    z-index: 1250;
+    display: flex;
+    gap: 8px;
 }
 
-.exam-board-wrapper .settings-btn:hover {
-    opacity: 1;
-    transform: rotate(45deg);
+.exam-board-wrapper .board-tool {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 8px 16px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    color: #111827;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+.exam-board-wrapper .board-tool:hover {
+    background: #fff;
+    border-color: #9ca3af;
+}
+
+.exam-board-wrapper .board-tool.is-on {
+    background: #111827;
+    border-color: #111827;
+    color: #fff;
+}
+
+.exam-board-wrapper .board-guide {
+    position: fixed;
+    top: 64px;
+    right: 16px;
+    z-index: 1240;
+    width: min(320px, calc(100vw - 32px));
+    padding: 12px 14px 14px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+    color: #1f2937;
+}
+
+.exam-board-wrapper .board-guide p {
+    margin: 0 0 10px;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.exam-board-wrapper .board-guide-ok {
+    display: inline-flex;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    background: #111827;
+    color: #fff;
+    cursor: pointer;
 }
 
 .exam-board-wrapper .exam-settings-overlay {
@@ -164,7 +215,7 @@
     height: auto;
     transform: none;
     background-color: rgba(0, 0, 0, 0.18);
-    z-index: 1001;
+    z-index: 1300;
 }
 
 .exam-board-wrapper .exam-settings-panel {
@@ -352,8 +403,42 @@
 
 .exam-board-wrapper .errata-zoom .errata-card {
     max-width: min(1200px, 96vw);
-    max-height: 94vh;
+    max-height: 82vh;
     padding: 28px 32px;
+    cursor: default;
+}
+
+.exam-board-wrapper .errata-zoom-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.exam-board-wrapper .errata-zoom-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.exam-board-wrapper .errata-zoom-action {
+    min-height: 40px;
+    padding: 8px 18px;
+    font-size: 1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    background: #fff;
+    color: #111827;
+    cursor: pointer;
+}
+
+.exam-board-wrapper .errata-zoom-dismiss-hint {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 0.85rem;
 }
 
 .exam-board-wrapper .errata-kicker {
@@ -373,6 +458,23 @@
     max-height: 78vh;
 }
 
+.exam-board-wrapper .errata-zoom-slide {
+    animation: errata-zoom-swap 400ms ease;
+}
+
+@keyframes errata-zoom-swap {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.exam-board-wrapper .errata-zoom-meta {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 1.05rem;
+    letter-spacing: 0.08em;
+    text-align: center;
+}
+
 .exam-board-wrapper .errata-card p {
     margin: 16px 0 0;
     font-size: 2rem;
@@ -388,6 +490,18 @@
     margin-top: 10px;
     font-size: 0.85rem;
     color: #9ca3af;
+}
+
+.exam-board-wrapper .errata-card.compact .errata-zoom-hint {
+    margin-top: 2px;
+    align-self: flex-end;
+    background: #991b1b;
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 3px 10px;
+    border-radius: 999px;
 }
 
 .exam-board-wrapper .errata-rail {
@@ -409,6 +523,26 @@
     letter-spacing: 0.18em;
     color: #991b1b;
     font-weight: 600;
+}
+
+.exam-board-wrapper .errata-rail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    letter-spacing: 0.12em;
+}
+
+.exam-board-wrapper .errata-zoom-open {
+    letter-spacing: 0;
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 4px 10px;
+    border: none;
+    border-radius: 999px;
+    background: #991b1b;
+    color: #fff;
+    cursor: pointer;
 }
 
 .exam-board-wrapper .schedule-rail-head {
@@ -450,6 +584,10 @@
 
 .exam-board-wrapper .errata-card.compact.is-new {
     box-shadow: 0 0 0 2px #dc2626;
+}
+
+.exam-board-wrapper .errata-card.compact.is-zoomed {
+    box-shadow: 0 0 0 2px #b91c1c;
 }
 
 .exam-board-wrapper .errata-card.compact img {
@@ -576,7 +714,7 @@
     .exam-board-wrapper {
         flex-direction: column;
         justify-content: flex-start;
-        padding-top: 12px;
+        padding-top: 64px;
         overflow: auto;
     }
 }

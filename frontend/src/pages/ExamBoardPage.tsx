@@ -31,8 +31,10 @@ const WARN_SECONDS = 15 * 60;
 const FADE_MS = 280;
 const POPUP_MS = 2800;
 const RECYCLE_GAP_MS = 750;
+const ZOOM_CYCLE_MS = 60 * 1000;
 const POPUP_SEEN_KEY = "examBoardErrataPopup";
 const SELECTION_KEY = "examBoardSelection";
+const GUIDE_KEY = "examBoardInvigilatorGuide";
 const SHANGHAI = "Asia/Shanghai";
 
 type BoardStatus =
@@ -292,28 +294,67 @@ function writePopupSeen(ids: Set<number>) {
   }
 }
 
+function guideDismissed(): boolean {
+  try {
+    return localStorage.getItem(GUIDE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function dismissGuide() {
+  try {
+    localStorage.setItem(GUIDE_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+}
+
+function isPageFullscreen(): boolean {
+  return document.fullscreenElement != null;
+}
+
+async function togglePageFullscreen() {
+  if (isPageFullscreen()) {
+    await document.exitFullscreen();
+    return;
+  }
+  await document.documentElement.requestFullscreen();
+}
+
 function ErrataCard({
   errata,
   compact = false,
   isNew = false,
+  isZoomed = false,
+  asButton = true,
   onOpen,
 }: {
   errata: ExamErrata;
   compact?: boolean;
   isNew?: boolean;
+  isZoomed?: boolean;
+  asButton?: boolean;
   onOpen?: (item: ExamErrata) => void;
 }) {
-  return (
-    <button
-      type="button"
-      className={`errata-card${compact ? " compact" : ""}${isNew ? " is-new" : ""}`}
-      onClick={() => onOpen?.(errata)}
-      title="点击放大"
-    >
+  const className = `errata-card${compact ? " compact" : ""}${isNew ? " is-new" : ""}${isZoomed ? " is-zoomed" : ""}`;
+  const body = (
+    <>
       {!compact && <div className="errata-kicker">题目误刊</div>}
       {errata.image_url && <img src={errata.image_url} alt="" />}
       {errata.text && <p>{errata.text}</p>}
-      {!compact && <span className="errata-zoom-hint">点击放大</span>}
+      {asButton && <span className="errata-zoom-hint">{compact ? "放大" : "点击空白处关闭"}</span>}
+    </>
+  );
+  if (!asButton) return <div className={className}>{body}</div>;
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={() => onOpen?.(errata)}
+      title={compact ? "放大查看这张题目误刊" : undefined}
+    >
+      {body}
     </button>
   );
 }
@@ -380,6 +421,8 @@ export default function ExamBoardPage() {
   const [errataFile, setErrataFile] = useState<File | null>(null);
   const [fields, setFields] = useState<DisplayFields>(() => fieldsFromStatus({ kind: "idle" }));
   const [fade, setFade] = useState<"in" | "out" | "">("");
+  const [isFullscreen, setIsFullscreen] = useState(isPageFullscreen);
+  const [showGuide, setShowGuide] = useState(() => !guideDismissed());
   const timeOffsetRef = useRef(0);
   const fieldKeyRef = useRef(fieldKey(fieldsFromStatus({ kind: "idle" })));
   const fadeTimerRef = useRef<number | null>(null);
@@ -391,6 +434,7 @@ export default function ExamBoardPage() {
   const paperKindRef = useRef<BoardStatus["kind"]>("idle");
   const batchIdRef = useRef<number | null>(null);
   const errataListRef = useRef<ExamErrata[]>([]);
+  const liveErrataRef = useRef<ExamErrata[]>([]);
   const recycledByBatchRef = useRef<Map<number, Set<number>>>(new Map());
 
   const batch = useMemo(
@@ -569,11 +613,44 @@ export default function ExamBoardPage() {
         return next;
       });
       if (popupId === id) setPopupId(null);
-      if (zoomed?.id === id) setZoomed(null);
+      if (zoomed?.id === id) {
+        const remain = liveErrataRef.current.filter((row) => row.id !== id);
+        setZoomed(remain[0] ?? null);
+      }
       await new Promise((resolve) => window.setTimeout(resolve, RECYCLE_GAP_MS));
     }
     recyclingRef.current = false;
   }, [popupId, zoomed?.id]);
+
+  const closeGuide = () => {
+    dismissGuide();
+    setShowGuide(false);
+  };
+
+  const handleFullscreen = async () => {
+    try {
+      await togglePageFullscreen();
+    } catch {
+      /* browser may block if the click wasn't treated as a gesture */
+    }
+  };
+
+  const cycleZoom = useCallback((dir = 1) => {
+    const rows = liveErrataRef.current;
+    if (!rows.length) return;
+    setZoomed((current) => {
+      if (rows.length === 1) return rows[0];
+      const idx = current ? rows.findIndex((row) => row.id === current.id) : -1;
+      const next = idx < 0 ? 0 : idx + dir;
+      return rows[((next % rows.length) + rows.length) % rows.length];
+    });
+  }, []);
+
+  useEffect(() => {
+    const sync = () => setIsFullscreen(isPageFullscreen());
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
 
   useEffect(() => {
     const stop = onExamBoardEvent((ev) => {
@@ -706,6 +783,37 @@ export default function ExamBoardPage() {
   const liveErrata = viewStatus.kind === "active"
     ? errataList.filter((row) => errataStillLive(row, nowMs) && !recycled?.has(row.id))
     : [];
+  liveErrataRef.current = liveErrata;
+  const liveErrataKey = liveErrata.map((row) => row.id).join(",");
+  const zoomCycling = zoomed != null && liveErrata.length > 1;
+
+  useEffect(() => {
+    for (const row of liveErrata) {
+      if (!row.image_url) continue;
+      const img = new Image();
+      img.src = row.image_url;
+    }
+  }, [liveErrataKey]);
+
+  useEffect(() => {
+    if (!zoomed) return;
+    if (liveErrataRef.current.some((row) => row.id === zoomed.id)) return;
+    setZoomed(liveErrataRef.current[0] ?? null);
+  }, [zoomed, liveErrataKey]);
+
+  useEffect(() => {
+    if (!zoomCycling) return;
+    const timer = window.setInterval(() => {
+      const rows = liveErrataRef.current;
+      if (rows.length < 2) return;
+      setZoomed((current) => {
+        if (!current) return current;
+        const idx = rows.findIndex((row) => row.id === current.id);
+        return rows[(idx < 0 ? 0 : idx + 1) % rows.length];
+      });
+    }, ZOOM_CYCLE_MS);
+    return () => window.clearInterval(timer);
+  }, [zoomCycling, zoomed?.id]);
 
   useEffect(() => {
     errataListRef.current = errataList;
@@ -776,11 +884,34 @@ export default function ExamBoardPage() {
     prevKindRef.current = status.kind;
   }, [liveErrata, popupId, cue?.kind, status.kind, prefs.mascot, prefs.sound, prefs.voice]);
 
-  return (
-    <div className="exam-board-wrapper" onClick={unlockExamBoardAudio}>
-      <button id="settings-btn" className="settings-btn" title="设置" onClick={openSettings}>
-        ⚙️
-      </button>
+    return (
+    <div className={`exam-board-wrapper${isFullscreen ? " is-fullscreen" : ""}`} onClick={unlockExamBoardAudio}>
+      <div className="board-tools">
+        <button
+          type="button"
+          className={`board-tool${isFullscreen ? " is-on" : ""}`}
+          onClick={handleFullscreen}
+          title={isFullscreen ? "退出全屏" : "全屏投屏，适合教室大屏"}
+        >
+          {isFullscreen ? "退出全屏" : "全屏"}
+        </button>
+        <button
+          type="button"
+          id="settings-btn"
+          className="board-tool"
+          onClick={openSettings}
+          title="选择考试批次、声音与题目误刊"
+        >
+          设置
+        </button>
+      </div>
+
+      {showGuide && !isFullscreen && (
+        <div className="board-guide" role="note">
+          <p>教室投屏请点右上角「全屏」。有题目误刊时，点左侧卡片上的「放大」。多张会每分钟自动轮播。</p>
+          <button type="button" className="board-guide-ok" onClick={closeGuide}>知道了</button>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="exam-settings-overlay" onClick={() => setIsModalOpen(false)}>
@@ -862,6 +993,10 @@ export default function ExamBoardPage() {
                   />
                   语音播报
                 </label>
+                <p className="settings-hint">教室大屏请先点右上角「全屏」。有题目误刊时，点左侧「放大」给学生看；多张每分钟自动轮播。</p>
+                <button type="button" className="btn-save" onClick={handleFullscreen}>
+                  {isFullscreen ? "退出全屏" : "全屏投屏"}
+                </button>
               </div>
             )}
 
@@ -995,7 +1130,7 @@ export default function ExamBoardPage() {
 
             {tab === "errata" && canManage && (
               <div className="settings-body">
-                <p className="settings-hint">可连续发布多条。误刊出现在看板左侧列表，单击放大。本场结束后按发布顺序依次收走。</p>
+                <p className="settings-hint">可连续发布多条。误刊出现在看板左侧列表，点卡片上的「放大」给学生看；放大后多条每分钟轮播。本场结束后按发布顺序依次收走。</p>
                 <label>
                   说明
                   <textarea value={errataText} onChange={(e) => setErrataText(e.target.value)} rows={3} placeholder="如：语文第 3 题更正为……" />
@@ -1030,8 +1165,27 @@ export default function ExamBoardPage() {
 
       {zoomed && (
         <div className="errata-overlay errata-zoom" role="dialog" onClick={() => setZoomed(null)}>
-          <div onClick={(e) => e.stopPropagation()}>
-            <ErrataCard errata={zoomed} onOpen={() => setZoomed(null)} />
+          <div className="errata-zoom-box" onClick={(e) => e.stopPropagation()}>
+            <div key={zoomed.id} className="errata-zoom-slide">
+              <ErrataCard errata={zoomed} asButton={false} />
+            </div>
+            <div className="errata-zoom-bar">
+              {liveErrata.length > 1 && (
+                <span className="errata-zoom-meta">
+                  {(liveErrata.findIndex((row) => row.id === zoomed.id) + 1) || 1} / {liveErrata.length}
+                  {" · "}每分钟自动切换
+                </span>
+              )}
+              {liveErrata.length > 1 && (
+                <button type="button" className="errata-zoom-action" onClick={() => cycleZoom(1)}>
+                  下一张
+                </button>
+              )}
+              <button type="button" className="errata-zoom-action" onClick={() => setZoomed(null)}>
+                关闭
+              </button>
+            </div>
+            <p className="errata-zoom-dismiss-hint">也可点周围暗处关闭</p>
           </div>
         </div>
       )}
@@ -1046,7 +1200,17 @@ export default function ExamBoardPage() {
 
       {liveErrata.length > 0 && (
         <aside className="errata-rail" aria-label="题目误刊">
-          <div className="errata-rail-head">题目误刊</div>
+          <div className="errata-rail-head">
+            <span>题目误刊</span>
+            <button
+              type="button"
+              className="errata-zoom-open"
+              onClick={() => setZoomed(liveErrata[0] ?? null)}
+              title="放大查看，多张每分钟自动轮播"
+            >
+              放大
+            </button>
+          </div>
           <div className="errata-rail-list">
             {liveErrata.map((row) => (
               <ErrataCard
@@ -1054,6 +1218,7 @@ export default function ExamBoardPage() {
                 errata={row}
                 compact
                 isNew={row.id === popupId}
+                isZoomed={row.id === zoomed?.id}
                 onOpen={setZoomed}
               />
             ))}
