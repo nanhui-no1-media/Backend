@@ -1,9 +1,10 @@
 """
 ASGI config for config project.
 
-HTTP stays on Django; WebSocket is session-authenticated messaging push
-(ADR 0015). ``get_asgi_application()`` runs before routing imports so the
-app registry is ready when consumers touch the ORM.
+HTTP stays on Django; WebSocket is messaging push (ADR 0015, session
+auth) plus public exam-board broadcast (ADR 0018). ``get_asgi_application()``
+runs before routing imports so the app registry is ready when consumers
+touch the ORM.
 """
 
 import os
@@ -18,7 +19,10 @@ from channels.auth import AuthMiddlewareStack
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.security.websocket import AllowedHostsOriginValidator
 
-from messaging.routing import websocket_urlpatterns
+from exam_board.routing import websocket_urlpatterns as exam_board_ws
+from messaging.routing import websocket_urlpatterns as messaging_ws
+
+websocket_urlpatterns = messaging_ws + exam_board_ws
 
 
 def _websocket_app(inner):

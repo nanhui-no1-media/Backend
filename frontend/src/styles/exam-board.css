@@ -1,21 +1,24 @@
-* {
+.exam-board-wrapper {
     box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-}
-
-body {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
     background-color: #eef0f2;
     color: #111111;
-    height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
     overflow: hidden;
 }
 
-.board-container {
+.exam-board-wrapper *,
+.exam-board-wrapper *::before,
+.exam-board-wrapper *::after {
+    box-sizing: border-box;
+}
+
+.exam-board-wrapper .board-container {
     width: 90%;
     max-width: 1200px;
     display: flex;
@@ -24,19 +27,32 @@ body {
     gap: 30px;
 }
 
-/* 第一行 */
-.row1 {
+.exam-board-wrapper .exam-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    font-size: 1.6rem;
+    color: #4b5563;
+}
+
+.exam-board-wrapper .exam-heading #exam-batch {
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: #e5e7eb;
+    font-size: 1.1rem;
+}
+
+.exam-board-wrapper .row1 {
     width: 100%;
     text-align: center;
     font-size: 15rem;
     font-weight: 400;
     line-height: 1;
-    letter-spacing: 0px;
+    letter-spacing: 0;
     margin-bottom: 10px;
 }
 
-/* 第二、三行：双列网格布局 */
-.info-grid {
+.exam-board-wrapper .info-grid {
     display: flex;
     justify-content: center;
     width: 100%;
@@ -45,31 +61,23 @@ body {
     gap: 80px;
 }
 
-.left-col,
-.right-col,
-.empty-col {
+.exam-board-wrapper .left-col,
+.exam-board-wrapper .right-col,
+.exam-board-wrapper .empty-col {
     width: 420px;
     display: flex;
     align-items: center;
 }
 
-/* 靠右对齐 */
-.left-col {
+.exam-board-wrapper .left-col { justify-content: flex-end; }
+.exam-board-wrapper .right-col { justify-content: flex-start; }
+.exam-board-wrapper .empty-col {
     justify-content: flex-end;
+    font-size: 1.6rem;
+    color: #6b7280;
 }
 
-/* 靠左对齐 */
-.right-col {
-    justify-content: flex-start;
-}
-
-
-.empty-col {
-    visibility: hidden;
-}
-
-/* 右上角固定齿轮按钮 */
-.settings-btn {
+.exam-board-wrapper .settings-btn {
     position: fixed;
     top: 20px;
     right: 20px;
@@ -82,38 +90,35 @@ body {
     z-index: 1000;
 }
 
-.settings-btn:hover {
+.exam-board-wrapper .settings-btn:hover {
     opacity: 1;
     transform: rotate(45deg);
 }
 
-/* 弹窗遮罩背景 */
-.modal {
-    display: none; /* 默认隐藏 */
+.exam-board-wrapper .modal {
+    display: flex;
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     background-color: rgba(0, 0, 0, 0.4);
     z-index: 1001;
     justify-content: center;
     align-items: center;
 }
 
-/* 弹窗主体内容 */
-.modal-content {
+.exam-board-wrapper .modal-content {
     background-color: #fff;
     padding: 20px;
     border-radius: 8px;
-    width: 500px;
-    max-width: 90%;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    width: 640px;
+    max-width: 94%;
+    max-height: 90vh;
+    overflow: auto;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     position: relative;
     color: #333;
 }
 
-.close-btn {
+.exam-board-wrapper .close-btn {
     position: absolute;
     right: 15px;
     top: 10px;
@@ -121,62 +126,163 @@ body {
     cursor: pointer;
 }
 
-/* 表格与输入框样式 */
-#schedule-table {
+.exam-board-wrapper .settings-tabs {
+    display: flex;
+    gap: 8px;
+    margin: 12px 0 16px;
+}
+
+.exam-board-wrapper .settings-tabs button {
+    border: 1px solid #ddd;
+    background: #f7f7f7;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.exam-board-wrapper .settings-tabs button.active {
+    background: #111;
+    color: #fff;
+    border-color: #111;
+}
+
+.exam-board-wrapper .settings-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.exam-board-wrapper .settings-body label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+}
+
+.exam-board-wrapper .settings-body input,
+.exam-board-wrapper .settings-body select,
+.exam-board-wrapper .settings-body textarea {
+    padding: 6px 8px;
+    font-size: 14px;
+}
+
+.exam-board-wrapper .subject-preview {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 14px;
+    color: #444;
+}
+
+.exam-board-wrapper .edit-toolbar,
+.exam-board-wrapper .batch-head {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.exam-board-wrapper .batch-editor {
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 10px;
+}
+
+.exam-board-wrapper .schedule-table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 15px;
-    margin-bottom: 15px;
+    margin: 10px 0;
     table-layout: fixed;
 }
 
-/* 重新分配各列宽度 */
-#schedule-table th:nth-child(1),
-#schedule-table td:nth-child(1) {
-    width: 28%; /* 缩小科目列 */
-}
-
-#schedule-table th:nth-child(2),
-#schedule-table td:nth-child(2),
-#schedule-table th:nth-child(3),
-#schedule-table td:nth-child(3) {
-    width: 28%; /* 加宽开始时间与结束时间列 */
-}
-
-#schedule-table th:nth-child(4),
-#schedule-table td:nth-child(4) {
-    width: 16%; /* 操作按钮列 */
-}
-
-#schedule-table th, #schedule-table td {
+.exam-board-wrapper .schedule-table th,
+.exam-board-wrapper .schedule-table td {
     border: 1px solid #ddd;
-    padding: 6px 4px;
+    padding: 4px;
     text-align: center;
 }
 
-#schedule-table input {
-    width: 95%;
-    padding: 5px 2px;
-    box-sizing: border-box;
-    font-size: 14px;
-    text-align: center;
-}
-#schedule-table input[type='time'] {
-    padding-right: 0;
+.exam-board-wrapper .schedule-table input {
+    width: 100%;
+    font-size: 13px;
 }
 
-.btn-add, .btn-save, .btn-delete {
+.exam-board-wrapper .btn-add,
+.exam-board-wrapper .btn-save,
+.exam-board-wrapper .btn-delete {
     padding: 6px 12px;
     border: none;
     border-radius: 4px;
     cursor: pointer;
 }
 
-.btn-add { background-color: #4CAF50; color: white; }
-.btn-save { background-color: #2196F3; color: white; }
-.btn-delete { background-color: #f44336; color: white; }
+.exam-board-wrapper .btn-add { background-color: #4CAF50; color: white; }
+.exam-board-wrapper .btn-save { background-color: #2196F3; color: white; }
+.exam-board-wrapper .btn-delete { background-color: #f44336; color: white; }
+.exam-board-wrapper .btn-save:disabled,
+.exam-board-wrapper .btn-delete:disabled { opacity: 0.6; }
 
-.modal-actions {
-    text-align: right;
-    margin-top: 15px;
+.exam-board-wrapper .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.exam-board-wrapper .settings-error { color: #b91c1c; margin: 0; }
+.exam-board-wrapper .settings-hint { color: #6b7280; font-size: 13px; margin: 0; }
+
+.exam-board-wrapper .errata-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.exam-board-wrapper .errata-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px 28px;
+    max-width: min(960px, 92vw);
+    max-height: 90vh;
+    overflow: auto;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.exam-board-wrapper .errata-kicker {
+    font-size: 1.1rem;
+    letter-spacing: 0.2em;
+    color: #b91c1c;
+    margin-bottom: 12px;
+}
+
+.exam-board-wrapper .errata-card img {
+    max-width: 100%;
+    max-height: 60vh;
+    object-fit: contain;
+}
+
+.exam-board-wrapper .errata-card p {
+    margin: 16px 0 0;
+    font-size: 2rem;
+    line-height: 1.4;
+}
+
+@media (max-width: 900px) {
+    .exam-board-wrapper .row1 { font-size: 18vw; }
+    .exam-board-wrapper .info-grid {
+        flex-direction: column;
+        align-items: center;
+        font-size: 1.6rem;
+        gap: 12px;
+    }
+    .exam-board-wrapper .left-col,
+    .exam-board-wrapper .right-col,
+    .exam-board-wrapper .empty-col {
+        width: auto;
+        justify-content: center;
+    }
 }

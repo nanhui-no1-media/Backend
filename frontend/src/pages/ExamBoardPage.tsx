@@ -1,291 +1,622 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../api/client";
+import {
+  examApi,
+  type Exam,
+  type ExamBatch,
+  type ExamErrata,
+  type ExamListItem,
+  type ExamWritePayload,
+} from "../api/exam";
+import { onExamBoardEvent, startExamBoardSocket, stopExamBoardSocket } from "../api/examSocket";
+import { useLoginModal } from "../components/LoginModalProvider";
 import "../styles/exam-board.css";
 
-interface ScheduleItem {
-  id: string;
-  subject: string;
-  startTime: string;
-  endTime: string;
+const SYNC_INTERVAL = 5 * 60 * 1000;
+const SELECTION_KEY = "examBoardSelection";
+const SHANGHAI = "Asia/Shanghai";
+
+type DraftSubject = {
+  key: string;
+  name: string;
+  exam_date: string;
+  start_time: string;
+  end_time: string;
+};
+type DraftBatch = { key: string; name: string; subjects: DraftSubject[] };
+
+type BoardStatus =
+  | { kind: "empty" }
+  | { kind: "idle" }
+  | { kind: "active"; subject: string; start: string; end: string }
+  | { kind: "rest"; nextSubject: string; nextStart: string }
+  | { kind: "done" };
+
+function shanghaiParts(ms: number) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: SHANGHAI,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(ms));
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "00";
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    time: `${get("hour")}:${get("minute")}:${get("second")}`,
+    hm: `${get("hour")}:${get("minute")}`,
+  };
 }
 
-const DEFAULT_SCHEDULES: ScheduleItem[] = [
-  { id: "1", subject: "语文", startTime: "09:00", endTime: "11:30" },
-  { id: "2", subject: "数学", startTime: "15:00", endTime: "17:00" },
-];
+function hm(value: string) {
+  return (value || "").slice(0, 5);
+}
 
-const SYNC_INTERVAL = 5 * 60 * 1000; // 5分钟同步一次网络时间
+function newKey() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function loadSelection(): { examId: number | null; batchId: number | null } {
+  try {
+    const raw = localStorage.getItem(SELECTION_KEY);
+    if (!raw) return { examId: null, batchId: null };
+    const parsed = JSON.parse(raw);
+    return {
+      examId: typeof parsed.examId === "number" ? parsed.examId : null,
+      batchId: typeof parsed.batchId === "number" ? parsed.batchId : null,
+    };
+  } catch {
+    return { examId: null, batchId: null };
+  }
+}
+
+function examToDraft(exam: Exam): { title: string; batches: DraftBatch[] } {
+  return {
+    title: exam.title,
+    batches: exam.batches.map((b) => ({
+      key: `b-${b.id}`,
+      name: b.name,
+      subjects: b.subjects.map((s) => ({
+        key: `s-${s.id}`,
+        name: s.name,
+        exam_date: s.exam_date,
+        start_time: hm(s.start_time),
+        end_time: hm(s.end_time),
+      })),
+    })),
+  };
+}
+
+function emptyDraft() {
+  return {
+    title: "",
+    batches: [
+      {
+        key: newKey(),
+        name: "高一",
+        subjects: [
+          { key: newKey(), name: "语文", exam_date: "", start_time: "09:00", end_time: "11:30" },
+        ],
+      },
+    ],
+  };
+}
+
+function draftToPayload(title: string, batches: DraftBatch[]): ExamWritePayload {
+  return {
+    title: title.trim(),
+    batches: batches.map((b, i) => ({
+      name: b.name.trim(),
+      sort_order: i,
+      subjects: b.subjects
+        .filter((s) => s.name.trim() && s.exam_date && s.start_time && s.end_time)
+        .map((s, j) => ({
+          name: s.name.trim(),
+          exam_date: s.exam_date,
+          start_time: s.start_time,
+          end_time: s.end_time,
+          sort_order: j,
+        })),
+    })),
+  };
+}
+
+function matchBoard(subjects: ExamBatch["subjects"], nowMs: number): BoardStatus {
+  if (!subjects.length) return { kind: "empty" };
+  const { date, hm: nowHm } = shanghaiParts(nowMs);
+  const today = subjects
+    .filter((s) => s.exam_date === date)
+    .slice()
+    .sort((a, b) => hm(a.start_time).localeCompare(hm(b.start_time)));
+  if (!today.length) return { kind: "idle" };
+  for (const s of today) {
+    const start = hm(s.start_time);
+    const end = hm(s.end_time);
+    if (nowHm >= start && nowHm < end) {
+      return { kind: "active", subject: s.name, start, end };
+    }
+  }
+  const next = today.find((s) => hm(s.start_time) > nowHm);
+  if (next) return { kind: "rest", nextSubject: next.name, nextStart: hm(next.start_time) };
+  return { kind: "done" };
+}
 
 export default function ExamBoardPage() {
-  // 1. 状态定义
+  const { openLogin, authNonce } = useLoginModal();
+  const [canManage, setCanManage] = useState(false);
+  const [exams, setExams] = useState<ExamListItem[]>([]);
+  const [exam, setExam] = useState<Exam | null>(null);
+  const [batchId, setBatchId] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [tab, setTab] = useState<"display" | "edit" | "errata">("display");
   const [currentTime, setCurrentTime] = useState("00:00:00");
-  const [currentSubject, setCurrentSubject] = useState("无");
-  const [startTime, setStartTime] = useState("--:--");
-  const [endTime, setEndTime] = useState("--:--");
+  const [status, setStatus] = useState<BoardStatus>({ kind: "idle" });
+  const [errata, setErrata] = useState<ExamErrata | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftBatches, setDraftBatches] = useState<DraftBatch[]>(emptyDraft().batches);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [saveError, setSaveError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [errataText, setErrataText] = useState("");
+  const [errataFile, setErrataFile] = useState<File | null>(null);
+  const timeOffsetRef = useRef(0);
 
-  // 从 LocalStorage 读取配置，若没有则用默认数据
-  const [schedules, setSchedules] = useState<ScheduleItem[]>(() => {
-    const saved = localStorage.getItem("examSchedule");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        return parsed.map((item: any, idx: number) => ({
-          ...item,
-          id: item.id || `${Date.now()}-${idx}`,
-        }));
-      } catch (e) {
-        console.error("解析本地存储失败:", e);
-      }
-    }
-    return DEFAULT_SCHEDULES;
-  });
+  const batch = useMemo(
+    () => exam?.batches.find((b) => b.id === batchId) ?? exam?.batches[0] ?? null,
+    [exam, batchId],
+  );
 
-  // 使用 useRef 保存时间偏移量（毫秒），避免引发不必要的重新渲染
-  const timeOffsetRef = useRef<number>(0);
-
-  // 2. 网络授时同步逻辑 (淘宝 API -> 苏宁 API -> 本地时间)
-  const syncTime = async () => {
-    try {
-      const response = await fetch(
-        `https://api.m.taobao.com/rest/api3.do?api=mtop.common.gettimestamp&${Date.now()}`
-      );
-      const data = await response.json();
-      if (data && data.data && data.data.t) {
-        const serverTimestamp = parseInt(data.data.t, 10);
-        timeOffsetRef.current = serverTimestamp - Date.now();
-        return;
-      }
-      throw new Error("数据结构解析失败");
-    } catch (error) {
-      console.warn("[主接口获取失败，尝试苏宁时间戳备用接口]:", error);
-      try {
-        const res = await fetch(
-          `https://quan.suning.com/getSysTime.do?_=${Date.now()}`
-        );
-        const suningData = await res.json();
-        const tStr = suningData.sysTime1;
-        const formatted = `${tStr.slice(0, 4)}-${tStr.slice(4, 6)}-${tStr.slice(
-          6,
-          8
-        )}T${tStr.slice(8, 10)}:${tStr.slice(10, 12)}:${tStr.slice(
-          12,
-          14
-        )}+08:00`;
-        const serverTimestamp = new Date(formatted).getTime();
-        timeOffsetRef.current = serverTimestamp - Date.now();
-      } catch (e) {
-        console.warn("[所有授时接口均失败，维持本地系统时间模式]", e);
-      }
-    }
+  const persistSelection = (examId: number | null, nextBatchId: number | null) => {
+    localStorage.setItem(SELECTION_KEY, JSON.stringify({ examId, batchId: nextBatchId }));
   };
 
-  // 3. 网络授时定时器
-  useEffect(() => {
-    syncTime();
-    const syncTimer = setInterval(syncTime, SYNC_INTERVAL);
-    return () => clearInterval(syncTimer);
+  const applyExam = useCallback((next: Exam | null, preferredBatchId?: number | null) => {
+    setExam(next);
+    if (!next) {
+      setBatchId(null);
+      return;
+    }
+    const preferred = preferredBatchId ?? loadSelection().batchId;
+    const found = next.batches.find((b) => b.id === preferred);
+    const chosen = found?.id ?? next.batches[0]?.id ?? null;
+    setBatchId(chosen);
+    persistSelection(next.id, chosen);
   }, []);
 
-  // 4. 实时更新时钟与匹配当前考试
+  const loadExam = useCallback(async (id: number, preferredBatchId?: number | null) => {
+    const next = await examApi.retrieve(id);
+    applyExam(next, preferredBatchId);
+  }, [applyExam]);
+
+  const refresh = useCallback(async () => {
+    const [list, current] = await Promise.all([
+      examApi.list(),
+      examApi.currentErrata().catch(() => ({ data: null })),
+    ]);
+    setExams(list.results);
+    setErrata(current.data);
+    const saved = loadSelection();
+    const fallbackId = list.results[0]?.id ?? null;
+    const targetId = list.results.some((e) => e.id === saved.examId) ? saved.examId : fallbackId;
+    if (targetId == null) {
+      applyExam(null);
+      return;
+    }
+    await loadExam(targetId, saved.examId === targetId ? saved.batchId : null);
+  }, [applyExam, loadExam]);
+
+  const syncTime = useCallback(async () => {
+    try {
+      const data = await examApi.clock();
+      timeOffsetRef.current = data.timestamp - Date.now();
+    } catch {
+      timeOffsetRef.current = 0;
+    }
+  }, []);
+
   useEffect(() => {
-    const updateDisplay = () => {
-      const correctedNow = new Date(Date.now() + timeOffsetRef.current);
+    api.me()
+      .then((d) => setCanManage(!!d.user?.permissions?.can_manage_exam))
+      .catch(() => setCanManage(false));
+  }, [authNonce]);
 
-      const hours = String(correctedNow.getHours()).padStart(2, "0");
-      const minutes = String(correctedNow.getMinutes()).padStart(2, "0");
-      const seconds = String(correctedNow.getSeconds()).padStart(2, "0");
-
-      setCurrentTime(`${hours}:${minutes}:${seconds}`);
-
-      // 匹配当前时间是否在某场考试范围内
-      const currentHM = `${hours}:${minutes}`;
-      let activeExam: ScheduleItem | null = null;
-
-      for (const exam of schedules) {
-        if (currentHM >= exam.startTime && currentHM < exam.endTime) {
-          activeExam = exam;
-          break;
-        }
+  useEffect(() => {
+    document.title = "考试看板";
+    refresh().catch(() => {});
+    startExamBoardSocket();
+    const stop = onExamBoardEvent((ev) => {
+      if (ev.event === "exam") refresh().catch(() => {});
+      if (ev.event === "errata") {
+        examApi.currentErrata().then((r) => setErrata(r.data)).catch(() => {});
       }
-
-      if (activeExam) {
-        setCurrentSubject(activeExam.subject);
-        setStartTime(activeExam.startTime);
-        setEndTime(activeExam.endTime);
-      } else {
-        setCurrentSubject("无");
-        setStartTime("--:--");
-        setEndTime("--:--");
-      }
+      if (ev.event === "errata_cleared") setErrata(null);
+    });
+    return () => {
+      stop();
+      stopExamBoardSocket();
     };
+  }, [refresh]);
 
-    updateDisplay();
-    const timer = setInterval(updateDisplay, 1000);
+  useEffect(() => {
+    syncTime();
+    const t = setInterval(syncTime, SYNC_INTERVAL);
+    return () => clearInterval(t);
+  }, [syncTime]);
+
+  useEffect(() => {
+    const tick = () => {
+      const nowMs = Date.now() + timeOffsetRef.current;
+      const { time } = shanghaiParts(nowMs);
+      setCurrentTime(time);
+      setStatus(matchBoard(batch?.subjects ?? [], nowMs));
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [schedules]);
+  }, [batch]);
 
-  // 5. 设置弹窗增删改操作
-  const handleAddRow = () => {
-    const newItem: ScheduleItem = {
-      id: Date.now().toString(),
-      subject: "新科目",
-      startTime: "09:00",
-      endTime: "11:30",
-    };
-    setSchedules([...schedules, newItem]);
+  const openSettings = () => {
+    setTab("display");
+    setSaveError("");
+    if (exam) {
+      const d = examToDraft(exam);
+      setEditingId(exam.id);
+      setDraftTitle(d.title);
+      setDraftBatches(d.batches);
+    } else {
+      setEditingId(null);
+      const d = emptyDraft();
+      setDraftTitle(d.title);
+      setDraftBatches(d.batches);
+    }
+    setIsModalOpen(true);
   };
 
-  const handleDeleteRow = (id: string) => {
-    setSchedules(schedules.filter((item) => item.id !== id));
+  const startNewExam = () => {
+    const d = emptyDraft();
+    setEditingId(null);
+    setDraftTitle(d.title);
+    setDraftBatches(d.batches);
+    setTab("edit");
   };
 
-  const handleInputChange = (
-    id: string,
-    field: keyof ScheduleItem,
-    value: string
-  ) => {
-    setSchedules(
-      schedules.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item
-      )
-    );
+  const loadForEdit = async (id: number) => {
+    const next = await examApi.retrieve(id);
+    const d = examToDraft(next);
+    setEditingId(next.id);
+    setDraftTitle(d.title);
+    setDraftBatches(d.batches);
+    setTab("edit");
   };
 
-  // 6. 保存配置并持久化到 LocalStorage
-  const handleSaveSettings = () => {
-    // 过滤空数据并持久化
-    const validSchedules = schedules.filter(
-      (item) => item.subject && item.startTime && item.endTime
-    );
-    setSchedules(validSchedules);
-    localStorage.setItem("examSchedule", JSON.stringify(validSchedules));
-    setIsModalOpen(false);
+  const handleSaveExam = async () => {
+    setSaving(true);
+    setSaveError("");
+    try {
+      const payload = draftToPayload(draftTitle, draftBatches);
+      const saved = editingId
+        ? await examApi.update(editingId, payload)
+        : await examApi.create(payload);
+      await refresh();
+      applyExam(saved, saved.batches[0]?.id ?? null);
+      setIsModalOpen(false);
+    } catch (e: any) {
+      if (e?.apiError?.kind === "auth") {
+        setIsModalOpen(false);
+        openLogin();
+        return;
+      }
+      setSaveError(e?.message || "保存失败");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const handlePublishErrata = async () => {
+    setSaving(true);
+    setSaveError("");
+    try {
+      const data = new FormData();
+      data.append("text", errataText);
+      if (errataFile) data.append("image", errataFile);
+      const published = await examApi.publishErrata(data);
+      setErrata(published);
+      setErrataText("");
+      setErrataFile(null);
+      setIsModalOpen(false);
+    } catch (e: any) {
+      if (e?.apiError?.kind === "auth") {
+        setIsModalOpen(false);
+        openLogin();
+        return;
+      }
+      setSaveError(e?.message || "发布失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDismissErrata = async () => {
+    setSaving(true);
+    try {
+      await examApi.dismissErrata();
+      setErrata(null);
+    } catch (e: any) {
+      setSaveError(e?.message || "撤回失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const subjectLabel =
+    status.kind === "active" ? status.subject
+    : status.kind === "rest" ? "休息"
+    : status.kind === "done" ? "已结束"
+    : status.kind === "empty" ? "无"
+    : "无";
+  const startLabel = status.kind === "active" ? status.start : status.kind === "rest" ? status.nextStart : "--:--";
+  const endLabel = status.kind === "active" ? status.end : "--:--";
+  const startCaption = status.kind === "rest" ? "下场开始：" : "开始时间：";
 
   return (
     <div className="exam-board-wrapper">
-      {/* 右上角齿轮设置按钮 */}
-      <button
-        id="settings-btn"
-        className="settings-btn"
-        title="设置"
-        onClick={() => setIsModalOpen(true)}
-      >
+      <button id="settings-btn" className="settings-btn" title="设置" onClick={openSettings}>
         ⚙️
       </button>
 
-      {/* 设置弹窗面板 */}
       {isModalOpen && (
-        <div id="settings-modal" className="modal style-modal-open">
-          <div className="modal-content">
-            <span
-              className="close-btn"
-              id="close-modal"
-              onClick={() => setIsModalOpen(false)}
-            >
-              &times;
-            </span>
-            <h3>考试时间配置列表</h3>
-            <table id="schedule-table">
-              <thead>
-                <tr>
-                  <th>科目</th>
-                  <th>开始时间</th>
-                  <th>结束时间</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody id="schedule-body">
-                {schedules.map((row) => (
-                  <tr key={row.id}>
-                    <td>
-                      <input
-                        type="text"
-                        className="inp-subject"
-                        value={row.subject}
-                        placeholder="科目"
-                        onChange={(e) =>
-                          handleInputChange(row.id, "subject", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="time"
-                        className="inp-start"
-                        value={row.startTime}
-                        onChange={(e) =>
-                          handleInputChange(row.id, "startTime", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="time"
-                        className="inp-end"
-                        value={row.endTime}
-                        onChange={(e) =>
-                          handleInputChange(row.id, "endTime", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <button
-                        className="btn-delete"
-                        onClick={() => handleDeleteRow(row.id)}
-                      >
-                        删除
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <button
-              id="add-row-btn"
-              className="btn-add"
-              onClick={handleAddRow}
-            >
-              + 添加科目
-            </button>
-            <div className="modal-actions">
-              <button
-                id="save-settings-btn"
-                className="btn-save"
-                onClick={handleSaveSettings}
-              >
-                保存
-              </button>
+        <div className="modal" onClick={() => setIsModalOpen(false)}>
+          <div className="modal-content exam-settings" onClick={(e) => e.stopPropagation()}>
+            <span className="close-btn" onClick={() => setIsModalOpen(false)}>&times;</span>
+            <h3>考试看板设置</h3>
+            <div className="settings-tabs">
+              <button type="button" className={tab === "display" ? "active" : ""} onClick={() => setTab("display")}>显示批次</button>
+              {canManage && (
+                <>
+                  <button type="button" className={tab === "edit" ? "active" : ""} onClick={() => setTab("edit")}>编辑考试</button>
+                  <button type="button" className={tab === "errata" ? "active" : ""} onClick={() => setTab("errata")}>题目误刊</button>
+                </>
+              )}
             </div>
+
+            {tab === "display" && (
+              <div className="settings-body">
+                <label>
+                  考试
+                  <select
+                    value={exam?.id ?? ""}
+                    onChange={(e) => {
+                      const id = Number(e.target.value);
+                      if (!id) return;
+                      loadExam(id).catch(() => {});
+                    }}
+                  >
+                    {exams.length === 0 && <option value="">暂无考试</option>}
+                    {exams.map((item) => (
+                      <option key={item.id} value={item.id}>{item.title}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  批次
+                  <select
+                    value={batch?.id ?? ""}
+                    onChange={(e) => {
+                      const id = Number(e.target.value);
+                      setBatchId(id);
+                      if (exam) persistSelection(exam.id, id);
+                    }}
+                  >
+                    {(exam?.batches ?? []).map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </label>
+                {batch && (
+                  <ul className="subject-preview">
+                    {batch.subjects.map((s) => (
+                      <li key={s.id}>{s.exam_date} {s.name} {hm(s.start_time)}–{hm(s.end_time)}</li>
+                    ))}
+                    {batch.subjects.length === 0 && <li>该批次暂无科目</li>}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {tab === "edit" && canManage && (
+              <div className="settings-body">
+                <div className="edit-toolbar">
+                  <select
+                    value={editingId ?? ""}
+                    onChange={(e) => {
+                      const id = Number(e.target.value);
+                      if (id) loadForEdit(id).catch(() => {});
+                    }}
+                  >
+                    <option value="">新建考试</option>
+                    {exams.map((item) => (
+                      <option key={item.id} value={item.id}>{item.title}</option>
+                    ))}
+                  </select>
+                  <button type="button" className="btn-add" onClick={startNewExam}>+ 新建</button>
+                </div>
+                <label>
+                  考试标题
+                  <input value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} placeholder="如 2026 学年期末考试" />
+                </label>
+                {draftBatches.map((b, bi) => (
+                  <div className="batch-editor" key={b.key}>
+                    <div className="batch-head">
+                      <input
+                        value={b.name}
+                        onChange={(e) => setDraftBatches(draftBatches.map((x, i) => i === bi ? { ...x, name: e.target.value } : x))}
+                        placeholder="批次名称，如 高一"
+                      />
+                      <button type="button" className="btn-delete" onClick={() => setDraftBatches(draftBatches.filter((_, i) => i !== bi))}>删除批次</button>
+                    </div>
+                    <table className="schedule-table">
+                      <thead>
+                        <tr>
+                          <th>日期</th>
+                          <th>科目</th>
+                          <th>开始</th>
+                          <th>结束</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {b.subjects.map((s, si) => (
+                          <tr key={s.key}>
+                            <td>
+                              <input
+                                type="date"
+                                value={s.exam_date}
+                                onChange={(e) => setDraftBatches(draftBatches.map((x, i) => i === bi ? {
+                                  ...x,
+                                  subjects: x.subjects.map((y, j) => j === si ? { ...y, exam_date: e.target.value } : y),
+                                } : x))}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                value={s.name}
+                                onChange={(e) => setDraftBatches(draftBatches.map((x, i) => i === bi ? {
+                                  ...x,
+                                  subjects: x.subjects.map((y, j) => j === si ? { ...y, name: e.target.value } : y),
+                                } : x))}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="time"
+                                value={s.start_time}
+                                onChange={(e) => setDraftBatches(draftBatches.map((x, i) => i === bi ? {
+                                  ...x,
+                                  subjects: x.subjects.map((y, j) => j === si ? { ...y, start_time: e.target.value } : y),
+                                } : x))}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="time"
+                                value={s.end_time}
+                                onChange={(e) => setDraftBatches(draftBatches.map((x, i) => i === bi ? {
+                                  ...x,
+                                  subjects: x.subjects.map((y, j) => j === si ? { ...y, end_time: e.target.value } : y),
+                                } : x))}
+                              />
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="btn-delete"
+                                onClick={() => setDraftBatches(draftBatches.map((x, i) => i === bi ? {
+                                  ...x,
+                                  subjects: x.subjects.filter((_, j) => j !== si),
+                                } : x))}
+                              >
+                                删
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <button
+                      type="button"
+                      className="btn-add"
+                      onClick={() => setDraftBatches(draftBatches.map((x, i) => i === bi ? {
+                        ...x,
+                        subjects: [...x.subjects, { key: newKey(), name: "", exam_date: "", start_time: "09:00", end_time: "11:00" }],
+                      } : x))}
+                    >
+                      + 添加科目
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn-add"
+                  onClick={() => setDraftBatches([...draftBatches, { key: newKey(), name: "", subjects: [] }])}
+                >
+                  + 添加批次
+                </button>
+                {saveError && <p className="settings-error">{saveError}</p>}
+                <div className="modal-actions">
+                  <button type="button" className="btn-save" disabled={saving} onClick={handleSaveExam}>
+                    {saving ? "保存中…" : "保存到服务器"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {tab === "errata" && canManage && (
+              <div className="settings-body">
+                <p className="settings-hint">发布后所有打开的考试看板会立刻弹出图文更正。</p>
+                <label>
+                  说明
+                  <textarea value={errataText} onChange={(e) => setErrataText(e.target.value)} rows={3} placeholder="如：语文第 3 题更正为……" />
+                </label>
+                <label>
+                  图片
+                  <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" onChange={(e) => setErrataFile(e.target.files?.[0] ?? null)} />
+                </label>
+                {saveError && <p className="settings-error">{saveError}</p>}
+                <div className="modal-actions">
+                  {errata && (
+                    <button type="button" className="btn-delete" disabled={saving} onClick={handleDismissErrata}>撤回当前</button>
+                  )}
+                  <button type="button" className="btn-save" disabled={saving} onClick={handlePublishErrata}>广播误刊</button>
+                </div>
+              </div>
+            )}
+
+            {!canManage && tab !== "display" && (
+              <p className="settings-hint">登录且持有「管理考试看板」后可编辑课表、广播误刊。</p>
+            )}
           </div>
         </div>
       )}
 
-      {/* 页面核心展示区域 */}
+      {errata && (
+        <div className="errata-overlay" role="alert">
+          <div className="errata-card">
+            <div className="errata-kicker">题目误刊</div>
+            {errata.image_url && <img src={errata.image_url} alt="" />}
+            {errata.text && <p>{errata.text}</p>}
+          </div>
+        </div>
+      )}
+
       <div className="board-container">
-        {/* 第一行：当前时间 */}
+        <div className="exam-heading">
+          <span id="exam-title">{exam?.title || "暂无考试"}</span>
+          {batch && <span id="exam-batch">{batch.name}</span>}
+        </div>
         <div className="row1">
           <span id="current-time">{currentTime}</span>
         </div>
-
-        {/* 第二行：当前科目 & 开始时间 */}
         <div className="info-grid">
           <div className="left-col">
             <span>当前科目：</span>
-            <span id="current-subject">{currentSubject}</span>
+            <span id="current-subject">{subjectLabel}</span>
           </div>
           <div className="right-col" id="start-time-container">
-            <span>开始时间：</span>
-            <span id="start-time">{startTime}</span>
+            <span>{startCaption}</span>
+            <span id="start-time">{startLabel}</span>
           </div>
         </div>
-
-        {/* 第三行：左侧占位，右侧结束时间 */}
         <div className="info-grid">
-          <div className="empty-col"></div>
+          <div className="empty-col">
+            {status.kind === "rest" && <span className="rest-hint">下场：{status.nextSubject}</span>}
+          </div>
           <div className="right-col" id="end-time-container">
             <span>结束时间：</span>
-            <span id="end-time">{endTime}</span>
+            <span id="end-time">{endLabel}</span>
           </div>
         </div>
       </div>

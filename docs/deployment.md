@@ -30,7 +30,7 @@
 Nginx
   ├── /static/ → Django staticfiles
   ├── /media/ → 用户上传文件
-  └── 其他（含 /ws/messaging/）
+  └── 其他（含 /ws/messaging/、/ws/exam-board/）
         ↓  一律 HTTP/1.1 + Upgrade（unix socket）
       Gunicorn UvicornWorker × 1 → Django ASGI
 ```
@@ -39,7 +39,7 @@ Nginx
 
 - Django 直接提供前端 `frontend/dist/` 产物
 - `start.sh` 负责拉起 Gunicorn（**1 个** ASGI worker，`config.asgi:application`），并一起拉起更新守护进程
-- WebSocket 走 `/ws/messaging/`，只推送私信 / 通知 / 当前评论区；挤号仍走 HTTP 中间件（[ADR 0015](adr/0015-channels-without-redis.md)）
+- WebSocket：`/ws/messaging/` 推送私信 / 通知 / 当前评论区（须登录）；`/ws/exam-board/` 向教室看板广播课表变更与题目误刊（匿名可连，[ADR 0018](adr/0018-exam-board-batch-and-public-ws.md)）。挤号仍走 HTTP 中间件（[ADR 0015](adr/0015-channels-without-redis.md)）
 - Nginx **对上游**须 HTTP/1.1 并转发 `Upgrade` / `Connection`；对外协议见下节
 - `scripts/install.sh` 会处理依赖安装、（必要时）前端构建、SECRET_KEY / FRONTEND_URL / 超管、迁移、collectstatic、systemd 和 Nginx 配置
 - **不要**在未引入 Redis 之前把 `--workers` 调到 >1：内存 channel layer 无法跨进程扇出，SQLite 也怕多写者

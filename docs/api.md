@@ -233,6 +233,26 @@ DELETE /tutorials/tutorials/<id>/
 - 审核教程是否通过
 - 统计浏览量/收藏等元数据
 
+## 7.1 考试看板（`/exam_board/` + `/ws/exam-board/`）
+
+课表按 **考试 → 批次 → 科目场次** 嵌套（[ADR 0018](adr/0018-exam-board-batch-and-public-ws.md)）。读匿名开放；写需 `can_manage_exam`（`exam_board.add_exam`）。
+
+```http
+GET    /exam_board/exams/
+GET    /exam_board/exams/latest/
+GET    /exam_board/exams/<id>/
+POST   /exam_board/exams/
+PUT    /exam_board/exams/<id>/
+DELETE /exam_board/exams/<id>/
+GET    /exam_board/exams/clock/
+GET    /exam_board/errata/current/
+POST   /exam_board/errata/
+POST   /exam_board/errata/dismiss/
+GET    /ws/exam-board/
+```
+
+写入考试时 `batches[].subjects[]` 带 `name` / `exam_date` / `start_time` / `end_time`。授时返回 Asia/Shanghai。误刊 `multipart`：`text` 与可选 `image`；同一时刻至多一条未撤回。WebSocket 匿名可连，下行 `{ "event": "exam"|"errata"|"errata_cleared", "payload": {} }`，HTTP 仍是事实源。
+
 ## 8. 消息模块契约（`/messaging/` + `/ws/messaging/`）
 
 本节是消息重置后的 HTTP / WebSocket 契约（[ADR 0015](adr/0015-channels-without-redis.md)、[ADR 0016](adr/0016-comment-thread-vs-dm.md)）。实现按此对齐；**不要**另起 `/messages/` 等前缀。会话子资源沿用现网路径；评论区 / 通知 / 禁言 / 横幅按下列资源名落地。

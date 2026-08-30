@@ -38,7 +38,7 @@ urlpatterns = [
     path('attachments/', include('attachments.urls')),
     path('uploads/', include('attachments.tus_urls')),
     path('', TemplateView.as_view(template_name='index.html'), name='home'),
-    re_path(r'^(?!static/|admin/|auth/|tasks/|media/|messaging/|activities/|news/|reviews/|site-policy/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
+    re_path(r'^(?!static/|admin/|auth/|tasks/|media/|messaging/|activities/|news/|reviews/|site-policy/|exam_board/|tutorials/|recruitment/|attachments/|uploads/|about/).*$', TemplateView.as_view(template_name='index.html'), name='index'),
 ]
 
 if settings.DEBUG:

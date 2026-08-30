@@ -14,7 +14,7 @@
 4. **文档保真：原件嵌入，不解析成富文本。** PDF 用浏览器 iframe；`.docx` 用前端 `docx-preview` 渲染；原件始终可下载。上传覆盖该区块附件。
 5. **教程视频不转码。** 原文件 `<video>` 直播；解码失败则给下载件。交互只做收藏 + 去重播放量。
 6. **加入问卷 = 嵌入式 SurveyJS，Schema/作答落本库。** 无第二套服务。公告确认（`notice_acknowledged`）是提交门槛。问卷编辑复用 `about.change_aboutpage`（同一批门户管理员）。
-7. **考试看板写权限用 Django 白送的 `exam_board.add_examdata`。** 多场次记录 + `DateField`；读匿名开放。能力键 `can_manage_exam`。
+7. **考试看板写权限用 Django 白送的 `exam_board.add_exam`。** 读匿名开放。能力键 `can_manage_exam`。课表形状与公开误刊 socket 见 [ADR 0018](0018-exam-board-batch-and-public-ws.md)（本条原写 `add_examdata` / 扁平科目串，已 superseded）。
 
 ## 被否的方案
 
@@ -27,5 +27,5 @@
 ## 后果
 
 - 公开读过滤条件成为「`review.status=approved`」（活动另允许尚无审核行的历史夹具，回填后新创建必有行）。
-- 信息组获 `about.change_aboutpage` 与 `exam_board.add_examdata`；审核仍走社长的 `reviews.moderate`。
+- 信息组获 `about.change_aboutpage` 与 `exam_board.add_exam`；审核仍走社长的 `reviews.moderate`。
 - 后续若某类型审核持有者真的不同，再按 ADR-0005 拆权，而不是先预留。

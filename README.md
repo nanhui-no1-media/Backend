@@ -71,7 +71,7 @@ Backend/
 ├── common/               # 公共组件、站点策略等
 ├── config/               # Django settings / urls / ASGI/WSGI
 ├── docs/                 # 项目文档
-├── exam_board/           # 评审/考核相关功能
+├── exam_board/           # 考试看板（批次课表 + 题目误刊广播）
 ├── frontend/             # React 前端源代码与构建输出
 ├── messaging/            # 评论区 / 私信 / 通知 / 横幅公告
 ├── news/                 # 新闻模块
@@ -109,6 +109,7 @@ Backend/
 - 招聘：`/recruitment/`
 - 消息（评论区 / 私信 / 通知 / 横幅）：`/messaging/`
 - 实时推送（已登录）：`/ws/messaging/`
+- 考试看板：`/exam_board/`，广播 `/ws/exam-board/`
 - 附件上传：`/uploads/`
 - 站点政策：`/site-policy/`
 
