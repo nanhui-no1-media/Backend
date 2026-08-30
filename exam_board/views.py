@@ -67,12 +67,12 @@ class ExamViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
-    def get_queryset(self):
+    def get_queryset(self): # type: ignore
         if self.action == "list":
             return Exam.objects.annotate(batch_count=Count("batches", distinct=True)).order_by("-id")
         return _exam_queryset()
 
-    def get_serializer_class(self):
+    def get_serializer_class(self): # type: ignore
         if self.action == "list":
             return ExamListSerializer
         return ExamSerializer
