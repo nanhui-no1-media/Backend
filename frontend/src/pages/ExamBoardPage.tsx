@@ -9,7 +9,7 @@ import {
   type ExamSubject,
   type ExamWritePayload,
 } from "../api/exam";
-import { onExamBoardEvent, startExamBoardSocket, stopExamBoardSocket } from "../api/examSocket";
+import { onExamBoardEvent, onExamBoardSocketStatus, startExamBoardSocket, stopExamBoardSocket, type ExamBoardSocketState } from "../api/examSocket";
 import { playExamCue, speakExamVoice, unlockExamBoardAudio } from "../examBoard/audio";
 import {
   applyExamBoardMascotClass,
@@ -32,6 +32,7 @@ const FADE_MS = 280;
 const POPUP_MS = 2800;
 const RECYCLE_GAP_MS = 750;
 const ZOOM_CYCLE_MS = 60 * 1000;
+const SCHEDULE_COLLAPSE_MS = 5 * 60 * 1000;
 const POPUP_SEEN_KEY = "examBoardErrataPopup";
 const SELECTION_KEY = "examBoardSelection";
 const GUIDE_KEY = "examBoardInvigilatorGuide";
@@ -93,6 +94,18 @@ function toSeconds(value: string) {
 function formatRemain(sec: number) {
   if (sec <= 60) return "不到 1 分钟";
   return `${Math.ceil(sec / 60)} 分钟`;
+}
+
+function formatSyncTime(ms: number | null) {
+  if (ms == null) return "尚未同步";
+  return shanghaiParts(ms).time;
+}
+
+function socketStateLabel(state: ExamBoardSocketState) {
+  if (state === "open") return "已连接";
+  if (state === "connecting") return "连接中";
+  if (state === "closed") return "已断开";
+  return "未连接";
 }
 
 function newKey() {
@@ -366,34 +379,78 @@ function ScheduleRail({
   batch: ExamBatch | null;
   nowMs: number;
 }) {
+  const [open, setOpen] = useState(false);
+  const hoverRef = useRef(false);
+  const timerRef = useRef<number | null>(null);
   const rows = (batch?.subjects ?? [])
     .slice()
     .sort((a, b) => `${a.exam_date} ${hm(a.start_time)}`.localeCompare(`${b.exam_date} ${hm(b.start_time)}`));
   let lastDate = "";
+
+  const armCollapse = () => {
+    if (timerRef.current != null) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      if (!hoverRef.current) setOpen(false);
+    }, SCHEDULE_COLLAPSE_MS);
+  };
+
+  useEffect(() => () => {
+    if (timerRef.current != null) window.clearTimeout(timerRef.current);
+  }, []);
+
   return (
-    <aside className="schedule-rail" aria-label="考试时间表">
-      <div className="schedule-rail-head">
+    <aside
+      className={`schedule-rail${open ? " is-open" : " is-collapsed"}`}
+      aria-label="考试时间表"
+      onMouseEnter={() => {
+        hoverRef.current = true;
+        if (timerRef.current != null) {
+          window.clearTimeout(timerRef.current);
+          timerRef.current = null;
+        }
+      }}
+      onMouseLeave={() => {
+        hoverRef.current = false;
+        if (open) armCollapse();
+      }}
+    >
+      <button
+        type="button"
+        className="schedule-rail-head"
+        onClick={() => {
+          setOpen((current) => {
+            const next = !current;
+            if (next) armCollapse();
+            return next;
+          });
+        }}
+        title={open ? "收起时间表" : "展开时间表"}
+      >
         <span>时间表</span>
         {batch && <span className="schedule-rail-batch">{batch.name}</span>}
-      </div>
-      {rows.length === 0 && <p className="schedule-empty">该批次暂无科目</p>}
-      <ol className="schedule-list">
-        {rows.map((subject) => {
-          const phase = subjectPhase(subject, nowMs);
-          const showDate = subject.exam_date !== lastDate;
-          lastDate = subject.exam_date;
-          return (
-            <li key={subject.id} className={`schedule-row is-${phase}`}>
-              {showDate && <div className="schedule-date">{subject.exam_date}</div>}
-              <div className="schedule-row-body">
-                <span className={`schedule-phase is-${phase}`}>{phaseLabel(phase)}</span>
-                <span className="schedule-name">{subject.name}</span>
-                <span className="schedule-time">{hm(subject.start_time)}–{hm(subject.end_time)}</span>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+        <span className="schedule-rail-toggle">{open ? "收起" : "展开"}</span>
+      </button>
+      {open && rows.length === 0 && <p className="schedule-empty">该批次暂无科目</p>}
+      {open && (
+        <ol className="schedule-list">
+          {rows.map((subject) => {
+            const phase = subjectPhase(subject, nowMs);
+            const showDate = subject.exam_date !== lastDate;
+            lastDate = subject.exam_date;
+            return (
+              <li key={subject.id} className={`schedule-row is-${phase}`}>
+                {showDate && <div className="schedule-date">{subject.exam_date}</div>}
+                <div className="schedule-row-body">
+                  <span className={`schedule-phase is-${phase}`}>{phaseLabel(phase)}</span>
+                  <span className="schedule-name">{subject.name}</span>
+                  <span className="schedule-time">{hm(subject.start_time)}–{hm(subject.end_time)}</span>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </aside>
   );
 }
@@ -423,6 +480,10 @@ export default function ExamBoardPage() {
   const [fade, setFade] = useState<"in" | "out" | "">("");
   const [isFullscreen, setIsFullscreen] = useState(isPageFullscreen);
   const [showGuide, setShowGuide] = useState(() => !guideDismissed());
+  const [clockSyncedAt, setClockSyncedAt] = useState<number | null>(null);
+  const [clockRttMs, setClockRttMs] = useState<number | null>(null);
+  const [dataSyncedAt, setDataSyncedAt] = useState<number | null>(null);
+  const [socketState, setSocketState] = useState<ExamBoardSocketState>("idle");
   const timeOffsetRef = useRef(0);
   const fieldKeyRef = useRef(fieldKey(fieldsFromStatus({ kind: "idle" })));
   const fadeTimerRef = useRef<number | null>(null);
@@ -432,6 +493,7 @@ export default function ExamBoardPage() {
   const recyclingRef = useRef(false);
   const popupSeenRef = useRef<Set<number>>(readPopupSeen());
   const paperKindRef = useRef<BoardStatus["kind"]>("idle");
+  const prevCueKindRef = useRef<Cue["kind"] | null>(null);
   const batchIdRef = useRef<number | null>(null);
   const errataListRef = useRef<ExamErrata[]>([]);
   const liveErrataRef = useRef<ExamErrata[]>([]);
@@ -482,6 +544,7 @@ export default function ExamBoardPage() {
     ]);
     applyExam(next, preferredBatchId);
     ingestErrata(current.data ?? []);
+    setDataSyncedAt(Date.now());
   }, [applyExam, ingestErrata]);
 
   const refresh = useCallback(async () => {
@@ -493,6 +556,7 @@ export default function ExamBoardPage() {
     if (targetId == null) {
       applyExam(null);
       ingestErrata([]);
+      setDataSyncedAt(Date.now());
       return;
     }
     const [examRow, current] = await Promise.all([
@@ -501,12 +565,18 @@ export default function ExamBoardPage() {
     ]);
     applyExam(examRow, saved.examId === targetId ? saved.batchId : null);
     ingestErrata(current.data ?? []);
+    setDataSyncedAt(Date.now());
   }, [applyExam, ingestErrata]);
 
   const syncTime = useCallback(async () => {
+    const sentAt = Date.now();
     try {
       const data = await examApi.clock();
-      timeOffsetRef.current = data.timestamp - Date.now();
+      const receivedAt = Date.now();
+      const rtt = Math.max(0, receivedAt - sentAt);
+      timeOffsetRef.current = data.timestamp + rtt / 2 - receivedAt;
+      setClockRttMs(Math.round(rtt));
+      setClockSyncedAt(receivedAt);
     } catch {
       timeOffsetRef.current = 0;
     }
@@ -531,15 +601,20 @@ export default function ExamBoardPage() {
     document.title = "考试看板";
     refresh().catch(() => {});
     startExamBoardSocket();
+    const stopStatus = onExamBoardSocketStatus(setSocketState);
     const stop = onExamBoardEvent((ev) => {
       if (ev.event === "exam") refresh().catch(() => {});
       if (ev.event === "errata") {
         const examId = loadSelection().examId;
-        examApi.currentErrata(examId).then((r) => ingestErrata(r.data ?? [])).catch(() => {});
+        examApi.currentErrata(examId).then((r) => {
+          ingestErrata(r.data ?? []);
+          setDataSyncedAt(Date.now());
+        }).catch(() => {});
       }
     });
     return () => {
       stop();
+      stopStatus();
       stopExamBoardSocket();
     };
   }, [refresh, ingestErrata]);
@@ -788,6 +863,12 @@ export default function ExamBoardPage() {
   const zoomCycling = zoomed != null && liveErrata.length > 1;
 
   useEffect(() => {
+    const kind = cue?.kind ?? null;
+    if (kind && kind !== prevCueKindRef.current) setZoomed(null);
+    prevCueKindRef.current = kind;
+  }, [cue?.kind]);
+
+  useEffect(() => {
     for (const row of liveErrata) {
       if (!row.image_url) continue;
       const img = new Image();
@@ -828,7 +909,13 @@ export default function ExamBoardPage() {
     const kind = matchBoard(batch?.subjects ?? [], now).kind;
     const prev = paperKindRef.current;
     paperKindRef.current = kind;
-    if (kind === "active") return;
+    if (kind === "active") {
+      if (prev !== "active") {
+        setZoomed(null);
+        setPopupId(null);
+      }
+      return;
+    }
     const bid = batch?.id;
     const ids = errataListRef.current.map((row) => row.id);
     if (bid != null && ids.length) {
@@ -997,6 +1084,18 @@ export default function ExamBoardPage() {
                 <button type="button" className="btn-save" onClick={handleFullscreen}>
                   {isFullscreen ? "退出全屏" : "全屏投屏"}
                 </button>
+                <div className="board-health" aria-label="同步状态">
+                  <div>
+                    时钟同步 <strong>{formatSyncTime(clockSyncedAt)}</strong>
+                    {clockRttMs != null && `（往返 ${clockRttMs} ms）`}
+                  </div>
+                  <div>课表同步 <strong>{formatSyncTime(dataSyncedAt)}</strong></div>
+                  <div className={
+                    socketState === "open" ? "is-ok" : socketState === "connecting" ? "is-wait" : "is-bad"
+                  }>
+                    推送 <strong>{socketStateLabel(socketState)}</strong>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1190,7 +1289,7 @@ export default function ExamBoardPage() {
         </div>
       )}
 
-      {cue && !zoomed && (
+      {cue && (
         <div className={`time-cue time-cue-${cue.kind}`} role="status">
           {cue.kind === "ending"
             ? `${cue.subject} 将在 ${formatRemain(cue.remainSec)} 后结束，请注意收卷时间`

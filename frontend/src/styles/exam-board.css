@@ -85,7 +85,7 @@
     top: 24px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 900;
+    z-index: 1260;
     max-width: min(720px, 86vw);
     padding: 12px 22px;
     border-radius: 999px;
@@ -517,20 +517,15 @@
     pointer-events: auto;
 }
 
-.exam-board-wrapper .errata-rail-head,
-.exam-board-wrapper .schedule-rail-head {
+.exam-board-wrapper .errata-rail-head {
     font-size: 0.85rem;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.12em;
     color: #991b1b;
     font-weight: 600;
-}
-
-.exam-board-wrapper .errata-rail-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    letter-spacing: 0.12em;
 }
 
 .exam-board-wrapper .errata-zoom-open {
@@ -543,14 +538,6 @@
     background: #991b1b;
     color: #fff;
     cursor: pointer;
-}
-
-.exam-board-wrapper .schedule-rail-head {
-    color: #374151;
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
 }
 
 .exam-board-wrapper .schedule-rail-batch {
@@ -623,6 +610,66 @@
     min-height: 0;
     overflow: hidden;
 }
+
+.exam-board-wrapper .schedule-rail.is-collapsed {
+    bottom: auto;
+    width: auto;
+    min-width: 148px;
+    padding: 8px 10px;
+}
+
+.exam-board-wrapper .schedule-rail-head {
+    color: #374151;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.exam-board-wrapper .schedule-rail-toggle {
+    letter-spacing: 0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #111827;
+    background: #e5e7eb;
+    border-radius: 999px;
+    padding: 2px 8px;
+    flex-shrink: 0;
+}
+
+.exam-board-wrapper .board-health {
+    margin-top: 16px;
+    padding: 12px 12px 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #f9fafb;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #4b5563;
+}
+
+.exam-board-wrapper .board-health strong {
+    font-weight: 600;
+    color: #111827;
+}
+
+.exam-board-wrapper .board-health .is-ok,
+.exam-board-wrapper .board-health .is-ok strong { color: #166534; }
+.exam-board-wrapper .board-health .is-wait,
+.exam-board-wrapper .board-health .is-wait strong { color: #92400e; }
+.exam-board-wrapper .board-health .is-bad,
+.exam-board-wrapper .board-health .is-bad strong { color: #991b1b; }
 
 .exam-board-wrapper .schedule-empty {
     margin: 12px 0 0;

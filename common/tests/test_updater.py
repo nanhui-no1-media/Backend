@@ -52,6 +52,7 @@ from common.updater import (
     poll_tick,
     previous_local_archive,
     prune_keep_newest,
+    prune_releases,
     release_tag,
     retry_delay,
     restore_sqlite,
@@ -471,6 +472,35 @@ class UnpackExcludeRollbackTest(SimpleTestCase):
         self.assertEqual(len(removed), 2)
         remaining = {p.name for p in self.paths.releases_dir.glob("*.tar.gz")}
         self.assertEqual(remaining, {"c.tar.gz", "d.tar.gz"})
+
+    def test_prune_releases_removes_sha256_and_part_lock(self):
+        old = self._tarball("aaaaaaaaaaaa", {"app.py": b"old\n"})
+        new = self._tarball("bbbbbbbbbbbb", {"app.py": b"new\n"})
+        os.utime(old, (old.stat().st_mtime - 10, old.stat().st_mtime - 10))
+        Path(str(old) + ".part").write_bytes(b"partial")
+        Path(str(old) + ".part.lock").write_bytes(b"0")
+        Path(str(old) + ".sha256.part").write_text("dead\n", encoding="utf-8")
+        removed = prune_releases(self.paths, keep=1)
+        self.assertEqual([p.name for p in removed], [old.name])
+        self.assertFalse(old.exists())
+        self.assertFalse(Path(str(old) + ".sha256").exists())
+        self.assertFalse(Path(str(old) + ".part").exists())
+        self.assertFalse(Path(str(old) + ".part.lock").exists())
+        self.assertFalse(Path(str(old) + ".sha256.part").exists())
+        self.assertTrue(new.exists())
+        self.assertTrue(Path(str(new) + ".sha256").exists())
+
+    def test_prune_releases_sweeps_orphan_sidecars(self):
+        kept = self._tarball("bbbbbbbbbbbb", {"app.py": b"keep\n"})
+        orphan_sha = self.paths.releases_dir / "club-aaaaaaaaaaaa.tar.gz.sha256"
+        orphan_lock = self.paths.releases_dir / "club-aaaaaaaaaaaa.tar.gz.part.lock"
+        orphan_sha.write_text("dead\n", encoding="utf-8")
+        orphan_lock.write_bytes(b"0")
+        prune_releases(self.paths, keep=5)
+        self.assertFalse(orphan_sha.exists())
+        self.assertFalse(orphan_lock.exists())
+        self.assertTrue(kept.exists())
+        self.assertTrue(Path(str(kept) + ".sha256").exists())
 
     def test_poll_tick_does_not_apply_outside_window(self):
         self._seed_live()

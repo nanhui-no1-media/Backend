@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterator, Literal, Sequence
+from typing import Any, Callable, Generator, Iterator, Literal, Sequence
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -529,6 +529,30 @@ def pending_archive(paths: UpdaterPaths, remote_sha: str | None = None) -> Path 
     return newest
 
 
+def _unlink_quiet(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        log.warning("could not remove leftover %s", path.name)
+
+
+def release_sidecars(archive: Path) -> list[Path]:
+    """Checksum, incomplete download, and download lock next to a tarball."""
+    name = str(archive)
+    return [
+        Path(name + ".sha256"),
+        Path(name + ".part"),
+        Path(name + ".part.lock"),
+        Path(name + ".sha256.part"),
+    ]
+
+
+def unlink_release_archive(archive: Path) -> None:
+    _unlink_quiet(archive)
+    for sidecar in release_sidecars(archive):
+        _unlink_quiet(sidecar)
+
+
 def prune_keep_newest(files: Sequence[Path], keep: int) -> list[Path]:
     keep = max(0, int(keep))
     ordered = sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
@@ -541,7 +565,42 @@ def prune_keep_newest(files: Sequence[Path], keep: int) -> list[Path]:
 
 
 def prune_releases(paths: UpdaterPaths, keep: int) -> list[Path]:
-    return prune_keep_newest(complete_archives(paths.releases_dir), keep)
+    """Drop oldest complete tarballs, plus each package's sha256 and download lock."""
+    keep_n = max(0, int(keep))
+    ordered = sorted(
+        complete_archives(paths.releases_dir),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    removed = ordered[keep_n:]
+    for path in removed:
+        unlink_release_archive(path)
+    _sweep_orphan_release_sidecars(paths.releases_dir)
+    return list(removed)
+
+
+def _sweep_orphan_release_sidecars(releases_dir: Path) -> None:
+    """Remove sha256 / .part / .part.lock whose tarball is already gone."""
+    if not releases_dir.is_dir():
+        return
+    kept = {p.name for p in complete_archives(releases_dir)}
+    suffixes = (
+        ".tar.gz.sha256",
+        ".tar.gz.part.lock",
+        ".tar.gz.sha256.part",
+        ".tar.gz.part",
+    )
+    for path in list(releases_dir.iterdir()):
+        if not path.is_file():
+            continue
+        name = path.name
+        for suffix in suffixes:
+            if not name.endswith(suffix):
+                continue
+            tarball = name[: -len(suffix)] + ".tar.gz"
+            if tarball not in kept:
+                _unlink_quiet(path)
+            break
 
 
 def prune_db_backups(paths: UpdaterPaths, keep: int) -> list[Path]:
@@ -1217,7 +1276,7 @@ def download_release(
     sidecar_part = Path(str(sidecar_dest) + ".part")
 
     with _hold_download_lock(part):
-        return _download_release_locked(
+        result = _download_release_locked(
             remote,
             dest,
             part,
@@ -1227,6 +1286,8 @@ def download_release(
             download=download,
             sleep=sleep,
         )
+    Path(str(part) + ".lock").unlink(missing_ok=True)
+    return result
 
 
 def _download_release_locked(

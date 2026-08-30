@@ -20,7 +20,28 @@ let socket: WebSocket | null = null;
 let backoff = MIN_BACKOFF_MS;
 let reconnectTimer: number | null = null;
 
+export type ExamBoardSocketState = "idle" | "connecting" | "open" | "closed";
+
 const eventListeners = new Set<(ev: ExamBoardPushEvent) => void>();
+const statusListeners = new Set<(state: ExamBoardSocketState) => void>();
+
+let socketState: ExamBoardSocketState = "idle";
+
+function setSocketState(next: ExamBoardSocketState) {
+  if (socketState === next) return;
+  socketState = next;
+  statusListeners.forEach((fn) => fn(socketState));
+}
+
+export function getExamBoardSocketState(): ExamBoardSocketState {
+  return socketState;
+}
+
+export function onExamBoardSocketStatus(fn: (state: ExamBoardSocketState) => void): Unsub {
+  statusListeners.add(fn);
+  fn(socketState);
+  return () => { statusListeners.delete(fn); };
+}
 
 function wsUrl(): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -56,10 +77,12 @@ function connect() {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
     return;
   }
+  setSocketState("connecting");
   let next: WebSocket;
   try {
     next = new WebSocket(wsUrl());
   } catch {
+    setSocketState("closed");
     scheduleReconnect();
     return;
   }
@@ -67,6 +90,7 @@ function connect() {
   next.onopen = () => {
     if (socket !== next) return;
     backoff = MIN_BACKOFF_MS;
+    setSocketState("open");
   };
   next.onmessage = (ev) => {
     const parsed = parseEvent(typeof ev.data === "string" ? ev.data : "");
@@ -75,7 +99,12 @@ function connect() {
   };
   next.onclose = () => {
     if (socket === next) socket = null;
-    scheduleReconnect();
+    if (wanted) {
+      setSocketState("connecting");
+      scheduleReconnect();
+    } else {
+      setSocketState("closed");
+    }
   };
   next.onerror = () => {
     try { next.close(); } catch { /* ignore */ }
@@ -103,6 +132,7 @@ export function stopExamBoardSocket() {
     try { current.close(); } catch { /* ignore */ }
   }
   backoff = MIN_BACKOFF_MS;
+  setSocketState("closed");
 }
 
 export function onExamBoardEvent(fn: (ev: ExamBoardPushEvent) => void): Unsub {
