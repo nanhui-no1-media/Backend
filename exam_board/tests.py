@@ -1,12 +1,16 @@
-from datetime import date, time
+from datetime import date, datetime, time, timedelta
 from io import BytesIO
+from unittest.mock import patch
 
 from django.contrib.auth.models import Group, Permission, User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.utils import timezone
 from PIL import Image
 from rest_framework.test import APIClient
 
+from exam_board.clock import SHANGHAI, shanghai_now
+from exam_board.expiry import compute_errata_expiry
 from exam_board.models import Exam, ExamBatch, ExamErrata, ExamSubject
 
 
@@ -267,49 +271,166 @@ class ExamErrataTest(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.writer = _writer()
+        now = shanghai_now()
+        self.exam = _exam(exam_date=now.date(), start_time=time(0, 0), end_time=time(23, 59))
+
+    def _publish(self, text, **extra):
+        payload = {"text": text, "exam": self.exam.id, **extra}
+        return self.client.post("/exam_board/errata/", payload, format="multipart")
 
     def test_current_empty(self):
         resp = self.client.get("/exam_board/errata/current/")
         self.assertEqual(resp.status_code, 200)
-        self.assertIsNone(resp.data["data"])
+        self.assertEqual(resp.data["data"], [])
 
     def test_anon_cannot_publish(self):
-        resp = self.client.post("/exam_board/errata/", {"text": "第3题更正"}, format="multipart")
+        resp = self.client.post(
+            "/exam_board/errata/",
+            {"text": "第3题更正", "exam": self.exam.id},
+            format="multipart",
+        )
         self.assertEqual(resp.status_code, 403)
+
+    def test_publish_requires_exam(self):
+        self.client.force_authenticate(self.writer)
+        resp = self.client.post("/exam_board/errata/", {"text": "第3题更正"}, format="multipart")
+        self.assertEqual(resp.status_code, 400)
 
     def test_publish_text_and_image(self):
         self.client.force_authenticate(self.writer)
         image = _png()
-        resp = self.client.post(
-            "/exam_board/errata/",
-            {"text": "第3题更正", "image": image},
-            format="multipart",
-        )
+        resp = self._publish("第3题更正", image=image)
         self.assertEqual(resp.status_code, 201, resp.data)
         self.assertEqual(resp.data["text"], "第3题更正")
+        self.assertEqual(resp.data["exam"], self.exam.id)
         self.assertTrue(resp.data["image_url"])
-        current = self.client.get("/exam_board/errata/current/")
-        self.assertEqual(current.data["data"]["id"], resp.data["id"])
+        current = self.client.get(f"/exam_board/errata/current/?exam={self.exam.id}")
+        self.assertEqual(len(current.data["data"]), 1)
+        self.assertEqual(current.data["data"][0]["id"], resp.data["id"])
 
-    def test_new_errata_replaces_previous(self):
+    def test_multiple_errata_kept(self):
         self.client.force_authenticate(self.writer)
-        self.client.post("/exam_board/errata/", {"text": "旧"}, format="multipart")
-        resp = self.client.post("/exam_board/errata/", {"text": "新"}, format="multipart")
+        self._publish("旧")
+        resp = self._publish("新")
         self.assertEqual(resp.status_code, 201)
-        current = self.client.get("/exam_board/errata/current/")
-        self.assertEqual(current.data["data"]["text"], "新")
-        self.assertEqual(ExamErrata.objects.filter(dismissed_at__isnull=True).count(), 1)
+        current = self.client.get(f"/exam_board/errata/current/?exam={self.exam.id}")
+        texts = [row["text"] for row in current.data["data"]]
+        self.assertEqual(texts, ["旧", "新"])
+        self.assertEqual(ExamErrata.objects.filter(dismissed_at__isnull=True).count(), 2)
 
     def test_dismiss_clears_current(self):
         self.client.force_authenticate(self.writer)
-        self.client.post("/exam_board/errata/", {"text": "误"}, format="multipart")
-        resp = self.client.post("/exam_board/errata/dismiss/")
+        self._publish("误")
+        resp = self.client.post("/exam_board/errata/dismiss/", {"exam": self.exam.id})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["dismissed"], 1)
-        current = self.client.get("/exam_board/errata/current/")
-        self.assertIsNone(current.data["data"])
+        current = self.client.get(f"/exam_board/errata/current/?exam={self.exam.id}")
+        self.assertEqual(current.data["data"], [])
 
     def test_empty_errata_rejected(self):
         self.client.force_authenticate(self.writer)
-        resp = self.client.post("/exam_board/errata/", {"text": "  "}, format="multipart")
+        resp = self._publish("  ")
         self.assertEqual(resp.status_code, 400)
+
+    def test_publish_expires_at_active_paper_end(self):
+        ExamSubject.objects.all().delete()
+        exam = _exam(
+            exam_date=date(2026, 8, 30),
+            start_time=time(14, 0),
+            end_time=time(16, 38),
+        )
+        frozen = datetime(2026, 8, 30, 16, 29, tzinfo=SHANGHAI)
+        self.client.force_authenticate(self.writer)
+        with patch("exam_board.expiry.shanghai_now", return_value=frozen):
+            resp = self.client.post(
+                "/exam_board/errata/",
+                {"text": "第3题", "exam": exam.id},
+                format="multipart",
+            )
+        self.assertEqual(resp.status_code, 201, resp.data)
+        expires = datetime.fromisoformat(resp.data["expires_at"].replace("Z", "+00:00"))
+        self.assertEqual(expires.astimezone(SHANGHAI).strftime("%H:%M"), "16:38")
+
+    def test_current_dismisses_expired_in_id_order(self):
+        self.client.force_authenticate(self.writer)
+        past = timezone.now() - timedelta(minutes=1)
+        first = ExamErrata.objects.create(exam=self.exam, text="A", expires_at=past)
+        second = ExamErrata.objects.create(exam=self.exam, text="B", expires_at=past)
+        resp = self.client.get(f"/exam_board/errata/current/?exam={self.exam.id}")
+        self.assertEqual(resp.data["data"], [])
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertIsNotNone(first.dismissed_at)
+        self.assertIsNotNone(second.dismissed_at)
+        self.assertLessEqual(first.dismissed_at, second.dismissed_at)
+
+    def test_current_clears_leftover_when_no_paper_active(self):
+        ExamSubject.objects.all().delete()
+        exam = _exam(
+            exam_date=date(2026, 8, 30),
+            start_time=time(14, 0),
+            end_time=time(16, 0),
+        )
+        future = timezone.now() + timedelta(hours=2)
+        item = ExamErrata.objects.create(exam=exam, text="旧场", expires_at=future)
+        frozen = datetime(2026, 8, 30, 16, 1, tzinfo=SHANGHAI)
+        with patch("exam_board.expiry.shanghai_now", return_value=frozen):
+            resp = self.client.get(f"/exam_board/errata/current/?exam={exam.id}")
+        self.assertEqual(resp.data["data"], [])
+        item.refresh_from_db()
+        self.assertIsNotNone(item.dismissed_at)
+
+
+class ErrataExpiryHelperTest(TestCase):
+    def test_rest_expires_immediately(self):
+        _exam(
+            exam_date=date(2026, 8, 30),
+            start_time=time(14, 0),
+            end_time=time(16, 0),
+        )
+        frozen = datetime(2026, 8, 30, 12, 0, tzinfo=SHANGHAI)
+        with patch("exam_board.expiry.shanghai_now", return_value=frozen):
+            expires = compute_errata_expiry()
+        self.assertEqual(expires, frozen)
+
+    def test_after_last_paper_expires_immediately(self):
+        _exam(
+            exam_date=date(2026, 8, 30),
+            start_time=time(9, 0),
+            end_time=time(11, 0),
+        )
+        frozen = datetime(2026, 8, 30, 18, 0, tzinfo=SHANGHAI)
+        with patch("exam_board.expiry.shanghai_now", return_value=frozen):
+            expires = compute_errata_expiry()
+        self.assertEqual(expires, frozen)
+
+    def test_active_uses_paper_end(self):
+        _exam(
+            exam_date=date(2026, 8, 30),
+            start_time=time(14, 0),
+            end_time=time(16, 0),
+        )
+        frozen = datetime(2026, 8, 30, 15, 0, tzinfo=SHANGHAI)
+        with patch("exam_board.expiry.shanghai_now", return_value=frozen):
+            expires = compute_errata_expiry()
+        self.assertEqual(expires.astimezone(SHANGHAI).strftime("%H:%M"), "16:00")
+
+    def test_batch_ignores_other_batch_later_end(self):
+        exam = _exam(
+            exam_date=date(2026, 8, 30),
+            start_time=time(14, 0),
+            end_time=time(16, 0),
+        )
+        other = ExamBatch.objects.create(exam=exam, name="高二", sort_order=1)
+        ExamSubject.objects.create(
+            batch=other,
+            name="数学",
+            exam_date=date(2026, 8, 30),
+            start_time=time(14, 0),
+            end_time=time(18, 0),
+        )
+        frozen = datetime(2026, 8, 30, 15, 0, tzinfo=SHANGHAI)
+        batch_id = ExamBatch.objects.get(exam=exam, name="高一").id
+        with patch("exam_board.expiry.shanghai_now", return_value=frozen):
+            expires = compute_errata_expiry(exam.id, batch_id)
+        self.assertEqual(expires.astimezone(SHANGHAI).strftime("%H:%M"), "16:00")

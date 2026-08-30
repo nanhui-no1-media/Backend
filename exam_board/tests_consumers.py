@@ -57,6 +57,10 @@ class ExamBoardWebsocketTests(TransactionTestCase):
         user.user_permissions.add(Permission.objects.get(codename="add_exam"))
         client = APIClient()
         client.force_authenticate(user)
+        from exam_board.models import Exam, ExamBatch
+
+        exam = Exam.objects.create(title="期末")
+        ExamBatch.objects.create(exam=exam, name="高一", sort_order=0)
 
         async def inner():
             communicator = WebsocketCommunicator(
@@ -64,7 +68,9 @@ class ExamBoardWebsocketTests(TransactionTestCase):
             )
             self.assertTrue((await communicator.connect())[0])
             resp = await sync_to_async(client.post)(
-                "/exam_board/errata/", {"text": "第1题印刷错误"}, format="multipart",
+                "/exam_board/errata/",
+                {"text": "第1题印刷错误", "exam": exam.id},
+                format="multipart",
             )
             self.assertEqual(resp.status_code, 201)
             msg = await communicator.receive_json_from()

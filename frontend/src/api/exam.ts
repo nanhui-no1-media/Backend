@@ -43,9 +43,11 @@ export interface ExamClock {
 
 export interface ExamErrata {
   id: number;
+  exam: number;
   text: string;
   image_url: string | null;
   created_at: string;
+  expires_at: string | null;
 }
 
 export type ExamWritePayload = {
@@ -73,10 +75,18 @@ export const examApi = {
     request(`/exams/${id}/`, { method: "PUT", body: JSON.stringify(data) }) as Promise<Exam>,
   remove: (id: number) => request(`/exams/${id}/`, { method: "DELETE" }) as Promise<void>,
   clock: () => request("/exams/clock/") as Promise<ExamClock>,
-  currentErrata: () =>
-    request("/errata/current/") as Promise<{ status: string; data: ExamErrata | null }>,
+  currentErrata: (examId?: number | null) => {
+    const q = examId != null ? `?exam=${examId}` : "";
+    return request(`/errata/current/${q}`) as Promise<{ status: string; data: ExamErrata[] }>;
+  },
   publishErrata: (data: FormData) =>
     request("/errata/", { method: "POST", body: data }) as Promise<ExamErrata>,
-  dismissErrata: () =>
-    request("/errata/dismiss/", { method: "POST" }) as Promise<{ status: string; dismissed: number }>,
+  dismissErrata: (examId?: number | null) => {
+    const body = examId != null ? JSON.stringify({ exam: examId }) : "{}";
+    return request("/errata/dismiss/", { method: "POST", body }) as Promise<{
+      status: string;
+      dismissed: number;
+      ids: number[];
+    }>;
+  },
 };

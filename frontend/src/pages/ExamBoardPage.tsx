@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import {
   examApi,
@@ -6,31 +6,55 @@ import {
   type ExamBatch,
   type ExamErrata,
   type ExamListItem,
+  type ExamSubject,
   type ExamWritePayload,
 } from "../api/exam";
 import { onExamBoardEvent, startExamBoardSocket, stopExamBoardSocket } from "../api/examSocket";
+import { playExamCue, speakExamVoice, unlockExamBoardAudio } from "../examBoard/audio";
+import {
+  applyExamBoardMascotClass,
+  loadExamBoardPrefs,
+  saveExamBoardPrefs,
+  type ExamBoardPrefs,
+} from "../examBoard/prefs";
+import {
+  subjectRowInvalid,
+  validateExamDraft,
+  type DraftBatch,
+} from "../examBoard/validate";
 import { useLoginModal } from "../components/LoginModalProvider";
+import { speakMascot } from "../components/mascot/speak";
 import "../styles/exam-board.css";
 
 const SYNC_INTERVAL = 5 * 60 * 1000;
+const WARN_SECONDS = 15 * 60;
+const FADE_MS = 280;
+const POPUP_MS = 2800;
+const RECYCLE_GAP_MS = 750;
+const POPUP_SEEN_KEY = "examBoardErrataPopup";
 const SELECTION_KEY = "examBoardSelection";
 const SHANGHAI = "Asia/Shanghai";
-
-type DraftSubject = {
-  key: string;
-  name: string;
-  exam_date: string;
-  start_time: string;
-  end_time: string;
-};
-type DraftBatch = { key: string; name: string; subjects: DraftSubject[] };
 
 type BoardStatus =
   | { kind: "empty" }
   | { kind: "idle" }
-  | { kind: "active"; subject: string; start: string; end: string }
-  | { kind: "rest"; nextSubject: string; nextStart: string }
+  | { kind: "active"; subject: string; start: string; end: string; remainSec: number }
+  | { kind: "rest"; nextSubject: string; nextStart: string; untilSec: number }
   | { kind: "done" };
+
+type Cue =
+  | { kind: "ending"; subject: string; remainSec: number }
+  | { kind: "approaching"; subject: string; start: string; untilSec: number };
+
+type DisplayFields = {
+  title: string;
+  batchName: string;
+  subject: string;
+  startCaption: string;
+  start: string;
+  end: string;
+  restHint: string;
+};
 
 function shanghaiParts(ms: number) {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -54,6 +78,19 @@ function shanghaiParts(ms: number) {
 
 function hm(value: string) {
   return (value || "").slice(0, 5);
+}
+
+function toSeconds(value: string) {
+  const parts = (value || "00:00:00").split(":");
+  const h = Number(parts[0]) || 0;
+  const m = Number(parts[1]) || 0;
+  const s = Number(parts[2]) || 0;
+  return h * 3600 + m * 60 + s;
+}
+
+function formatRemain(sec: number) {
+  if (sec <= 60) return "不到 1 分钟";
+  return `${Math.ceil(sec / 60)} 分钟`;
 }
 
 function newKey() {
@@ -127,7 +164,8 @@ function draftToPayload(title: string, batches: DraftBatch[]): ExamWritePayload 
 
 function matchBoard(subjects: ExamBatch["subjects"], nowMs: number): BoardStatus {
   if (!subjects.length) return { kind: "empty" };
-  const { date, hm: nowHm } = shanghaiParts(nowMs);
+  const { date, time, hm: nowHm } = shanghaiParts(nowMs);
+  const nowSec = toSeconds(time);
   const today = subjects
     .filter((s) => s.exam_date === date)
     .slice()
@@ -137,12 +175,186 @@ function matchBoard(subjects: ExamBatch["subjects"], nowMs: number): BoardStatus
     const start = hm(s.start_time);
     const end = hm(s.end_time);
     if (nowHm >= start && nowHm < end) {
-      return { kind: "active", subject: s.name, start, end };
+      return {
+        kind: "active",
+        subject: s.name,
+        start,
+        end,
+        remainSec: Math.max(0, toSeconds(end) - nowSec),
+      };
     }
   }
   const next = today.find((s) => hm(s.start_time) > nowHm);
-  if (next) return { kind: "rest", nextSubject: next.name, nextStart: hm(next.start_time) };
+  if (next) {
+    const nextStart = hm(next.start_time);
+    return {
+      kind: "rest",
+      nextSubject: next.name,
+      nextStart,
+      untilSec: Math.max(0, toSeconds(nextStart) - nowSec),
+    };
+  }
   return { kind: "done" };
+}
+
+function fieldsFromStatus(status: BoardStatus, title = "暂无考试", batchName = ""): DisplayFields {
+  const base = { title, batchName };
+  if (status.kind === "active") {
+    return {
+      ...base,
+      subject: status.subject,
+      startCaption: "开始时间：",
+      start: status.start,
+      end: status.end,
+      restHint: "",
+    };
+  }
+  if (status.kind === "rest") {
+    return {
+      ...base,
+      subject: "休息",
+      startCaption: "下场开始：",
+      start: status.nextStart,
+      end: "--:--",
+      restHint: `下场：${status.nextSubject}`,
+    };
+  }
+  return {
+    ...base,
+    subject: status.kind === "done" ? "已结束" : "无",
+    startCaption: "开始时间：",
+    start: "--:--",
+    end: "--:--",
+    restHint: "",
+  };
+}
+
+function fieldKey(fields: DisplayFields) {
+  return `${fields.title}|${fields.batchName}|${fields.subject}|${fields.startCaption}|${fields.start}|${fields.end}|${fields.restHint}`;
+}
+
+function subjectPhase(subject: ExamSubject, nowMs: number): "done" | "active" | "upcoming" {
+  const { date, hm: nowHm } = shanghaiParts(nowMs);
+  const start = hm(subject.start_time);
+  const end = hm(subject.end_time);
+  if (subject.exam_date < date || (subject.exam_date === date && nowHm >= end)) return "done";
+  if (subject.exam_date === date && nowHm >= start && nowHm < end) return "active";
+  return "upcoming";
+}
+
+function phaseLabel(phase: "done" | "active" | "upcoming") {
+  if (phase === "done") return "已结束";
+  if (phase === "active") return "进行中";
+  return "未开始";
+}
+
+function cueFromStatus(status: BoardStatus): Cue | null {
+  if (status.kind === "active" && status.remainSec > 0 && status.remainSec <= WARN_SECONDS) {
+    return { kind: "ending", subject: status.subject, remainSec: status.remainSec };
+  }
+  if (status.kind === "rest" && status.untilSec > 0 && status.untilSec <= WARN_SECONDS) {
+    return {
+      kind: "approaching",
+      subject: status.nextSubject,
+      start: status.nextStart,
+      untilSec: status.untilSec,
+    };
+  }
+  return null;
+}
+
+function errataStillLive(item: ExamErrata, nowMs: number): boolean {
+  if (!item.expires_at) return true;
+  const exp = Date.parse(item.expires_at);
+  return Number.isNaN(exp) || exp > nowMs;
+}
+
+function pickLine(lines: string[]) {
+  return lines[Math.floor(Math.random() * lines.length)];
+}
+
+function readPopupSeen(): Set<number> {
+  try {
+    const raw = sessionStorage.getItem(POPUP_SEEN_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed.filter((n) => typeof n === "number") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writePopupSeen(ids: Set<number>) {
+  try {
+    sessionStorage.setItem(POPUP_SEEN_KEY, JSON.stringify([...ids]));
+  } catch {
+    /* ignore */
+  }
+}
+
+function ErrataCard({
+  errata,
+  compact = false,
+  isNew = false,
+  onOpen,
+}: {
+  errata: ExamErrata;
+  compact?: boolean;
+  isNew?: boolean;
+  onOpen?: (item: ExamErrata) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`errata-card${compact ? " compact" : ""}${isNew ? " is-new" : ""}`}
+      onClick={() => onOpen?.(errata)}
+      title="点击放大"
+    >
+      {!compact && <div className="errata-kicker">题目误刊</div>}
+      {errata.image_url && <img src={errata.image_url} alt="" />}
+      {errata.text && <p>{errata.text}</p>}
+      {!compact && <span className="errata-zoom-hint">点击放大</span>}
+    </button>
+  );
+}
+
+function ScheduleRail({
+  batch,
+  nowMs,
+}: {
+  batch: ExamBatch | null;
+  nowMs: number;
+}) {
+  const rows = (batch?.subjects ?? [])
+    .slice()
+    .sort((a, b) => `${a.exam_date} ${hm(a.start_time)}`.localeCompare(`${b.exam_date} ${hm(b.start_time)}`));
+  let lastDate = "";
+  return (
+    <aside className="schedule-rail" aria-label="考试时间表">
+      <div className="schedule-rail-head">
+        <span>时间表</span>
+        {batch && <span className="schedule-rail-batch">{batch.name}</span>}
+      </div>
+      {rows.length === 0 && <p className="schedule-empty">该批次暂无科目</p>}
+      <ol className="schedule-list">
+        {rows.map((subject) => {
+          const phase = subjectPhase(subject, nowMs);
+          const showDate = subject.exam_date !== lastDate;
+          lastDate = subject.exam_date;
+          return (
+            <li key={subject.id} className={`schedule-row is-${phase}`}>
+              {showDate && <div className="schedule-date">{subject.exam_date}</div>}
+              <div className="schedule-row-body">
+                <span className={`schedule-phase is-${phase}`}>{phaseLabel(phase)}</span>
+                <span className="schedule-name">{subject.name}</span>
+                <span className="schedule-time">{hm(subject.start_time)}–{hm(subject.end_time)}</span>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </aside>
+  );
 }
 
 export default function ExamBoardPage() {
@@ -155,7 +367,10 @@ export default function ExamBoardPage() {
   const [tab, setTab] = useState<"display" | "edit" | "errata">("display");
   const [currentTime, setCurrentTime] = useState("00:00:00");
   const [status, setStatus] = useState<BoardStatus>({ kind: "idle" });
-  const [errata, setErrata] = useState<ExamErrata | null>(null);
+  const [errataList, setErrataList] = useState<ExamErrata[]>([]);
+  const [popupId, setPopupId] = useState<number | null>(null);
+  const [zoomed, setZoomed] = useState<ExamErrata | null>(null);
+  const [prefs, setPrefs] = useState<ExamBoardPrefs>(loadExamBoardPrefs);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftBatches, setDraftBatches] = useState<DraftBatch[]>(emptyDraft().batches);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -163,12 +378,39 @@ export default function ExamBoardPage() {
   const [saving, setSaving] = useState(false);
   const [errataText, setErrataText] = useState("");
   const [errataFile, setErrataFile] = useState<File | null>(null);
+  const [fields, setFields] = useState<DisplayFields>(() => fieldsFromStatus({ kind: "idle" }));
+  const [fade, setFade] = useState<"in" | "out" | "">("");
   const timeOffsetRef = useRef(0);
+  const fieldKeyRef = useRef(fieldKey(fieldsFromStatus({ kind: "idle" })));
+  const fadeTimerRef = useRef<number | null>(null);
+  const splashTimerRef = useRef<number | null>(null);
+  const spokenRef = useRef(new Set<string>());
+  const prevKindRef = useRef<BoardStatus["kind"]>("idle");
+  const recyclingRef = useRef(false);
+  const popupSeenRef = useRef<Set<number>>(readPopupSeen());
+  const paperKindRef = useRef<BoardStatus["kind"]>("idle");
+  const batchIdRef = useRef<number | null>(null);
+  const errataListRef = useRef<ExamErrata[]>([]);
+  const recycledByBatchRef = useRef<Map<number, Set<number>>>(new Map());
 
   const batch = useMemo(
     () => exam?.batches.find((b) => b.id === batchId) ?? exam?.batches[0] ?? null,
     [exam, batchId],
   );
+
+  const ingestErrata = useCallback((rows: ExamErrata[]) => {
+    const bid = batchIdRef.current;
+    const recycled = bid != null ? recycledByBatchRef.current.get(bid) : undefined;
+    const ordered = rows
+      .slice()
+      .filter((row) => !recycled?.has(row.id))
+      .sort((a, b) => a.id - b.id);
+    errataListRef.current = ordered;
+    setErrataList(ordered);
+    const unseen = ordered.filter((row) => !popupSeenRef.current.has(row.id));
+    const newest = unseen.length ? unseen[unseen.length - 1] : undefined;
+    if (newest) setPopupId(newest.id);
+  }, []);
 
   const persistSelection = (examId: number | null, nextBatchId: number | null) => {
     localStorage.setItem(SELECTION_KEY, JSON.stringify({ examId, batchId: nextBatchId }));
@@ -178,36 +420,44 @@ export default function ExamBoardPage() {
     setExam(next);
     if (!next) {
       setBatchId(null);
+      batchIdRef.current = null;
       return;
     }
     const preferred = preferredBatchId ?? loadSelection().batchId;
     const found = next.batches.find((b) => b.id === preferred);
     const chosen = found?.id ?? next.batches[0]?.id ?? null;
     setBatchId(chosen);
+    batchIdRef.current = chosen;
     persistSelection(next.id, chosen);
   }, []);
 
   const loadExam = useCallback(async (id: number, preferredBatchId?: number | null) => {
-    const next = await examApi.retrieve(id);
+    const [next, current] = await Promise.all([
+      examApi.retrieve(id),
+      examApi.currentErrata(id).catch(() => ({ data: [] as ExamErrata[] })),
+    ]);
     applyExam(next, preferredBatchId);
-  }, [applyExam]);
+    ingestErrata(current.data ?? []);
+  }, [applyExam, ingestErrata]);
 
   const refresh = useCallback(async () => {
-    const [list, current] = await Promise.all([
-      examApi.list(),
-      examApi.currentErrata().catch(() => ({ data: null })),
-    ]);
+    const list = await examApi.list();
     setExams(list.results);
-    setErrata(current.data);
     const saved = loadSelection();
     const fallbackId = list.results[0]?.id ?? null;
     const targetId = list.results.some((e) => e.id === saved.examId) ? saved.examId : fallbackId;
     if (targetId == null) {
       applyExam(null);
+      ingestErrata([]);
       return;
     }
-    await loadExam(targetId, saved.examId === targetId ? saved.batchId : null);
-  }, [applyExam, loadExam]);
+    const [examRow, current] = await Promise.all([
+      examApi.retrieve(targetId),
+      examApi.currentErrata(targetId).catch(() => ({ data: [] as ExamErrata[] })),
+    ]);
+    applyExam(examRow, saved.examId === targetId ? saved.batchId : null);
+    ingestErrata(current.data ?? []);
+  }, [applyExam, ingestErrata]);
 
   const syncTime = useCallback(async () => {
     try {
@@ -224,6 +474,15 @@ export default function ExamBoardPage() {
       .catch(() => setCanManage(false));
   }, [authNonce]);
 
+  useLayoutEffect(() => {
+    document.body.classList.add("exam-board-on");
+    applyExamBoardMascotClass(loadExamBoardPrefs().mascot);
+    return () => {
+      document.body.classList.remove("exam-board-on");
+      document.body.classList.remove("exam-board-hide-mascot");
+    };
+  }, []);
+
   useEffect(() => {
     document.title = "考试看板";
     refresh().catch(() => {});
@@ -231,15 +490,15 @@ export default function ExamBoardPage() {
     const stop = onExamBoardEvent((ev) => {
       if (ev.event === "exam") refresh().catch(() => {});
       if (ev.event === "errata") {
-        examApi.currentErrata().then((r) => setErrata(r.data)).catch(() => {});
+        const examId = loadSelection().examId;
+        examApi.currentErrata(examId).then((r) => ingestErrata(r.data ?? [])).catch(() => {});
       }
-      if (ev.event === "errata_cleared") setErrata(null);
     });
     return () => {
       stop();
       stopExamBoardSocket();
     };
-  }, [refresh]);
+  }, [refresh, ingestErrata]);
 
   useEffect(() => {
     syncTime();
@@ -258,6 +517,75 @@ export default function ExamBoardPage() {
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [batch]);
+
+  const pendingFields = fieldsFromStatus(status, exam?.title || "暂无考试", batch?.name || "");
+  const pendingKey = fieldKey(pendingFields);
+  const pendingFieldsRef = useRef(pendingFields);
+  pendingFieldsRef.current = pendingFields;
+
+  useEffect(() => {
+    if (pendingKey === fieldKeyRef.current) return;
+    if (fadeTimerRef.current != null) window.clearTimeout(fadeTimerRef.current);
+    setFade("out");
+    fadeTimerRef.current = window.setTimeout(() => {
+      const next = pendingFieldsRef.current;
+      setFields(next);
+      fieldKeyRef.current = fieldKey(next);
+      setFade("in");
+      fadeTimerRef.current = null;
+    }, FADE_MS);
+    return () => {
+      if (fadeTimerRef.current != null) {
+        window.clearTimeout(fadeTimerRef.current);
+        fadeTimerRef.current = null;
+      }
+    };
+  }, [pendingKey]);
+
+  useEffect(() => {
+    if (popupId == null) return;
+    if (splashTimerRef.current != null) window.clearTimeout(splashTimerRef.current);
+    splashTimerRef.current = window.setTimeout(() => {
+      popupSeenRef.current.add(popupId);
+      writePopupSeen(popupSeenRef.current);
+      setPopupId(null);
+      splashTimerRef.current = null;
+    }, POPUP_MS);
+    return () => {
+      if (splashTimerRef.current != null) {
+        window.clearTimeout(splashTimerRef.current);
+        splashTimerRef.current = null;
+      }
+    };
+  }, [popupId]);
+
+  const recycleIds = useCallback(async (ids: number[]) => {
+    if (!ids.length || recyclingRef.current) return;
+    recyclingRef.current = true;
+    for (const id of ids) {
+      setErrataList((rows) => {
+        const next = rows.filter((row) => row.id !== id);
+        errataListRef.current = next;
+        return next;
+      });
+      if (popupId === id) setPopupId(null);
+      if (zoomed?.id === id) setZoomed(null);
+      await new Promise((resolve) => window.setTimeout(resolve, RECYCLE_GAP_MS));
+    }
+    recyclingRef.current = false;
+  }, [popupId, zoomed?.id]);
+
+  useEffect(() => {
+    const stop = onExamBoardEvent((ev) => {
+      if (ev.event !== "errata_cleared") return;
+      const ids = Array.isArray(ev.payload.ids)
+        ? ev.payload.ids.filter((n): n is number => typeof n === "number")
+        : [];
+      if (ids.length) void recycleIds(ids);
+      else setErrataList([]);
+    });
+    return stop;
+  }, [recycleIds]);
 
   const openSettings = () => {
     setTab("display");
@@ -294,6 +622,11 @@ export default function ExamBoardPage() {
   };
 
   const handleSaveExam = async () => {
+    const invalid = validateExamDraft(draftTitle, draftBatches);
+    if (invalid) {
+      setSaveError(invalid);
+      return;
+    }
     setSaving(true);
     setSaveError("");
     try {
@@ -317,14 +650,20 @@ export default function ExamBoardPage() {
   };
 
   const handlePublishErrata = async () => {
+    if (!exam) {
+      setSaveError("请先选择一场考试");
+      return;
+    }
     setSaving(true);
     setSaveError("");
     try {
       const data = new FormData();
+      data.append("exam", String(exam.id));
+      if (batch) data.append("batch", String(batch.id));
       data.append("text", errataText);
       if (errataFile) data.append("image", errataFile);
       const published = await examApi.publishErrata(data);
-      setErrata(published);
+      ingestErrata([...errataList.filter((row) => row.id !== published.id), published]);
       setErrataText("");
       setErrataFile(null);
       setIsModalOpen(false);
@@ -343,8 +682,8 @@ export default function ExamBoardPage() {
   const handleDismissErrata = async () => {
     setSaving(true);
     try {
-      await examApi.dismissErrata();
-      setErrata(null);
+      const result = await examApi.dismissErrata(exam?.id);
+      await recycleIds(result.ids ?? errataList.map((row) => row.id));
     } catch (e: any) {
       setSaveError(e?.message || "撤回失败");
     } finally {
@@ -352,25 +691,100 @@ export default function ExamBoardPage() {
     }
   };
 
-  const subjectLabel =
-    status.kind === "active" ? status.subject
-    : status.kind === "rest" ? "休息"
-    : status.kind === "done" ? "已结束"
-    : status.kind === "empty" ? "无"
-    : "无";
-  const startLabel = status.kind === "active" ? status.start : status.kind === "rest" ? status.nextStart : "--:--";
-  const endLabel = status.kind === "active" ? status.end : "--:--";
-  const startCaption = status.kind === "rest" ? "下场开始：" : "开始时间：";
+  const updatePrefs = (patch: Partial<ExamBoardPrefs>) => {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    saveExamBoardPrefs(next);
+    if (patch.mascot !== undefined) applyExamBoardMascotClass(patch.mascot);
+  };
+
+  const cue = cueFromStatus(status);
+  const clockUrgent = status.kind === "active" && status.remainSec > 0 && status.remainSec <= WARN_SECONDS;
+  const nowMs = Date.now() + timeOffsetRef.current;
+  const viewStatus = matchBoard(batch?.subjects ?? [], nowMs);
+  const recycled = batch?.id != null ? recycledByBatchRef.current.get(batch.id) : undefined;
+  const liveErrata = viewStatus.kind === "active"
+    ? errataList.filter((row) => errataStillLive(row, nowMs) && !recycled?.has(row.id))
+    : [];
+
+  useEffect(() => {
+    errataListRef.current = errataList;
+  }, [errataList]);
+
+  useEffect(() => {
+    batchIdRef.current = batchId;
+  }, [batchId]);
+
+  useEffect(() => {
+    const now = Date.now() + timeOffsetRef.current;
+    const kind = matchBoard(batch?.subjects ?? [], now).kind;
+    const prev = paperKindRef.current;
+    paperKindRef.current = kind;
+    if (kind === "active") return;
+    const bid = batch?.id;
+    const ids = errataListRef.current.map((row) => row.id);
+    if (bid != null && ids.length) {
+      const seen = recycledByBatchRef.current.get(bid) ?? new Set<number>();
+      ids.forEach((id) => seen.add(id));
+      recycledByBatchRef.current.set(bid, seen);
+    }
+    if (prev !== "active") return;
+    setZoomed(null);
+    setPopupId(null);
+    examApi.currentErrata(exam?.id).catch(() => {});
+  }, [currentTime, batch, exam?.id, errataList]);
+
+  useEffect(() => {
+    if (recyclingRef.current) return;
+    const dead = errataList
+      .filter((row) => !errataStillLive(row, Date.now() + timeOffsetRef.current))
+      .map((row) => row.id);
+    if (!dead.length) return;
+    void recycleIds(dead);
+    examApi.currentErrata(exam?.id).catch(() => {});
+  }, [currentTime, errataList, exam?.id, recycleIds]);
+
+  useEffect(() => {
+    const say = (key: string, lines: string[], durationMs?: number, cueKind?: "errata" | "ending" | "approaching" | "done") => {
+      if (spokenRef.current.has(key)) return;
+      spokenRef.current.add(key);
+      const text = pickLine(lines);
+      if (prefs.mascot) speakMascot(text, durationMs);
+      if (prefs.voice) speakExamVoice(text);
+      if (prefs.sound && cueKind) playExamCue(cueKind);
+    };
+    const newest = liveErrata.length ? liveErrata[liveErrata.length - 1] : undefined;
+    if (newest && popupId === newest.id) {
+      say(`errata:${newest.id}`, ["题目有更正，请看左侧列表！", "有误刊，点一下就能放大"], 7000, "errata");
+    } else if (cue?.kind === "ending") {
+      say(`ending:${cue.subject}`, [
+        `${cue.subject} 快结束了，检查一下有没有漏题～`,
+        "还有一会儿就收卷了，抓紧时间哦",
+      ], 5500, "ending");
+    } else if (cue?.kind === "approaching") {
+      say(`approach:${cue.subject}`, [
+        `${cue.subject} 快开始了，准备进场吧`,
+        "下一场要到了，收拾一下桌面～",
+      ], 5500, "approaching");
+    } else if (status.kind === "rest" && prevKindRef.current === "active") {
+      say(`rest:${status.nextSubject}`, ["这科结束啦，休息一下再迎下一场", "先放松一下，下场还早着"]);
+    } else if (status.kind === "done" && prevKindRef.current !== "done") {
+      say("done", ["今天的考试都结束了，辛苦啦～", "收卷啦，大家辛苦了"], 5500, "done");
+    } else if (status.kind === "active" && prefs.mascot) {
+      say("hello", ["考试加油～看时间、看科目，有误刊我会喊你", "我在这儿盯着时间，大家安心作答～"]);
+    }
+    prevKindRef.current = status.kind;
+  }, [liveErrata, popupId, cue?.kind, status.kind, prefs.mascot, prefs.sound, prefs.voice]);
 
   return (
-    <div className="exam-board-wrapper">
+    <div className="exam-board-wrapper" onClick={unlockExamBoardAudio}>
       <button id="settings-btn" className="settings-btn" title="设置" onClick={openSettings}>
         ⚙️
       </button>
 
       {isModalOpen && (
-        <div className="modal" onClick={() => setIsModalOpen(false)}>
-          <div className="modal-content exam-settings" onClick={(e) => e.stopPropagation()}>
+        <div className="exam-settings-overlay" onClick={() => setIsModalOpen(false)}>
+          <div className="exam-settings-panel" onClick={(e) => e.stopPropagation()}>
             <span className="close-btn" onClick={() => setIsModalOpen(false)}>&times;</span>
             <h3>考试看板设置</h3>
             <div className="settings-tabs">
@@ -424,6 +838,30 @@ export default function ExamBoardPage() {
                     {batch.subjects.length === 0 && <li>该批次暂无科目</li>}
                   </ul>
                 )}
+                <label className="settings-check">
+                  <input
+                    type="checkbox"
+                    checked={prefs.mascot}
+                    onChange={(e) => updatePrefs({ mascot: e.target.checked })}
+                  />
+                  显示看板娘
+                </label>
+                <label className="settings-check">
+                  <input
+                    type="checkbox"
+                    checked={prefs.sound}
+                    onChange={(e) => updatePrefs({ sound: e.target.checked })}
+                  />
+                  提示音（收卷 / 下场 / 误刊）
+                </label>
+                <label className="settings-check">
+                  <input
+                    type="checkbox"
+                    checked={prefs.voice}
+                    onChange={(e) => updatePrefs({ voice: e.target.checked })}
+                  />
+                  语音播报
+                </label>
               </div>
             )}
 
@@ -470,7 +908,7 @@ export default function ExamBoardPage() {
                       </thead>
                       <tbody>
                         {b.subjects.map((s, si) => (
-                          <tr key={s.key}>
+                          <tr key={s.key} className={subjectRowInvalid(b, s) ? "row-invalid" : undefined}>
                             <td>
                               <input
                                 type="date"
@@ -545,8 +983,9 @@ export default function ExamBoardPage() {
                 >
                   + 添加批次
                 </button>
+                <p className="settings-hint">同一批次同一天的科目不能重叠；开始时间必须早于结束时间。相邻场次（结束=下场开始）可以。</p>
                 {saveError && <p className="settings-error">{saveError}</p>}
-                <div className="modal-actions">
+                <div className="exam-settings-actions">
                   <button type="button" className="btn-save" disabled={saving} onClick={handleSaveExam}>
                     {saving ? "保存中…" : "保存到服务器"}
                   </button>
@@ -556,7 +995,7 @@ export default function ExamBoardPage() {
 
             {tab === "errata" && canManage && (
               <div className="settings-body">
-                <p className="settings-hint">发布后所有打开的考试看板会立刻弹出图文更正。</p>
+                <p className="settings-hint">可连续发布多条。误刊出现在看板左侧列表，单击放大。本场结束后按发布顺序依次收走。</p>
                 <label>
                   说明
                   <textarea value={errataText} onChange={(e) => setErrataText(e.target.value)} rows={3} placeholder="如：语文第 3 题更正为……" />
@@ -565,10 +1004,17 @@ export default function ExamBoardPage() {
                   图片
                   <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" onChange={(e) => setErrataFile(e.target.files?.[0] ?? null)} />
                 </label>
+                {liveErrata.length > 0 && (
+                  <ul className="subject-preview">
+                    {liveErrata.map((row) => (
+                      <li key={row.id}>{row.text || "图片误刊"}</li>
+                    ))}
+                  </ul>
+                )}
                 {saveError && <p className="settings-error">{saveError}</p>}
-                <div className="modal-actions">
-                  {errata && (
-                    <button type="button" className="btn-delete" disabled={saving} onClick={handleDismissErrata}>撤回当前</button>
+                <div className="exam-settings-actions">
+                  {liveErrata.length > 0 && (
+                    <button type="button" className="btn-delete" disabled={saving} onClick={handleDismissErrata}>撤回全部</button>
                   )}
                   <button type="button" className="btn-save" disabled={saving} onClick={handlePublishErrata}>广播误刊</button>
                 </div>
@@ -582,41 +1028,66 @@ export default function ExamBoardPage() {
         </div>
       )}
 
-      {errata && (
-        <div className="errata-overlay" role="alert">
-          <div className="errata-card">
-            <div className="errata-kicker">题目误刊</div>
-            {errata.image_url && <img src={errata.image_url} alt="" />}
-            {errata.text && <p>{errata.text}</p>}
+      {zoomed && (
+        <div className="errata-overlay errata-zoom" role="dialog" onClick={() => setZoomed(null)}>
+          <div onClick={(e) => e.stopPropagation()}>
+            <ErrataCard errata={zoomed} onOpen={() => setZoomed(null)} />
           </div>
         </div>
       )}
 
+      {cue && !zoomed && (
+        <div className={`time-cue time-cue-${cue.kind}`} role="status">
+          {cue.kind === "ending"
+            ? `${cue.subject} 将在 ${formatRemain(cue.remainSec)} 后结束，请注意收卷时间`
+            : `${cue.subject} 将于 ${cue.start} 开始，还有 ${formatRemain(cue.untilSec)}`}
+        </div>
+      )}
+
+      {liveErrata.length > 0 && (
+        <aside className="errata-rail" aria-label="题目误刊">
+          <div className="errata-rail-head">题目误刊</div>
+          <div className="errata-rail-list">
+            {liveErrata.map((row) => (
+              <ErrataCard
+                key={row.id}
+                errata={row}
+                compact
+                isNew={row.id === popupId}
+                onOpen={setZoomed}
+              />
+            ))}
+          </div>
+        </aside>
+      )}
+
+      <ScheduleRail batch={batch} nowMs={nowMs} />
+
       <div className="board-container">
-        <div className="exam-heading">
-          <span id="exam-title">{exam?.title || "暂无考试"}</span>
-          {batch && <span id="exam-batch">{batch.name}</span>}
+        <div className={`exam-heading board-fade ${fade}`}>
+          <span id="exam-title">{fields.title}</span>
+          {fields.batchName && <span id="exam-batch">{fields.batchName}</span>}
         </div>
         <div className="row1">
-          <span id="current-time">{currentTime}</span>
+          <span id="current-time" className={clockUrgent ? "clock-urgent" : undefined}>{currentTime}</span>
         </div>
-        <div className="info-grid">
+        <div className={`info-grid board-fade ${fade}`}>
           <div className="left-col">
             <span>当前科目：</span>
-            <span id="current-subject">{subjectLabel}</span>
+            <span id="current-subject">{fields.subject}</span>
           </div>
           <div className="right-col" id="start-time-container">
-            <span>{startCaption}</span>
-            <span id="start-time">{startLabel}</span>
+            <span>{fields.startCaption}</span>
+            <span id="start-time">{fields.start}</span>
           </div>
         </div>
-        <div className="info-grid">
+        <div className={`info-grid board-fade ${fade}`}>
           <div className="empty-col">
-            {status.kind === "rest" && <span className="rest-hint">下场：{status.nextSubject}</span>}
+            {fields.restHint && <span className="rest-hint">{fields.restHint}</span>}
           </div>
           <div className="right-col" id="end-time-container">
             <span>结束时间：</span>
-            <span id="end-time">{endLabel}</span>
+            <span id="end-time">{fields.end}</span>
           </div>
         </div>
       </div>

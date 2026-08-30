@@ -73,8 +73,12 @@ class ExamSubject(models.Model):
 
 
 class ExamErrata(models.Model):
-    """题目误刊：一条图文，广播到所有考试看板页。同一时刻至多一条未撤回。"""
+    """题目误刊：一场考试上的图文更正；可同时多条，本场结束按发布顺序依次失效。"""
 
+    exam = models.ForeignKey(
+        Exam, on_delete=models.CASCADE, related_name="errata",
+        null=True, blank=True, verbose_name="考试",
+    )
     text = models.CharField("说明", max_length=500, blank=True)
     image = models.ImageField("图片", upload_to=errata_upload_path, blank=True)
     created_by = models.ForeignKey(
@@ -82,12 +86,13 @@ class ExamErrata(models.Model):
         null=True, blank=True, related_name="exam_errata", verbose_name="发布人",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField("到期（本场结束）", null=True, blank=True)
     dismissed_at = models.DateTimeField("撤回时间", null=True, blank=True)
 
     class Meta:
         verbose_name = "题目误刊"
         verbose_name_plural = "题目误刊"
-        ordering = ["-id"]
+        ordering = ["id"]
 
     def __str__(self):
         return self.text[:40] or f"误刊 #{self.pk}"

@@ -10,7 +10,7 @@
 2. **写权限仍是 Django 白送的 `exam_board.add_exam`。** 能力键 `can_manage_exam` 不变。误刊发布/撤回不拆新权限（同一批信息组，无独立审计需求）。读（课表、授时、当前误刊、看板 socket）匿名开放。
 3. **公开 WebSocket `/ws/exam-board/`。** 访客可连，进组 `exam_board`。只推不收业务数据。事件：`exam`（课表变更）、`errata`（新误刊 payload）、`errata_cleared`。HTTP 仍是事实源；重连后客户端再拉课表与 `GET /exam_board/errata/current/`。不占用 `/ws/messaging/`，不要求登录——教室大屏是匿名页。
 4. **授时走本站。** `GET /exam_board/exams/clock/` 返回 Asia/Shanghai 墙钟；不再调淘宝/苏宁。科目日期与时刻按上海解读（全局 `TIME_ZONE` 仍为 UTC）。
-5. **误刊同一时刻至多一条未撤回。** 新发布自动撤回旧的；图片走 `ImageField`（jpeg/png/gif/webp，≤5MB），不挂统一附件表——误刊不是任务/新闻那种「恰好一个父级」的长期附件。
+5. **误刊挂在一场考试上，可同时多条。** 新发布不再撤回旧的。图片走 `ImageField`（jpeg/png/gif/webp，≤5MB）。到期时刻跟该考试上海墙钟上的科目场次走；`GET current?exam=` 遇过期按 id 升序撤回并广播 `errata_cleared`（带 `ids`），看板依次收走。
 
 本 ADR **扩展** [ADR 0015](0015-channels-without-redis.md)：messaging socket 仍要登录；考试看板是第二条、匿名的只推通道。v1 仍是单 ASGI worker + `InMemoryChannelLayer`。挤号、横幅公告路径不变。
 

@@ -3,8 +3,24 @@
   --z-mascot: 70;
 }
 
-#waifu {
-  z-index: var(--z-mascot) !important;
+body.exam-board-on #waifu {
+  z-index: 1200 !important;
+}
+
+body.exam-board-on .mascot-chip {
+  z-index: 1200;
+}
+
+body.exam-board-on.exam-board-hide-mascot #waifu,
+body.exam-board-on.exam-board-hide-mascot .mascot-chip {
+  display: none !important;
+}
+
+body.exam-board-on #waifu-tips {
+  font-size: 16px;
+  line-height: 1.45;
+  min-height: 64px;
+  width: 280px;
 }
 
 /* Host owns on/off via mascot.enabled; never show the stock 看板娘 toggle. */

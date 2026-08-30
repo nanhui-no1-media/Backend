@@ -52,6 +52,66 @@
     margin-bottom: 10px;
 }
 
+.exam-board-wrapper #current-time {
+    display: inline-block;
+    transition: color 0.4s ease;
+}
+
+.exam-board-wrapper #current-time.clock-urgent {
+    color: #dc2626;
+    animation: exam-clock-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes exam-clock-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.72; }
+}
+
+.exam-board-wrapper .board-fade {
+    transition: opacity 0.28s ease;
+}
+
+.exam-board-wrapper .board-fade.out {
+    opacity: 0;
+}
+
+.exam-board-wrapper .board-fade.in {
+    opacity: 1;
+    transition: opacity 0.4s ease;
+}
+
+.exam-board-wrapper .time-cue {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 900;
+    max-width: min(720px, 86vw);
+    padding: 12px 22px;
+    border-radius: 999px;
+    font-size: 1.15rem;
+    font-weight: 500;
+    text-align: center;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    pointer-events: none;
+    animation: exam-cue-in 0.35s ease;
+}
+
+.exam-board-wrapper .time-cue-ending {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.exam-board-wrapper .time-cue-approaching {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+@keyframes exam-cue-in {
+    from { opacity: 0; transform: translate(-50%, -8px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 .exam-board-wrapper .info-grid {
     display: flex;
     justify-content: center;
@@ -95,27 +155,41 @@
     transform: rotate(45deg);
 }
 
-.exam-board-wrapper .modal {
-    display: flex;
+.exam-board-wrapper .exam-settings-overlay {
+    display: block;
     position: fixed;
     inset: 0;
-    background-color: rgba(0, 0, 0, 0.4);
+    width: auto;
+    max-width: none;
+    height: auto;
+    transform: none;
+    background-color: rgba(0, 0, 0, 0.18);
     z-index: 1001;
-    justify-content: center;
-    align-items: center;
 }
 
-.exam-board-wrapper .modal-content {
+.exam-board-wrapper .exam-settings-panel {
     background-color: #fff;
-    padding: 20px;
-    border-radius: 8px;
-    width: 640px;
-    max-width: 94%;
-    max-height: 90vh;
+    padding: 20px 22px 28px;
+    border-radius: 0;
+    width: min(520px, 94vw);
+    max-width: 520px;
+    max-height: none;
+    height: 100%;
     overflow: auto;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    position: relative;
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.14);
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    transform: none;
     color: #333;
+    animation: exam-drawer-in 0.22s ease;
+}
+
+@keyframes exam-drawer-in {
+    from { transform: translateX(24px); opacity: 0.6; }
+    to { transform: translateX(0); opacity: 1; }
 }
 
 .exam-board-wrapper .close-btn {
@@ -220,7 +294,7 @@
 .exam-board-wrapper .btn-save:disabled,
 .exam-board-wrapper .btn-delete:disabled { opacity: 0.6; }
 
-.exam-board-wrapper .modal-actions {
+.exam-board-wrapper .exam-settings-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
@@ -229,6 +303,21 @@
 
 .exam-board-wrapper .settings-error { color: #b91c1c; margin: 0; }
 .exam-board-wrapper .settings-hint { color: #6b7280; font-size: 13px; margin: 0; }
+
+.exam-board-wrapper .settings-body label.settings-check {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.exam-board-wrapper .settings-check input {
+    width: auto;
+    padding: 0;
+}
+
+.exam-board-wrapper .schedule-table tr.row-invalid td {
+    background: #fef2f2;
+}
 
 .exam-board-wrapper .errata-overlay {
     position: fixed;
@@ -241,15 +330,30 @@
     padding: 24px;
 }
 
+.exam-board-wrapper .errata-overlay.errata-zoom {
+    z-index: 1200;
+    background: rgba(0, 0, 0, 0.72);
+}
+
 .exam-board-wrapper .errata-card {
-    background: #fff;
-    border-radius: 12px;
+    background-color: #fff;
     padding: 24px 28px;
+    border-radius: 12px;
     max-width: min(960px, 92vw);
     max-height: 90vh;
     overflow: auto;
     text-align: center;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+}
+
+.exam-board-wrapper .errata-zoom .errata-card {
+    max-width: min(1200px, 96vw);
+    max-height: 94vh;
+    padding: 28px 32px;
 }
 
 .exam-board-wrapper .errata-kicker {
@@ -265,10 +369,179 @@
     object-fit: contain;
 }
 
+.exam-board-wrapper .errata-zoom .errata-card img {
+    max-height: 78vh;
+}
+
 .exam-board-wrapper .errata-card p {
     margin: 16px 0 0;
     font-size: 2rem;
     line-height: 1.4;
+}
+
+.exam-board-wrapper .errata-zoom .errata-card p {
+    font-size: 2.6rem;
+}
+
+.exam-board-wrapper .errata-zoom-hint {
+    display: block;
+    margin-top: 10px;
+    font-size: 0.85rem;
+    color: #9ca3af;
+}
+
+.exam-board-wrapper .errata-rail {
+    position: absolute;
+    top: 72px;
+    left: 16px;
+    bottom: 210px;
+    width: 240px;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: auto;
+}
+
+.exam-board-wrapper .errata-rail-head,
+.exam-board-wrapper .schedule-rail-head {
+    font-size: 0.85rem;
+    letter-spacing: 0.18em;
+    color: #991b1b;
+    font-weight: 600;
+}
+
+.exam-board-wrapper .schedule-rail-head {
+    color: #374151;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.exam-board-wrapper .schedule-rail-batch {
+    letter-spacing: 0;
+    font-weight: 500;
+    color: #6b7280;
+}
+
+.exam-board-wrapper .errata-rail-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow: auto;
+    min-height: 0;
+}
+
+.exam-board-wrapper .errata-card.compact {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    padding: 8px 10px;
+    border: 1px solid #fecaca;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 4px 16px rgba(185, 28, 28, 0.08);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    text-align: left;
+}
+
+.exam-board-wrapper .errata-card.compact.is-new {
+    box-shadow: 0 0 0 2px #dc2626;
+}
+
+.exam-board-wrapper .errata-card.compact img {
+    max-height: 88px;
+    width: 100%;
+    object-fit: contain;
+}
+
+.exam-board-wrapper .errata-card.compact p {
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.exam-board-wrapper .schedule-rail {
+    position: absolute;
+    top: 72px;
+    right: 16px;
+    bottom: 24px;
+    width: 268px;
+    z-index: 50;
+    padding: 14px 14px 16px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.exam-board-wrapper .schedule-empty {
+    margin: 12px 0 0;
+    font-size: 0.9rem;
+    color: #6b7280;
+}
+
+.exam-board-wrapper .schedule-list {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    overflow: auto;
+    min-height: 0;
+}
+
+.exam-board-wrapper .schedule-date {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin: 10px 0 4px;
+}
+
+.exam-board-wrapper .schedule-row-body {
+    display: grid;
+    grid-template-columns: 3.6em 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 7px 8px;
+    border-radius: 8px;
+    font-size: 0.92rem;
+}
+
+.exam-board-wrapper .schedule-row.is-done .schedule-row-body {
+    color: #9ca3af;
+}
+
+.exam-board-wrapper .schedule-row.is-done .schedule-name {
+    text-decoration: line-through;
+}
+
+.exam-board-wrapper .schedule-row.is-active .schedule-row-body {
+    background: #fef3c7;
+    color: #92400e;
+    font-weight: 600;
+}
+
+.exam-board-wrapper .schedule-phase {
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+}
+
+.exam-board-wrapper .schedule-phase.is-done { color: #9ca3af; }
+.exam-board-wrapper .schedule-phase.is-active { color: #b45309; }
+.exam-board-wrapper .schedule-phase.is-upcoming { color: #2563eb; }
+
+.exam-board-wrapper .schedule-time {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 @media (max-width: 900px) {
@@ -284,5 +557,26 @@
     .exam-board-wrapper .empty-col {
         width: auto;
         justify-content: center;
+    }
+    .exam-board-wrapper .time-cue {
+        top: auto;
+        bottom: 20px;
+        font-size: 0.95rem;
+        padding: 10px 16px;
+        border-radius: 12px;
+    }
+    .exam-board-wrapper .errata-rail,
+    .exam-board-wrapper .schedule-rail {
+        position: static;
+        width: 100%;
+        bottom: auto;
+        max-height: 28vh;
+        margin: 0 12px 8px;
+    }
+    .exam-board-wrapper {
+        flex-direction: column;
+        justify-content: flex-start;
+        padding-top: 12px;
+        overflow: auto;
     }
 }

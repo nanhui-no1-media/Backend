@@ -130,11 +130,12 @@ class ExamListSerializer(serializers.ModelSerializer):
 
 class ExamErrataSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
+    exam = serializers.PrimaryKeyRelatedField(queryset=Exam.objects.all())
 
     class Meta:
         model = ExamErrata
-        fields = ["id", "text", "image", "image_url", "created_at"]
-        read_only_fields = ["id", "image_url", "created_at"]
+        fields = ["id", "exam", "text", "image", "image_url", "created_at", "expires_at"]
+        read_only_fields = ["id", "image_url", "created_at", "expires_at"]
         extra_kwargs = {"image": {"write_only": True, "required": False}}
 
     def get_image_url(self, obj):
