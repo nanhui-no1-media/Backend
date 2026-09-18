@@ -17,10 +17,10 @@ from django.db.models import Q
 from reviews.visibility import public_q
 
 
-# 「信息组即管理员」在此单点定义：信息组（持 news.add_news）可窥他人能力清单 / 所属组。
+# 「信息组即管理员」在此单点定义：信息组（持 news.manage_news）可窥他人能力清单 / 所属组。
 # 与 2026-07-19「角色→权限」迁移一致——此前两处视图内联 ``groups.filter(name="信息组")``
 # 是该迁移漏出的硬编码遗留。超级用户隐式持全部权限，故 has_perm 已覆盖。
-ADMIN_VIEW_PERMISSION = "news.add_news"
+ADMIN_VIEW_PERMISSION = "news.manage_news"
 
 
 def is_admin_viewer(viewer):

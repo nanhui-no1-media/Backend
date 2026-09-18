@@ -247,7 +247,7 @@ class ArchiveTest(TestCase):
         self.staff = grant_verification(User.objects.create_user(username="staff", password="x"))
         self.staff.user_permissions.add(
             Permission.objects.get(
-                content_type__app_label="activities", codename="change_activity",
+                content_type__app_label="activities", codename="manage_activity",
             )
         )
         self.staff = User.objects.get(pk=self.staff.pk)
@@ -269,7 +269,7 @@ class ArchiveTest(TestCase):
         activity.refresh_from_db()
         self.assertEqual(activity.status, ARCHIVED)
 
-    def test_staff_with_change_activity_can_archive(self):
+    def test_staff_with_manage_activity_can_archive(self):
         activity = Activity.objects.create(
             type="collection", status=COLLECTING, title="c", creator=self.owner,
         )

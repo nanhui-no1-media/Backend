@@ -61,7 +61,7 @@ class ReviewViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class FeedbackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
-    """意见反馈：公开提交；列表/了结需 view_feedback；详情允许署名创建人。"""
+    """意见反馈：公开提交；列表/了结需 read_feedback；详情允许署名创建人。"""
 
     filterset_fields = ["status", "category"]
     search_fields = ["title", "description"]
@@ -76,7 +76,7 @@ class FeedbackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets
         user = self.request.user
         if not user.is_authenticated:
             return qs.none()
-        if user.has_perm("reviews.view_feedback"):
+        if user.has_perm("reviews.read_feedback"):
             return qs
         return qs.filter(creator=user)
 

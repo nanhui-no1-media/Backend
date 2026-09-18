@@ -114,7 +114,7 @@ def can_rate(activity, user):
 def can_curate(activity, user):
     """展示布展守卫：类型=展示、状态∈{待开始,展示中}、用户已认证。
 
-    策展人(发起人 or change_activity)的角色/归属判定由 CanModifyActivity 权限类
+    策展人(发起人 or manage_activity)的角色/归属判定由 CanModifyActivity 权限类
     在 get_object 时把关;此处只管「此刻能否布展」的状态机条件——加/删/导入展品
     在待开始与展示中都可进行,仅已结束(closed)禁止。改展品(标题)另见 can_edit_exhibit。
     """
@@ -139,14 +139,14 @@ def can_edit_exhibit(activity, user):
 
 
 def can_close(activity, user):
-    """提前关闭守卫：发起人或持 activities.change_activity，且状态允许关。
+    """提前关闭守卫：发起人或持 activities.manage_activity，且状态允许关。
 
     众议/展示/调研须 open；征集须 collecting。归属与角色仍由 CanModifyActivity 把关；
     此处把视图曾内联的状态条件收口，供 close 动作调用。
     """
     if not user.is_authenticated:
         return False
-    if not (activity.creator_id == user.pk or user.has_perm("activities.change_activity")):
+    if not (activity.creator_id == user.pk or user.has_perm("activities.manage_activity")):
         return False
     if activity.type in ("deliberation", "exhibition", "survey"):
         return activity.status == OPEN
@@ -156,13 +156,13 @@ def can_close(activity, user):
 
 
 def can_archive(activity, user):
-    """归档守卫：发起人或持 activities.change_activity；仅征集 collecting / reviewing。
+    """归档守卫：发起人或持 activities.manage_activity；仅征集 collecting / reviewing。
 
     众议 / 展示 / 调研没有归档态（截止走 closed）。后台批量归档走本谓词。
     """
     if not user.is_authenticated:
         return False
-    if not (activity.creator_id == user.pk or user.has_perm("activities.change_activity")):
+    if not (activity.creator_id == user.pk or user.has_perm("activities.manage_activity")):
         return False
     return activity.type == "collection" and activity.status in (COLLECTING, REVIEWING)
 

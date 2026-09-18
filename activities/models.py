@@ -239,6 +239,7 @@ class Activity(models.Model):
         ordering = ["-created_at"]
         permissions = [
             ("review_collection", "可复审征集作品"),
+            ("manage_activity", "可管理任意活动"),
         ]
 
     def __str__(self):

@@ -627,16 +627,16 @@ def _user_from_uid(uid):
 def _capabilities(user):
     """前端能力契约：由 has_perm 派生的语义化布尔（解耦权限代号）。"""
     return {
-        "can_manage_news": user.has_perm("news.add_news"),
+        "can_manage_news": user.has_perm("news.manage_news"),
         "can_manage_tasks": user.has_perm("tasks.manage_tasks"),
         "can_assign_task": user.has_perm("tasks.assign_task"),
         "can_manage_tags": user.has_perm("tasks.manage_tags"),
-        "can_change_activity": user.has_perm("activities.change_activity"),
-        "can_view_feedback": user.has_perm("reviews.view_feedback"),
+        "can_change_activity": user.has_perm("activities.manage_activity"),
+        "can_view_feedback": user.has_perm("reviews.read_feedback"),
         "can_handle_reports": user.has_perm("reviews.handle_report"),
         "can_review_collections": user.has_perm("activities.review_collection"),
-        "can_edit_about": user.has_perm("about.change_aboutpage"),
-        "can_manage_exam": user.has_perm("exam_board.add_exam"),
+        "can_edit_about": user.has_perm("about.manage_aboutpage"),
+        "can_manage_exam": user.has_perm("exam_board.manage_exams"),
         "can_review_content": user.has_perm("reviews.moderate"),
         "can_review_identity": user.has_perm("accounts.can_review_identity"),
         "can_force_publish": user.has_perm("reviews.force_publish"),

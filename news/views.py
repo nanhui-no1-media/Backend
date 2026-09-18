@@ -7,7 +7,7 @@ from django.core.files.storage import default_storage
 from django.db.models import F, Q
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import DjangoModelPermissionsOrAnonReadOnly, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.utils import get_client_ip
@@ -17,6 +17,7 @@ from reviews.visibility import public_q, visible_queryset
 from tasks.models import Tag
 
 from .models import News, NewsView
+from .permissions import CanManageNews
 from .serializers import NewsDetailSerializer, NewsListSerializer, NewsTagSerializer
 from .feed import build_feed
 
@@ -70,10 +71,10 @@ class NewsViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         # 公开读（GET：list/retrieve/featured/hot/tags）匿名可读；
-        # 写（POST/PUT/PATCH/DELETE：create/update/destroy/upload_image）按 news 模型权限校验。
+        # 写（POST/PUT/PATCH/DELETE：create/update/destroy/upload_image）须持 news.manage_news。
         if self.action == "mine":
             return [IsAuthenticated()]
-        return [DjangoModelPermissionsOrAnonReadOnly()]
+        return [CanManageNews()]
 
     def perform_create(self, serializer):
         news = serializer.save(author=self.request.user)

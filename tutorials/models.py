@@ -44,6 +44,9 @@ class Tutorial(models.Model):
         verbose_name = "教程"
         verbose_name_plural = "教程"
         ordering = ["-created_at"]
+        permissions = [
+            ("manage_tutorials", "可管理教程"),
+        ]
 
     def __str__(self):
         return self.title

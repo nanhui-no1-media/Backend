@@ -8,7 +8,7 @@ from recruitment.models import RecruitmentNotice
 
 def _editor():
     user = User.objects.create_user(username="editor", password="x")
-    user.user_permissions.add(Permission.objects.get(codename="change_aboutpage"))
+    user.user_permissions.add(Permission.objects.get(codename="manage_aboutpage"))
     return user
 
 
