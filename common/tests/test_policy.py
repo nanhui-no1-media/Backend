@@ -141,7 +141,13 @@ class SitePolicyDefaultsTest(TestCase):
         titles = [fs[0] for fs in SiteSettingsAdmin.fieldsets]
         self.assertIn("评论", titles)
         comments = next(fs for fs in SiteSettingsAdmin.fieldsets if fs[0] == "评论")
-        self.assertEqual(comments[1]["fields"], ("comment_max_depth",))
+        self.assertEqual(comments[1]["fields"], ("comments_enabled", "comment_max_depth"))
+
+    def test_admin_fieldset_dms_enabled(self):
+        titles = [fs[0] for fs in SiteSettingsAdmin.fieldsets]
+        self.assertIn("私信", titles)
+        dms = next(fs for fs in SiteSettingsAdmin.fieldsets if fs[0] == "私信")
+        self.assertEqual(dms[1]["fields"], ("dms_enabled",))
 
     def test_admin_fieldset_auto_update(self):
         titles = [fs[0] for fs in SiteSettingsAdmin.fieldsets]

@@ -4,7 +4,9 @@ from django.db import models
 from .policy import (
     DEFAULT_AUTO_UPDATE_ENABLED,
     DEFAULT_COMMENT_MAX_DEPTH,
+    DEFAULT_COMMENTS_ENABLED,
     DEFAULT_CONTENT_REVIEW_ENABLED,
+    DEFAULT_DMS_ENABLED,
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
     DEFAULT_REPORTS_PER_USER_PER_DAY,
     DEFAULT_LOGIN_PER_IP_PER_HOUR,
@@ -124,11 +126,21 @@ class SiteSettings(models.Model):
         "保留数据库快照份数",
         default=DEFAULT_UPDATE_DB_BACKUP_KEEP,
     )
+    comments_enabled = models.BooleanField(
+        "启用评论区",
+        default=DEFAULT_COMMENTS_ENABLED,
+        help_text="关闭后前端不再显示评论区，且无法发表新评论；已有评论保留。",
+    )
     comment_max_depth = models.PositiveSmallIntegerField(
         "评论最大嵌套深度",
         default=DEFAULT_COMMENT_MAX_DEPTH,
         validators=[MinValueValidator(1), MaxValueValidator(32)],
         help_text="1 表示仅允许根评论；超过则拒绝，不改挂。",
+    )
+    dms_enabled = models.BooleanField(
+        "启用私信",
+        default=DEFAULT_DMS_ENABLED,
+        help_text="关闭后前端不再显示私信入口，且无法发起或发送私信；已有会话保留。",
     )
 
     class Meta:

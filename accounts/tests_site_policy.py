@@ -13,6 +13,7 @@ from django.utils.http import urlsafe_base64_encode
 from accounts.admin import ProfileAdmin, approve_identity, disable_account, reject_identity
 from accounts.models import IdentityProof, Profile, Verification, is_verified
 from accounts.permissions import IsVerified
+from accounts.test_helpers import grant_verification
 from accounts.tokens import email_verification_token
 from common.models import SiteSettings
 from common.policy import get_policy
@@ -206,3 +207,53 @@ class RegisterThrottleFromPolicyTest(_PolicyTestCase):
         self.assertEqual(first.status_code, 400)
         second = Client().post("/auth/register/", data={})
         self.assertEqual(second.status_code, 429)
+
+
+class CommentsDmsGateTest(_PolicyTestCase):
+    """评论区 / 私信开关（站点策略）：关闭时写操作 403、读保留；默认开启行为不变。"""
+
+    def setUp(self):
+        super().setUp()
+        self.user = grant_verification(User.objects.create_user(username="gate", password="x"))
+        self.client = Client()
+        self.client.force_login(self.user)
+
+    def _post(self, path, payload):
+        return self.client.post(path, data=json.dumps(payload), content_type="application/json")
+
+    def test_policy_snapshot_exposes_switches(self):
+        policy = get_policy()
+        self.assertTrue(policy.comments_enabled)
+        self.assertTrue(policy.dms_enabled)
+        set_policy(comments_enabled=False, dms_enabled=False)
+        policy = get_policy()
+        self.assertFalse(policy.comments_enabled)
+        self.assertFalse(policy.dms_enabled)
+
+    def test_comment_create_forbidden_when_disabled(self):
+        set_policy(comments_enabled=False)
+        resp = self._post("/messaging/comments/", {"thread": 1})
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["detail"], "评论功能已关闭")
+
+    def test_comment_create_passes_gate_when_enabled(self):
+        # 默认开启：闸门放行，进入既有校验（thread 不存在 → 404，证明未被 403 拦截）
+        resp = self._post("/messaging/comments/", {"thread": 1})
+        self.assertEqual(resp.status_code, 404)
+
+    def test_send_dm_forbidden_when_disabled(self):
+        set_policy(dms_enabled=False)
+        resp = self._post("/messaging/conversations/999/send_message/", {"content": "hi"})
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["detail"], "私信功能已关闭")
+
+    def test_send_dm_passes_gate_when_enabled(self):
+        # 默认开启：闸门放行，进入对象查找（会话不存在 → 404，证明未被 403 拦截）
+        resp = self._post("/messaging/conversations/999/send_message/", {"content": "hi"})
+        self.assertEqual(resp.status_code, 404)
+
+    def test_start_private_forbidden_when_disabled(self):
+        set_policy(dms_enabled=False)
+        resp = self._post("/messaging/conversations/start_private/", {"user_id": 1})
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["detail"], "私信功能已关闭")

@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { messagingApi } from "../api/messaging";
 import { onMessagingEvent, onMessagingOpen } from "../api/messagingSocket";
 import { api } from "../api/client";
+import { useSitePolicy } from "../api/sitePolicy";
 import type { TaskUser } from "../types/tasks";
 import type { Conversation } from "../types/messaging";
 import type { Paginated } from "../types/pagination";
@@ -28,6 +29,7 @@ export default function MessagePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { openLogin } = useLoginModal();
+  const policy = useSitePolicy();
   const [user, setUser] = useState<TaskUser | null>(null);
   const [verified, setVerified] = useState(false);
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
@@ -103,6 +105,20 @@ export default function MessagePage() {
   };
 
   const activeOther = activeConv?.participants.find((p) => p.id !== user?.id);
+
+  if (!policy.dms_enabled) {
+    // 站点策略关闭私信：页面兜底（入口已隐藏，直接访问 URL 时给提示）。
+    return (
+      <AppShell>
+        <div className="container" style={{ padding: "var(--s-16)" }}>
+          <div className="prop-empty">
+            <p>私信功能已关闭。</p>
+            <p className="muted">管理员已在站点策略中关闭私信功能。</p>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>

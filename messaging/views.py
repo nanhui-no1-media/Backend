@@ -12,6 +12,7 @@ from rest_framework.response import Response
 
 from accounts.permissions import IsVerified
 from activities.models import Activity
+from common.policy import get_policy
 from news.models import News
 from tasks.models import Task
 
@@ -197,6 +198,8 @@ class CommentViewSet(viewsets.GenericViewSet):
         return Response(CommentSerializer(roots, many=True, context=ctx).data)
 
     def create(self, request):
+        if not get_policy().comments_enabled:
+            return Response({"detail": "评论功能已关闭"}, status=status.HTTP_403_FORBIDDEN)
         thread_id = request.data.get("thread")
         if not thread_id:
             return Response({"detail": "缺少 thread"}, status=status.HTTP_400_BAD_REQUEST)
@@ -277,6 +280,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def send_message(self, request, pk=None):
+        if not get_policy().dms_enabled:
+            return Response({"detail": "私信功能已关闭"}, status=status.HTTP_403_FORBIDDEN)
         conversation = self.get_object()
         try:
             message = send_dm(conversation, request.user, request.data.get("content", ""))
@@ -340,6 +345,8 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def start_private(self, request):
+        if not get_policy().dms_enabled:
+            return Response({"detail": "私信功能已关闭"}, status=status.HTTP_403_FORBIDDEN)
         target_id = request.data.get("user_id")
         if not target_id:
             return Response({"detail": "缺少 user_id"}, status=status.HTTP_400_BAD_REQUEST)
