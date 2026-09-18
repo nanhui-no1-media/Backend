@@ -57,18 +57,35 @@ class CommentThreadHostMixin(serializers.Serializer):
 
 
 class SimpleUserSerializer(serializers.ModelSerializer):
+    """轻量用户引用（id / username / nickname / avatar）。
+
+    ``email`` 是私密字段，仅本人可见——与 ``accounts.visibility`` 的
+    ``can_see_private = owner`` 对齐（见 accounts/tests_visibility.py 字段可见性
+    矩阵）。此前 email 列在 ``fields`` 里无条件输出，使所有复用本序列化器的
+    公开读接口（新闻 / 教程 / 活动等）随内容泄露他人邮箱；现改为在
+    :meth:`to_representation` 中仅当查看者即本人时动态挂载。
+    """
+
     nickname = serializers.CharField(source="profile.nickname", default="")
     avatar = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "username", "email", "nickname", "avatar"]
+        fields = ["id", "username", "nickname", "avatar"]
 
     def get_avatar(self, obj):
         profile = getattr(obj, "profile", None)
         if profile and profile.avatar:
             return profile.avatar.url
         return None
+
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        request = self.context.get("request")
+        viewer = getattr(request, "user", None)
+        if viewer is not None and viewer.is_authenticated and viewer.pk == obj.pk:
+            data["email"] = obj.email
+        return data
 
 
 class TagSerializer(serializers.ModelSerializer):

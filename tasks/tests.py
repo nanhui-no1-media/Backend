@@ -1,12 +1,13 @@
 import json
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import AnonymousUser, User
 from django.test import TestCase
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APIRequestFactory
 
 from accounts.test_helpers import grant_verification
 from .factories import make_president
 from .models import Task, TaskClaimRequest
+from .serializers import SimpleUserSerializer
 
 
 class TaskActionSmokeTest(TestCase):
@@ -225,3 +226,44 @@ class TaskListPaginationTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIsInstance(resp.data, list)
         self.assertEqual(len(resp.data), 5)
+
+
+# ---- 用户引用的 email 可见性：仅本人（回归：公开读接口曾随内容泄露邮箱）----
+
+
+class SimpleUserSerializerEmailVisibilityTest(TestCase):
+    """``SimpleUserSerializer`` 的 email 仅对本人输出。
+
+    与 ``accounts.visibility`` 的 ``can_see_private = owner`` 对齐：新闻 / 教程 /
+    活动等公开读接口均复用本序列化器渲染他人用户引用，此前 email 无条件输出，
+    未认证访客即可批量收集成员邮箱（字段级越权）。
+    """
+
+    def setUp(self):
+        self.me = User.objects.create_user(username="me", password="x", email="me@example.com")
+        self.other = User.objects.create_user(username="other", password="x", email="other@example.com")
+
+    def _render(self, viewer, obj):
+        request = APIRequestFactory().get("/")
+        request.user = viewer
+        return SimpleUserSerializer(obj, context={"request": request}).data
+
+    def test_email_visible_to_self(self):
+        self.assertEqual(self._render(self.me, self.me)["email"], "me@example.com")
+
+    def test_email_hidden_from_authenticated_other(self):
+        self.assertNotIn("email", self._render(self.other, self.me))
+
+    def test_email_hidden_from_anonymous(self):
+        self.assertNotIn("email", self._render(AnonymousUser(), self.me))
+
+    def test_email_hidden_without_request_context(self):
+        # 无 request（内部调用 / 缺省 context）→ 安全默认：不输出 email
+        self.assertNotIn("email", SimpleUserSerializer(self.me).data)
+
+    def test_public_fields_intact(self):
+        data = self._render(self.other, self.me)
+        self.assertEqual(data["id"], self.me.pk)
+        self.assertEqual(data["username"], "me")
+        self.assertIn("nickname", data)
+        self.assertIn("avatar", data)

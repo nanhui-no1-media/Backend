@@ -320,3 +320,42 @@ class NewsRelatedTest(TestCase):
         self.assertNotIn("current", titles)
         self.assertNotIn("n4", titles)
         self.assertNotIn("category", resp.data)
+
+
+class NewsAuthorEmailVisibilityTest(TestCase):
+    """公开读接口不得随内容泄露作者 email（字段级越权回归）。
+
+    匿名 / 非本人登录视角下，列表与详情中的 author 均不含 email；作者本人经
+    mine 读取自己的新闻时 email 保留（与 accounts.visibility 的
+    can_see_private = owner 对齐）。
+    """
+
+    def setUp(self):
+        self.author = _info(
+            User.objects.create_user(username="info_email", password="x", email="author@example.com")
+        )
+        self.other = User.objects.create_user(username="other_email", password="x", email="other@example.com")
+        self.client = APIClient()
+        self.news = approve_news(News.objects.create(title="t", author=self.author, is_published=True))
+
+    def test_anon_list_hides_author_email(self):
+        resp = self.client.get("/news/news/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("email", resp.data["results"][0]["author"])
+
+    def test_anon_detail_hides_author_email(self):
+        resp = self.client.get(f"/news/news/{self.news.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("email", resp.data["author"])
+
+    def test_authenticated_other_hides_author_email(self):
+        self.client.force_authenticate(self.other)
+        resp = self.client.get("/news/news/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("email", resp.data["results"][0]["author"])
+
+    def test_author_mine_keeps_own_email(self):
+        self.client.force_authenticate(self.author)
+        resp = self.client.get("/news/news/mine/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["results"][0]["author"]["email"], "author@example.com")
