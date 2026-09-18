@@ -3,6 +3,7 @@ import type {
   ActivityDetail,
   ActivityListItem,
   ActivityFormData,
+  SurveyResponsesPayload,
 } from "../types/activities";
 
 const request = createRequest("/activities");
@@ -43,6 +44,10 @@ export const activityApi = {
       method: "POST",
       body: JSON.stringify({ answers }),
     }),
+
+  // 问卷作答查看（发起人/管理 → 全部；其他登录用户 → 自己的）
+  responses: (id: number): Promise<SurveyResponsesPayload> =>
+    request(`/activities/${id}/responses/`),
 
   // 众议 / 展示 / 征集 / 调研：提前关闭（众议/展示/调研立即结算；征集结束收件进入复审或归档）
   close: (id: number): Promise<ActivityDetail> =>

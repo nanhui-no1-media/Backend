@@ -96,6 +96,16 @@ class QuestionnaireAdminDashboardTest(TestCase):
         resp = c.get(f"/admin/activities/questionnaire/{q.pk}/survey-editor/")
         self.assertEqual(resp.status_code, 403)
 
+    def test_superuser_can_add_questionnaire(self):
+        c = self._client()
+        add_page = c.get("/admin/activities/questionnaire/add/")
+        self.assertEqual(add_page.status_code, 200)
+
+    def test_staff_without_add_perm_cannot_add_questionnaire(self):
+        c = self._client(self.staff)
+        add_page = c.get("/admin/activities/questionnaire/add/")
+        self.assertEqual(add_page.status_code, 403)
+
     def test_questionnaire_response_registered(self):
         q = self.survey.questionnaire
         row = QuestionnaireResponse.objects.create(

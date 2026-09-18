@@ -90,8 +90,9 @@ class QuestionnaireAdmin(SurveyJSAdminMixin, admin.ModelAdmin):
             }
 
     def has_add_permission(self, request):
-        # 调研问卷随活动创建；加入问卷为单例。后台不直接新建。
-        return False
+        # 允许后台直接新建独立问卷（默认「调研」）；「自我介绍」为单例，
+        # 由数据库唯一约束兜底。
+        return super().has_add_permission(request)
 
     def has_delete_permission(self, request, obj=None):
         if obj is not None and obj.kind == Questionnaire.KIND_JOIN:
