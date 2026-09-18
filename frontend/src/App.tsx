@@ -43,6 +43,10 @@ const JoinEditorPage = lazy(() => import("./pages/JoinEditorPage"));
 const SurveyEditorPage = lazy(() => import("./pages/SurveyEditorPage"));
 const SurveyResponsesPage = lazy(() => import("./pages/SurveyResponsesPage"));
 const SurveyStatsPage = lazy(() => import("./pages/SurveyStatsPage"));
+const MobileHomePage = lazy(() => import("./pages/MobileHomePage"));
+const MobileNewsPage = lazy(() => import("./pages/MobileNewsPage"));
+const MobileActivityPage = lazy(() => import("./pages/MobileActivityPage"));
+const MobileMePage = lazy(() => import("./pages/MobileMePage"));
 
 function Loading() {
   return <div style={{ textAlign: "center", padding: "80px 0", color: "#6b7280" }}>加载中...</div>;
@@ -107,6 +111,10 @@ export default function App() {
           <Route path="/join/form" element={<JoinFormPage />} />
           <Route path="/join/editor" element={<ProtectedRoute><JoinEditorPage /></ProtectedRoute>} />
           <Route path="/" element={<HomePage />} />
+          <Route path="/m" element={<MobileHomePage />} />
+          <Route path="/m/news" element={<MobileNewsPage />} />
+          <Route path="/m/activity" element={<MobileActivityPage />} />
+          <Route path="/m/me" element={<MobileMePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
           
         </Routes>
