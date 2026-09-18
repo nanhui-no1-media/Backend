@@ -1,0 +1,132 @@
+/* =====================================================================
+   传媒社 · 手机版（/m）— 移动优先专属布局
+   与电脑版（.cs 作用域）并行；token 复用 cobalt.css 的 :root 变量。
+   ===================================================================== */
+
+.m-app {
+  min-height: 100vh;
+  background: var(--bg-soft);
+  color: var(--fg);
+  font-family: var(--font-body);
+  padding-bottom: calc(64px + env(safe-area-inset-bottom)); /* 让出底部 tab */
+  overflow-x: hidden; /* 防御：任何子元素都不撑破视口 */
+}
+
+/* ---------- 顶栏 ---------- */
+.m-topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  padding-top: calc(12px + env(safe-area-inset-top));
+  background: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.m-brand { display: flex; align-items: center; gap: 8px; font-family: var(--font-display); font-weight: 700; font-size: 16px; }
+.m-brand img { width: 26px; height: 26px; border-radius: 7px; }
+.m-topbar-user { font-size: 13px; color: var(--brand-600); }
+
+/* ---------- hero 紧凑版 ---------- */
+.m-hero {
+  margin: 14px 16px 0;
+  padding: 22px 18px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--brand-800), var(--brand-600));
+  color: #fff;
+}
+.m-hero h1 { font-family: var(--font-display); font-size: 22px; line-height: 1.4; font-weight: 800; }
+.m-hero h1 .accent { color: var(--brand-200); }
+.m-hero p { margin-top: 8px; font-size: 13px; opacity: 0.85; line-height: 1.6; }
+
+/* ---------- 快捷入口 4 宫格 ---------- */
+.m-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 16px 0; }
+.m-grid-item {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 14px 4px; border-radius: 14px; background: var(--bg);
+  border: 1px solid var(--line); font-size: 12px; color: var(--fg);
+  transition: transform 0.15s ease;
+}
+.m-grid-item:active { transform: scale(0.96); }
+.m-grid-item svg { width: 22px; height: 22px; stroke: var(--brand-600); }
+
+/* ---------- 区块标题 ---------- */
+.m-section-h { display: flex; align-items: center; justify-content: space-between; margin: 20px 16px 8px; }
+.m-section-h h2 { font-size: 16px; font-weight: 700; font-family: var(--font-display); }
+.m-section-h a { font-size: 13px; color: var(--brand-600); }
+
+/* ---------- 卡片流 ---------- */
+.m-cards { display: flex; flex-direction: column; gap: 10px; margin: 0 16px; }
+.m-card {
+  display: block; border-radius: 16px; background: var(--bg);
+  border: 1px solid var(--line); padding: 14px; color: inherit;
+  transition: background 0.15s ease;
+}
+.m-card:active { background: var(--bg-soft); }
+.m-card-title { font-weight: 600; font-size: 15px; line-height: 1.45; }
+.m-card-meta { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.m-card-cover { width: 100%; height: 150px; object-fit: cover; border-radius: 12px; margin-bottom: 10px; }
+.m-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500;
+  background: var(--brand-50); color: var(--brand-700);
+}
+
+/* ---------- 底部 tab 栏 ---------- */
+.m-tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: rgba(255, 255, 255, 0.95);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.m-tab {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 9px 0 7px; font-size: 11px; color: var(--muted);
+}
+.m-tab svg { width: 21px; height: 21px; stroke: currentColor; }
+.m-tab.active { color: var(--brand-700); font-weight: 600; }
+
+/* ---------- 空态 ---------- */
+.m-empty { text-align: center; color: var(--muted); font-size: 13px; padding: 24px 0; }
+
+/* ---------- 新闻/活动卡片摘要 ---------- */
+.m-card-summary {
+  margin-top: 6px; font-size: 13px; color: var(--muted); line-height: 1.55;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* ---------- 我的页 ---------- */
+.m-me-card { display: flex; align-items: center; gap: 14px; margin: 14px 16px 0; padding: 20px 16px; background: var(--bg); border: 1px solid var(--line); border-radius: 18px; }
+.m-me-avatar { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: var(--bg-soft); flex: none; }
+.m-me-name { font-size: 17px; font-weight: 700; font-family: var(--font-display); }
+.m-me-sub { margin-top: 4px; font-size: 13px; color: var(--muted); }
+.m-me-login { margin-left: auto; padding: 9px 18px; border-radius: 999px; background: var(--brand-600); color: #fff; font-size: 14px; font-weight: 600; border: none; flex: none; }
+
+.m-list { margin: 14px 16px 0; background: var(--bg); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.m-list-item {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 15px 16px; font-size: 15px; color: var(--fg);
+  background: none; border: none; border-bottom: 1px solid var(--line); text-align: left;
+}
+.m-list-item:last-child { border-bottom: none; }
+.m-list-item:active { background: var(--bg-soft); }
+/* 右侧箭头：CSS 伪元素（border 旋转法） */
+.m-list-item::after {
+  content: "";
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-right: 2px solid #6b7280;
+  border-top: 2px solid #6b7280;
+  transform: rotate(45deg);
+}
+.m-list-danger { color: #d33; }
+.m-list-danger::after { border-color: #d33; opacity: .6; }
+
+/* ---------- 桌面访问提示条（可选） ---------- */
+@media (min-width: 768px) {
+  .m-app { max-width: 480px; margin: 0 auto; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+  .m-tabbar { max-width: 480px; left: 50%; transform: translateX(-50%); }
+}
