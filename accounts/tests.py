@@ -451,6 +451,47 @@ class SingleSessionMiddlewareTest(TestCase):
         self.assertIn("iOS", takeover["device_name"])
         self.assertIsInstance(takeover["time"], str)
 
+    def test_superseded_browser_navigation_gets_html_page(self):
+        # 浏览器导航（Accept 含 text/html）→ 渲染 HTML 下线页（而非裸 JSON）
+        a = self._login()
+        UserSession.objects.filter(user=self.user, is_current=True).update(
+            created_at=timezone.now() - timedelta(minutes=11)
+        )
+        b = Client()
+        b.post(
+            "/auth/login/",
+            data=json.dumps({"username": "u", "password": "secret123"}),
+            content_type="application/json",
+            HTTP_USER_AGENT="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari",
+        )
+        resp = a.get(
+            "/auth/me/",
+            HTTP_ACCEPT="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        )
+        self.assertEqual(resp.status_code, 401)
+        self.assertIn("text/html", resp["Content-Type"])
+        html = resp.content.decode()
+        self.assertIn("您已被迫下线", html)
+        self.assertIn("Mobile", html)  # 接管设备信息展示在页面上（来自 b 的 UA）
+        self.assertIn("重新登录", html)
+
+    def test_superseded_api_request_keeps_json_contract(self):
+        # Accept 不含 text/html（SPA fetch 默认 */*）→ 保持既有 JSON 契约（#10）
+        a = self._login()
+        UserSession.objects.filter(user=self.user, is_current=True).update(
+            created_at=timezone.now() - timedelta(minutes=11)
+        )
+        b = Client()
+        b.post(
+            "/auth/login/",
+            data=json.dumps({"username": "u", "password": "secret123"}),
+            content_type="application/json",
+            HTTP_USER_AGENT="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari",
+        )
+        resp = a.get("/auth/me/", HTTP_ACCEPT="*/*")
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json()["reason"], "session_superseded")
+
     def test_new_device_can_access_after_takeover(self):
         a = self._login()
         b = self._login()
