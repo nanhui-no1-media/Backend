@@ -298,6 +298,11 @@ export default function CommentSection({ host }: { host: CommentHost }) {
     }
   };
 
+  if (!policy.comments_enabled) {
+    // 站点策略关闭评论区：整个组件不渲染（新闻 / 活动 / 任务详情页随之隐藏）。
+    return null;
+  }
+
   return (
     <section className="comment-section card card-pad">
       <div className="comment-head">

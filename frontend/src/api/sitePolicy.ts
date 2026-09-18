@@ -23,7 +23,9 @@ export interface SitePolicy {
   update_apply_cutoff_minutes_before_end: number;
   update_release_keep: number;
   update_db_backup_keep: number;
+  comments_enabled: boolean;
   comment_max_depth: number;
+  dms_enabled: boolean;
   turnstile_enabled: boolean;
   turnstile_site_key: string;
 }
@@ -48,7 +50,9 @@ const DEFAULTS: SitePolicy = {
   update_apply_cutoff_minutes_before_end: 30,
   update_release_keep: 3,
   update_db_backup_keep: 5,
+  comments_enabled: true,
   comment_max_depth: 8,
+  dms_enabled: true,
   turnstile_enabled: false,
   turnstile_site_key: "",
 };

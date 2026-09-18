@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { useSitePolicy } from "../api/sitePolicy";
 import AppShell from "../components/AppShell";
 import {
   INBOX_REASON_LABELS,
@@ -37,6 +38,7 @@ function itemKindLabel(item: InboxItem): string {
 
 export default function InboxPage() {
   const navigate = useNavigate();
+  const policy = useSitePolicy();
   const [items, setItems] = useState<InboxItem[] | null>(null);
   const [error, setError] = useState("");
 
@@ -64,6 +66,9 @@ export default function InboxPage() {
       });
   }, [navigate]);
 
+  // 私信关闭时，待办列表不再展示会话条目（与私信入口隐藏保持一致）。
+  const visibleItems = items === null ? null : items.filter((i) => policy.dms_enabled || i.kind !== "conversation");
+
   return (
     <AppShell>
       <div className="page-head">
@@ -83,9 +88,9 @@ export default function InboxPage() {
             <span>{error}</span>
           </div>
         )}
-        {items === null ? (
+        {visibleItems === null ? (
           <p className="muted" style={{ padding: "var(--s-8) 0" }}>加载中…</p>
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <div className="prop-empty">
             <p>没有待办。去看看活动或任务。</p>
             <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
@@ -94,7 +99,7 @@ export default function InboxPage() {
             </div>
           </div>
         ) : (
-          items.map((item, i) => {
+          visibleItems.map((item, i) => {
             const path = itemPath(item);
             return (
               <a

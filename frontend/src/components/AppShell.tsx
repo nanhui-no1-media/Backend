@@ -110,7 +110,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, [authNonce]);
 
   const showInbox = !!user && !!profile.is_verified;
-  const showDm = showInbox;
+  const showDm = showInbox && policy.dms_enabled;
   const showNotif = !!user;
 
   useEffect(() => {
@@ -293,6 +293,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                       </div>
                     </div>
                     {USER_MENU.filter((m) => {
+                      if (m.path === "/messages" && !policy.dms_enabled) return false;
                       if (m.needVerified) return showInbox;
                       return true;
                     }).map((m) => (
