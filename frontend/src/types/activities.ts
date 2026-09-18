@@ -105,6 +105,20 @@ export interface ActivityDetail {
   updated_at: string;
 }
 
+// ---- 问卷作答查看 ----
+export interface SurveyResponseRow {
+  id: number;
+  user_label: string;
+  answers: Record<string, unknown>;
+  submitted_at: string;
+}
+
+export interface SurveyResponsesPayload {
+  schema: Record<string, unknown>;
+  is_manager: boolean;
+  results: SurveyResponseRow[];
+}
+
 // ---- 创建表单 ----
 export interface DeliberationFormData {
   type: "deliberation";

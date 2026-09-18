@@ -122,6 +122,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
             return [IsAuthenticated()]
         if self.action in ("list", "retrieve", "respond"):
             return [AllowAny()]
+        if self.action == "responses":
+            return [IsAuthenticated()]
         if self.action == "vote":
             return [IsAuthenticated(), IsVerified()]
         if self.action == "submit":
@@ -247,6 +249,39 @@ class ActivityViewSet(viewsets.ModelViewSet):
             ActivityDetailSerializer(activity, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
         )
+
+    # ── 问卷作答查看（发起人 / manage_activity → 全部；其他登录用户 → 自己的）──
+    @action(detail=True, methods=["get"], url_path="responses")
+    def responses(self, request, pk=None):
+        activity = self.get_object()
+        if activity.type != "survey":
+            return Response({"detail": "仅调研有问卷作答"}, status=status.HTTP_400_BAD_REQUEST)
+        questionnaire = activity.questionnaire
+        if questionnaire is None:
+            return Response({"detail": "问卷不存在"}, status=status.HTTP_400_BAD_REQUEST)
+        user = request.user
+        is_manager = activity.creator_id == user.pk or user.has_perm("activities.manage_activity")
+        rows = (
+            questionnaire.responses.select_related("user").all()
+            if is_manager
+            else questionnaire.responses.filter(user=user)
+        )
+        return Response({
+            "schema": questionnaire.schema,
+            "is_manager": is_manager,
+            "results": [
+                {
+                    "id": row.pk,
+                    "user_label": (
+                        row.user.username if row.user_id
+                        else (f"访客 · {row.device_id[:8]}" if row.device_id else "访客")
+                    ),
+                    "answers": row.answers or {},
+                    "submitted_at": row.submitted_at,
+                }
+                for row in rows
+            ],
+        })
 
     # ── 征集投稿（一次性多文件、提交即锁定、一人一作品）──
     @action(detail=True, methods=["post"])

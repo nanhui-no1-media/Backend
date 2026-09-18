@@ -1428,3 +1428,65 @@ class SurveyActivityTest(TestCase):
         self.assertFalse(resp.data["schema_editable"])
         self.assertEqual(self._respond(self.m1, aid).status_code, 400)
         self.assertEqual(self._guest_respond(aid).status_code, 400)
+
+
+class SurveyResponsesViewTest(TestCase):
+    """问卷作答查看（GET .../responses/）：发起人/管理看全部；其他登录用户看自己。"""
+
+    def setUp(self):
+        self.author = grant_verification(User.objects.create_user(username="rauthor", password="x"))
+        self.m1 = grant_verification(User.objects.create_user(username="rm1", password="x"))
+        self.m2 = grant_verification(User.objects.create_user(username="rm2", password="x"))
+        self.client = APIClient()
+        resp = _json(self.client, "post", "/activities/activities/", self.author,
+                     {"type": "survey", "title": "作答查看", "body": "<p>x</p>"})
+        self.aid = resp.data["id"]
+        self.q = Activity.objects.get(pk=self.aid).questionnaire
+
+    def _respond(self, user, answers):
+        return _json(self.client, "post", f"/activities/activities/{self.aid}/respond/", user,
+                     {"answers": answers})
+
+    def _responses(self, user=None):
+        self.client.force_authenticate(user)
+        return self.client.get(f"/activities/activities/{self.aid}/responses/")
+
+    def test_creator_sees_all(self):
+        self._respond(self.m1, {"q1": "a"})
+        self._respond(self.m2, {"q1": "b"})
+        resp = self._responses(self.author)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data["is_manager"])
+        self.assertEqual(len(resp.data["results"]), 2)
+        self.assertIsInstance(resp.data["schema"], dict)
+
+    def test_manage_activity_holder_sees_all(self):
+        holder = User.objects.create_user(username="rholder", password="x")
+        holder.user_permissions.add(Permission.objects.get(
+            content_type__app_label="activities", codename="manage_activity"))
+        holder = User.objects.get(pk=holder.pk)
+        self._respond(self.m1, {"q1": "a"})
+        resp = self._responses(holder)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.data["is_manager"])
+        self.assertEqual(len(resp.data["results"]), 1)
+
+    def test_member_sees_only_own(self):
+        self._respond(self.m1, {"q1": "mine"})
+        self._respond(self.m2, {"q1": "other"})
+        resp = self._responses(self.m1)
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.data["is_manager"])
+        self.assertEqual(len(resp.data["results"]), 1)
+        self.assertEqual(resp.data["results"][0]["answers"], {"q1": "mine"})
+
+    def test_anonymous_403(self):
+        self.assertEqual(self._responses(None).status_code, 403)
+
+    def test_non_survey_400(self):
+        resp = _json(self.client, "post", "/activities/activities/", self.author,
+                     {"type": "collection", "title": "征集R", "body": "<p>x</p>"})
+        did = resp.data["id"]
+        self.client.force_authenticate(self.author)
+        self.assertEqual(
+            self.client.get(f"/activities/activities/{did}/responses/").status_code, 400)
