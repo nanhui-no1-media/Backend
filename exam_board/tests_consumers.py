@@ -54,7 +54,7 @@ class ExamBoardWebsocketTests(TransactionTestCase):
 
     def test_http_publish_pushes_errata(self):
         user = User.objects.create_user("info", password="x")
-        user.user_permissions.add(Permission.objects.get(codename="add_exam"))
+        user.user_permissions.add(Permission.objects.get(codename="manage_exams"))
         client = APIClient()
         client.force_authenticate(user)
         from exam_board.models import Exam, ExamBatch

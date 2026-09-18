@@ -112,7 +112,7 @@ class Feedback(models.Model):
         ordering = ["-created_at"]
         default_permissions = ("add", "change", "delete")
         permissions = [
-            ("view_feedback", "可查看并了结意见反馈"),
+            ("read_feedback", "可查看并了结意见反馈"),
         ]
 
     def __str__(self):

@@ -25,6 +25,9 @@ class Exam(models.Model):
         verbose_name = "考试"
         verbose_name_plural = "考试"
         ordering = ["-id"]
+        permissions = [
+            ("manage_exams", "可管理考试看板"),
+        ]
 
     def __str__(self):
         return self.title

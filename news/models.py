@@ -39,6 +39,9 @@ class News(models.Model):
         verbose_name = "新闻"
         verbose_name_plural = "新闻"
         ordering = ["-published_at", "-created_at"]
+        permissions = [
+            ("manage_news", "可管理新闻"),
+        ]
 
     def __str__(self):
         return self.title

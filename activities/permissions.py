@@ -21,7 +21,7 @@ class CanCreateActivity(permissions.BasePermission):
 
 
 class CanModifyActivity(permissions.BasePermission):
-    """编辑/删除活动：发起人，或持 activities.change_activity 权限者。
+    """编辑/删除活动：发起人，或持 activities.manage_activity 权限者。
 
     状态相关的"此刻能否改"由 lifecycle 守卫在具体动作里收口；此处只判归属与角色。
     """
@@ -30,7 +30,7 @@ class CanModifyActivity(permissions.BasePermission):
         return bool(request.user and request.user.is_authenticated)
 
     def has_object_permission(self, request, view, obj):
-        return obj.creator_id == request.user.pk or request.user.has_perm("activities.change_activity")
+        return obj.creator_id == request.user.pk or request.user.has_perm("activities.manage_activity")
 
 
 class CanReviewSubmission(permissions.BasePermission):

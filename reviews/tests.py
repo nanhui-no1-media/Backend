@@ -25,7 +25,7 @@ def _grant(user, app_label, *codenames):
 
 def _author():
     user = User.objects.create_user(username="author", password="x")
-    return _grant(user, "news", "add_news", "change_news", "delete_news")
+    return _grant(user, "news", "manage_news")
 
 
 def _moderator():
@@ -35,7 +35,7 @@ def _moderator():
 
 def _publisher():
     user = User.objects.create_user(username="pub", password="x")
-    _grant(user, "news", "add_news", "change_news", "delete_news")
+    _grant(user, "news", "manage_news")
     return _grant(user, "reviews", "force_publish")
 
 

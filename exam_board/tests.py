@@ -22,7 +22,7 @@ def _png(name="q.png"):
 
 def _writer():
     user = User.objects.create_user(username="info", password="x")
-    user.user_permissions.add(Permission.objects.get(codename="add_exam"))
+    user.user_permissions.add(Permission.objects.get(codename="manage_exams"))
     return user
 
 
@@ -159,7 +159,7 @@ class ExamWritePermissionTest(TestCase):
         user = User.objects.create_user(username="g", password="x")
         grp, _ = Group.objects.get_or_create(name="信息组")
         user.groups.add(grp)
-        self.assertTrue(user.has_perm("exam_board.add_exam"))
+        self.assertTrue(user.has_perm("exam_board.manage_exams"))
 
 
 class ExamValidationTest(TestCase):

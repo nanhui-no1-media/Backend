@@ -297,7 +297,7 @@ class CommentTombstoneHttpTest(TestCase):
     def test_news_editor_cannot_delete_on_others_thread(self):
         editor = grant_verification(User.objects.create_user(username="editor", password="x"))
         editor.user_permissions.add(
-            Permission.objects.get(content_type__app_label="news", codename="add_news"),
+            Permission.objects.get(content_type__app_label="news", codename="manage_news"),
         )
         commenter = grant_verification(User.objects.create_user(username="c", password="x"))
         comment = post_comment(self.thread, commenter, "hi")

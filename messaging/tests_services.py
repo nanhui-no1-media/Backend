@@ -169,8 +169,8 @@ class ThreadAndCommentRulesTest(TestCase):
         )
         task = Task.objects.create(title="t2", creator=owner)
         cases = [
-            (thread_for(news), "news", "add_news"),
-            (thread_for(activity), "activities", "change_activity"),
+            (thread_for(news), "news", "manage_news"),
+            (thread_for(activity), "activities", "manage_activity"),
             (thread_for(task), "tasks", "manage_tasks"),
         ]
         for thread, app, codename in cases:
@@ -187,7 +187,7 @@ class ThreadAndCommentRulesTest(TestCase):
                 self.assertFalse(can_manage_thread(holder, thread))
         editor = User.objects.create_user(username="editor", password="x")
         editor.user_permissions.add(
-            Permission.objects.get(content_type__app_label="news", codename="add_news"),
+            Permission.objects.get(content_type__app_label="news", codename="manage_news"),
         )
         with self.assertRaises(MessagingForbidden):
             delete_comment(post_comment(self.thread, self.author, "x"), editor)

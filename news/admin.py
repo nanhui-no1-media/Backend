@@ -16,7 +16,7 @@ class NewsAdmin(admin.ModelAdmin):
     @admin.action(description="归档")
     def archive_selected(self, request, queryset):
         """批量归档：已发布 → 取消发布（不对公众展示）。"""
-        if not request.user.has_perm("news.change_news"):
+        if not request.user.has_perm("news.manage_news"):
             self.message_user(request, "没有归档权限。", level=messages.ERROR)
             return
         ok = queryset.filter(is_published=True).update(is_published=False)

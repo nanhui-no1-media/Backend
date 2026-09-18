@@ -133,7 +133,7 @@ class ActivityCreateReadTest(TestCase):
         items = resp.data["results"] if isinstance(resp.data, dict) and "results" in resp.data else resp.data
         self.assertEqual({i["title"] for i in items}, {"public-survey"})
 
-    # ---- 删除（发起人 / change_activity）----
+    # ---- 删除（发起人 / manage_activity）----
 
     def test_creator_can_delete_own(self):
         a = Activity.objects.create(type="deliberation", status="open", title="a", creator=self.author)

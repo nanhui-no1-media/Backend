@@ -11,10 +11,10 @@ class CanViewTutorial(permissions.BasePermission):
 
 
 class CanModifyTutorial(permissions.BasePermission):
-    """改/删：上传者或持 tutorials.change_tutorial。"""
+    """改/删：上传者或持 tutorials.manage_tutorials。"""
 
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated)
 
     def has_object_permission(self, request, view, obj):
-        return obj.uploader_id == request.user.pk or request.user.has_perm("tutorials.change_tutorial")
+        return obj.uploader_id == request.user.pk or request.user.has_perm("tutorials.manage_tutorials")

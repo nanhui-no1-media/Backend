@@ -12,7 +12,7 @@ class NewsAdminArchiveTest(TestCase):
         self.author = User.objects.create_user(username="author", password="x")
         self.staff = User.objects.create_user(username="staff", password="x")
         self.staff.user_permissions.add(
-            Permission.objects.get(content_type__app_label="news", codename="change_news"),
+            Permission.objects.get(content_type__app_label="news", codename="manage_news"),
         )
         self.staff = User.objects.get(pk=self.staff.pk)
         self.published = News.objects.create(

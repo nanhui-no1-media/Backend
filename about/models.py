@@ -28,6 +28,9 @@ class AboutPage(models.Model):
 
     class Meta:
         verbose_name = verbose_name_plural = "关于页"
+        permissions = [
+            ("manage_aboutpage", "可编辑关于页"),
+        ]
 
     def __str__(self):
         return self.title

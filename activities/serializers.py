@@ -135,13 +135,13 @@ class ActivityListSerializer(serializers.ModelSerializer):
 
 
 def _is_reviewer(activity, user):
-    """征集复审者：活动发起人，或持 change_activity / review_collection 权限者。
+    """征集复审者：活动发起人，或持 manage_activity / review_collection 权限者。
 
     review_collection 权限由 T5 落地；在此之前 has_perm 返回 False，复审者仅含发起人。
     """
     return user.is_authenticated and (
         activity.creator_id == user.pk
-        or user.has_perm("activities.change_activity")
+        or user.has_perm("activities.manage_activity")
         or user.has_perm("activities.review_collection")
     )
 

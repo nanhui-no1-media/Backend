@@ -28,12 +28,12 @@ class IsAdminViewerTest(TestCase):
     def setUp(self):
         self.regular = User.objects.create_user(username="regular", password="p")
         # 直接授予权限（不在「信息组」组里）—— 钉死「权限即管理员」
-        self.direct = _grant(User.objects.create_user(username="direct", password="p"), "news", "add_news")
+        self.direct = _grant(User.objects.create_user(username="direct", password="p"), "news", "manage_news")
         # 经「信息组」组获得权限（组仍生效，因其授予该权限）
         info = User.objects.create_user(username="info", password="p")
         info.groups.add(Group.objects.get_or_create(name="信息组")[0])
         self.in_info_group = User.objects.get(pk=info.pk)
-        # 在某组但该组不授 news.add_news —— 钉死「组名本身不算数」
+        # 在某组但该组不授 news.manage_news —— 钉死「组名本身不算数」
         other = User.objects.create_user(username="other_grp", password="p")
         other.groups.add(Group.objects.create(name="noop_group"))
         self.in_other_group = User.objects.get(pk=other.pk)
@@ -43,18 +43,18 @@ class IsAdminViewerTest(TestCase):
         self.assertTrue(is_admin_viewer(self.superuser))
 
     def test_direct_permission_is_admin(self):
-        # 授予 news.add_news（不在信息组）→ 仍是管理员
+        # 授予 news.manage_news（不在信息组）→ 仍是管理员
         self.assertTrue(is_admin_viewer(self.direct))
 
     def test_info_group_member_is_admin(self):
-        # 信息组成员（经组获得 news.add_news）→ 管理员
+        # 信息组成员（经组获得 news.manage_news）→ 管理员
         self.assertTrue(is_admin_viewer(self.in_info_group))
 
     def test_regular_is_not_admin(self):
         self.assertFalse(is_admin_viewer(self.regular))
 
     def test_group_without_permission_is_not_admin(self):
-        # 关键钉死：仅在某组（无 news.add_news）不算管理员
+        # 关键钉死：仅在某组（无 news.manage_news）不算管理员
         self.assertFalse(is_admin_viewer(self.in_other_group))
 
 
@@ -66,7 +66,7 @@ class ProfileViewForTest(TestCase):
         self.viewed = User.objects.create_user(username="viewed", email="v@e.com", password="p")
         self.other = User.objects.create_user(username="other", password="p")
         self.admin = _grant(
-            User.objects.create_user(username="admin", password="p"), "news", "add_news"
+            User.objects.create_user(username="admin", password="p"), "news", "manage_news"
         )
         self.inactive = User.objects.create_user(username="inactive", password="p", is_active=False)
 

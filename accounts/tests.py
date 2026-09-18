@@ -1,7 +1,7 @@
 import json
 from datetime import timedelta
 from django.test import TestCase, Client, RequestFactory, override_settings
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.utils import timezone
 from .models import UserSession
 from .utils import get_client_ip, parse_user_agent, record_user_session
@@ -161,7 +161,7 @@ class MeViewTest(TestCase):
         self.assertFalse(perms["can_manage_announcement"])
 
     def test_can_change_activity_decoupled_from_president_seed(self):
-        # 活动管理门禁与社长种子包解耦——社长无 change_activity，故看不到他人活动编辑按钮。
+        # 活动管理门禁与社长种子包解耦——社长无 manage_activity，故看不到他人活动编辑按钮。
         from django.contrib.auth.models import Group
         grp, _ = Group.objects.get_or_create(name="社长")
         self.user.groups.add(grp)
@@ -172,7 +172,7 @@ class MeViewTest(TestCase):
 
     def test_can_change_activity_true_when_perm_held(self):
         from django.contrib.auth.models import Permission
-        perm = Permission.objects.get(content_type__app_label="activities", codename="change_activity")
+        perm = Permission.objects.get(content_type__app_label="activities", codename="manage_activity")
         self.user.user_permissions.add(perm)
         self.client.login(username="testuser", password="secret123")
         perms = self.client.get("/auth/me/").json()["user"]["permissions"]
@@ -1012,3 +1012,27 @@ class UserContentPaginationTest(TestCase):
         self.assertEqual(data["results"], [])
         self.assertIsNone(data["next"])
         self.assertIsNone(data["previous"])
+
+
+class PermissionNormalizationTest(TestCase):
+    """权限规范化数据迁移（accounts/0009）：持有旧 CRUD 权限的组自动获得新语义权限。"""
+
+    def _codenames(self, group_name):
+        group = Group.objects.get(name=group_name)
+        return set(group.permissions.values_list("codename", flat=True))
+
+    def test_info_group_gets_manage_news(self):
+        # accounts/0002 给信息组 news add/change/delete_news → 0009 补 manage_news
+        self.assertIn("manage_news", self._codenames("信息组"))
+
+    def test_info_group_gets_manage_aboutpage(self):
+        # about/0005 给信息组 change_aboutpage → 0009 补 manage_aboutpage
+        self.assertIn("manage_aboutpage", self._codenames("信息组"))
+
+    def test_info_group_gets_manage_exams(self):
+        # exam_board/0004 给信息组 add_exam → 0009 补 manage_exams
+        self.assertIn("manage_exams", self._codenames("信息组"))
+
+    def test_president_gets_read_feedback(self):
+        # reviews/0007 给社长 view_feedback → 0009 补 read_feedback
+        self.assertIn("read_feedback", self._codenames("社长"))

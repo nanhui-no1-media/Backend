@@ -7,7 +7,7 @@ from about.models import AboutBlock, AboutPage
 
 
 def _change_perm():
-    return Permission.objects.get(codename="change_aboutpage")
+    return Permission.objects.get(codename="manage_aboutpage")
 
 
 class AboutReadTest(TestCase):
@@ -38,7 +38,7 @@ class AboutReadTest(TestCase):
 
 
 class AboutBlockWriteTest(TestCase):
-    """PATCH /about/blocks/<key>/：仅持 about.change_aboutpage 者可改。"""
+    """PATCH /about/blocks/<key>/：仅持 about.manage_aboutpage 者可改。"""
 
     def setUp(self):
         self.client = APIClient()

@@ -29,7 +29,7 @@ from .models import Attachment, TusUpload
 
 
 def make_president(user):
-    """加入「社长」组：已含 manage_tasks / view_feedback 等管理权限。"""
+    """加入「社长」组：已含 manage_tasks / read_feedback 等管理权限。"""
     group, _ = Group.objects.get_or_create(name="社长")
     user.groups.add(group)
     return user
@@ -690,7 +690,7 @@ class NewsDetailAttachmentsTest(_AttachmentTestCase):
         self.assertNotIn("uploaded_by", atts[0])
 
 
-# ── 新闻作者即创建者（不依赖 change_news；旧测试靠授权掩盖 author_id）──
+# ── 新闻作者即创建者（不依赖 manage_news；旧测试靠授权掩盖 author_id）──
 class NewsAuthorIsCreatorTest(_AttachmentTestCase):
     def setUp(self):
         super().setUp()
@@ -700,7 +700,7 @@ class NewsAuthorIsCreatorTest(_AttachmentTestCase):
         self.news = News.objects.create(title="n", author=self.author, is_published=True)
         self.client = APIClient()
 
-    def test_author_can_upload_without_change_news(self):
+    def test_author_can_upload_without_manage_news(self):
         self.client.force_authenticate(self.author)  # pyright: ignore[reportAttributeAccessIssue]
         resp = self.client.post(
             "/attachments/",
@@ -709,7 +709,7 @@ class NewsAuthorIsCreatorTest(_AttachmentTestCase):
         )
         self.assertEqual(resp.status_code, 201)
 
-    def test_author_can_delete_without_change_news(self):
+    def test_author_can_delete_without_manage_news(self):
         from attachments.create import create_attachment
         att = create_attachment(user=self.outsider, parent=self.news, file=upload("v.mp4", b"x", "video/mp4"))
         self.client.force_authenticate(self.author)  # pyright: ignore[reportAttributeAccessIssue]
@@ -722,7 +722,7 @@ class NewsAuthorIsCreatorTest(_AttachmentTestCase):
         self.assertEqual(self.client.delete(f"/attachments/{att.pk}/").status_code, 403)
 
 
-# ── 展品父级：策展人可删（destroy 须含 exhibit；策展 = 活动发起人 / change_activity）──
+# ── 展品父级：策展人可删（destroy 须含 exhibit；策展 = 活动发起人 / manage_activity）──
 class ExhibitCuratorDeleteTest(_AttachmentTestCase):
     def setUp(self):
         super().setUp()
@@ -735,7 +735,7 @@ class ExhibitCuratorDeleteTest(_AttachmentTestCase):
         self.uploader = User.objects.create_user(username="uploader", password="x")
         self.outsider = User.objects.create_user(username="outsider", password="x")
         self.manager = User.objects.create_user(username="manager", password="x")
-        self.manager.user_permissions.add(Permission.objects.get(codename="change_activity"))
+        self.manager.user_permissions.add(Permission.objects.get(codename="manage_activity"))
         self.activity = Activity.objects.create(
             type="exhibition", status="scheduled", title="影展", creator=self.curator,
         )
@@ -751,7 +751,7 @@ class ExhibitCuratorDeleteTest(_AttachmentTestCase):
     def test_curator_can_delete_exhibit_attachment(self):
         self.assertEqual(self._delete(self.curator).status_code, 204)
 
-    def test_change_activity_holder_can_delete_exhibit_attachment(self):
+    def test_manage_activity_holder_can_delete_exhibit_attachment(self):
         self.assertEqual(self._delete(self.manager).status_code, 204)
 
     def test_outsider_cannot_delete_exhibit_attachment(self):

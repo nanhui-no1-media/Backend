@@ -18,11 +18,11 @@ from .serializers import (
 
 
 class IsAboutEditor(BasePermission):
-    """招生作答列表等敏感读：必须持 about.change_aboutpage。"""
+    """招生作答列表等敏感读：必须持 about.manage_aboutpage。"""
 
     def has_permission(self, request, view):
         user = request.user
-        return bool(user and user.is_authenticated and user.has_perm("about.change_aboutpage"))
+        return bool(user and user.is_authenticated and user.has_perm("about.manage_aboutpage"))
 
 
 def _already_responded(questionnaire, request):

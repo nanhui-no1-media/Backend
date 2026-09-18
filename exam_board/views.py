@@ -60,7 +60,7 @@ def _expire_due(exam_id=None):
 
 
 class ExamViewSet(viewsets.ModelViewSet):
-    """考试看板：公开读列表/详情/最新/授时；写需 exam_board.add_exam。"""
+    """考试看板：公开读列表/详情/最新/授时；写需 exam_board.manage_exams。"""
 
     permission_classes = [CanManageExam]
     queryset = Exam.objects.all()
@@ -103,7 +103,7 @@ class ExamViewSet(viewsets.ModelViewSet):
 
 
 class ExamErrataViewSet(mixins.CreateModelMixin, viewsets.GenericViewSet):
-    """题目误刊：公开读当前一场考试的未撤回列表；写需 exam_board.add_exam。"""
+    """题目误刊：公开读当前一场考试的未撤回列表；写需 exam_board.manage_exams。"""
 
     permission_classes = [CanManageExam]
     serializer_class = ExamErrataSerializer

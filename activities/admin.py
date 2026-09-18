@@ -26,7 +26,7 @@ class ActivityAdmin(admin.ModelAdmin):
     @admin.action(description="归档")
     def archive_selected(self, request, queryset):
         """批量归档征集：收件中 / 复审中 → 已归档。其它类型跳过。"""
-        if not request.user.has_perm("activities.change_activity"):
+        if not request.user.has_perm("activities.manage_activity"):
             self.message_user(request, "没有归档权限。", level=messages.ERROR)
             return
         ok = skip = 0

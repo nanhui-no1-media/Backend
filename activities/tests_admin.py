@@ -187,7 +187,7 @@ class ActivityAdminArchiveTest(TestCase):
         self.owner = User.objects.create_user(username="owner", password="x")
         self.staff = User.objects.create_user(username="staff", password="x")
         self.staff.user_permissions.add(
-            Permission.objects.get(content_type__app_label="activities", codename="change_activity"),
+            Permission.objects.get(content_type__app_label="activities", codename="manage_activity"),
         )
         self.staff = User.objects.get(pk=self.staff.pk)
         self.collection = Activity.objects.create(

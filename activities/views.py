@@ -132,7 +132,7 @@ class ActivityViewSet(viewsets.ModelViewSet):
             # 复审：发起人 OR 持 review_collection 权限（对象级）
             return [IsAuthenticated(), CanReviewSubmission()]
         if self.action == "close":
-            # 提前关闭：发起人，或持 change_activity 权限者（对象级）
+            # 提前关闭：发起人，或持 manage_activity 权限者（对象级）
             return [IsAuthenticated(), CanModifyActivity()]
         if self.action in ("add_exhibit", "update_exhibit", "delete_exhibit", "import_from_collection"):
             return [IsAuthenticated(), CanModifyActivity()]
