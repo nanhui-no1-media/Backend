@@ -3,16 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useLoginModal } from "../components/LoginModalProvider";
 import MobileTabBar from "../components/MobileTabBar";
+import type { RoleVariant } from "../types/profile";
 import "../styles/mobile.css";
 
-interface MeUser {
-  id: number;
-  username: string;
-  nickname?: string;
-  avatar?: string | null;
-  is_staff?: boolean;
-  is_superuser?: boolean;
-  identity_verified?: boolean;
+/** /auth/me/（accounts.views._profile_response）真实返回结构：
+ * 身份在 role、资料在 profile，user 上仅有 id/username/email/permissions。 */
+interface MeResponse {
+  user: { id: number; username: string; email: string };
+  role: { label: string; variant: RoleVariant };
+  profile: { avatar: string | null; nickname: string; is_verified: boolean };
 }
 
 const ENTRIES = [
@@ -23,7 +22,7 @@ const ENTRIES = [
 ];
 
 export default function MobileMePage() {
-  const [user, setUser] = useState<MeUser | null>(null);
+  const [me, setMe] = useState<MeResponse | null>(null);
   const [loaded, setLoaded] = useState(false);
   const { openLogin } = useLoginModal();
   const navigate = useNavigate();
@@ -31,20 +30,15 @@ export default function MobileMePage() {
     document.title = "我的 · 南汇一中传媒社";
     api
       .me()
-      .then((d: any) => setUser(d.user))
-      .catch(() => setUser(null))
+      .then((d: any) => setMe(d))
+      .catch(() => setMe(null))
       .finally(() => setLoaded(true));
   }, []);
 
-  const badge = user
-    ? user.is_superuser
-      ? "超级管理员"
-      : user.is_staff
-        ? "管理员"
-        : user.identity_verified
-          ? "认证用户"
-          : "用户"
-    : "";
+  const user = me?.user ?? null;
+  // 「进入后台管理」指向 Django admin（其门禁只认 is_staff），按身份徽章显示：
+  // 管理员 / 超级管理员可见，普通用户与访客不显示。
+  const isAdmin = me?.role?.variant === "admin" || me?.role?.variant === "superadmin";
 
   return (
     <div className="m-app">
@@ -55,11 +49,11 @@ export default function MobileMePage() {
       <section className="m-me-card">
         {user ? (
           <>
-            <img className="m-me-avatar" src={user.avatar || "/static/favicon.ico"} alt="" />
+            <img className="m-me-avatar" src={me?.profile?.avatar || "/static/favicon.ico"} alt="" />
             <div>
-              <div className="m-me-name">{user.nickname || user.username}</div>
+              <div className="m-me-name">{me?.profile?.nickname || user.username}</div>
               <div className="m-me-sub">
-                @{user.username} · {badge}
+                @{user.username} · {me?.role?.label ?? ""}
               </div>
             </div>
           </>
@@ -90,13 +84,16 @@ export default function MobileMePage() {
             {e.label}
           </div>
         ))}
-        {user && (user.is_staff || user.is_superuser) && (
+        {user && isAdmin && (
           <div
             role="link"
             tabIndex={0}
             className="m-list-item"
             onClick={() => {
               window.location.href = "/admin/";
+            }}
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter") window.location.href = "/admin/";
             }}
           >
             进入后台管理
