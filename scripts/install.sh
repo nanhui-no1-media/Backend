@@ -269,7 +269,7 @@ write_nginx_site() {
   layout="$(nginx_layout)"
   local body
   body=$(cat <<NGINX
-# 两段协议（docs/deployment.md、ADR 0015）：
+# 两段协议（docs/operations/deployment.md、ADR 0015）：
 #   浏览器 → nginx：HTTP/1.1；有证书后在 listen 上开 HTTP/2（HTTP/3 可选）
 #   nginx → gunicorn unix socket：一律 HTTP/1.1（WebSocket Upgrade 也在这一段）
 # 不要按路径把 /ws/ 拆成另一种上游协议，也不要对 unix socket 写 proxy_http_version 2。

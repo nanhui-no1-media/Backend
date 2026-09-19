@@ -10,7 +10,7 @@
 - 征集要开窗收作品、配置上传规则、一人一作品、事后录用/退稿——申报表里没有任何对应结构。
 - 反馈仍是单向投递箱，与上述两者毫无共用生命周期可言。
 
-继续把活动硬塞进申报表，类型条件分支只会越堆越多——正是 [ADR 0003](0003-no-shared-task-proposal-lifecycle-base) 当初想避免的味道。
+继续把活动硬塞进申报表，类型条件分支只会越堆越多——正是 [ADR 0003](0003-no-shared-task-proposal-lifecycle-base.md) 当初想避免的味道。
 
 此外，旧活动生命周期是"**先投票、再由社长审批活动计划**"。但在新语义下，众议的活动**就是**投票（票数即结果），征集的活动**就是**收件窗口（复审的是作品，不是活动计划）——"审批活动计划"这一环在两种新类型里都失去意义。
 
@@ -24,17 +24,17 @@
    - **众议** = 可配置选项的投票：发起人自定义选项、配置每人最多选 `K` 项（`K=1` 即一人一票）、可选公开或**秘密**投票；截止按各选项计数结算。
    - **征集** = 收作品投稿箱：发起人配置允许后缀/单文件大小/单作品文件数/最大征集数量；**一人一作品**、提交即锁定；收件结束后由发起人或持复审权限者逐个复审为 录用/退稿。
 
-## 访问控制（遵循 [ADR 0005](0005-access-control-principle)）
+## 访问控制（遵循 [ADR 0005](0005-access-control-principle.md)）
 
-- 发起活动 / 投票 / 投稿 = **身份门禁**（已验证成员，[ADR 0006](0006-verification-model)），不单造权限。
+- 发起活动 / 投票 / 投稿 = **身份门禁**（已验证成员，[ADR 0006](0006-verification-model.md)），不单造权限。
 - 征集复审 = **对象级**：`发起人 OR has_perm('activities.review_collection')`，叠加 lifecycle 守卫。`review_collection` 是本 app 唯一新增命名权限。
 - 秘密票明细 = **仅 `is_superuser`**（平台唯一逃生舱；`is_staff` 不获得此能力）。
 - 提前关闭活动 = `creator OR has_perm('activities.change_activity')`。
-- 状态机守卫集中在 `activities/lifecycle.py`，与访问控制分离（遵循 [ADR 0003](0003-no-shared-task-proposal-lifecycle-base)）。
+- 状态机守卫集中在 `activities/lifecycle.py`，与访问控制分离（遵循 [ADR 0003](0003-no-shared-task-proposal-lifecycle-base.md)）。
 
 ## 附件
 
-作品文件复用统一附件系统（[ADR 0001](0001-unified-attachment-nullable-fks) / [0002](0002-unified-attachment-endpoint-and-permission.md)），为 `Attachment` 增加 `submission` 父类型（可空 FK + 更新"恰好一个父级"约束）。大文件走 tus 续传（[ADR 0004](0004-feedback-media-tus-resumable-upload.md)）。
+作品文件复用统一附件系统（[ADR 0001](0001-unified-attachment-nullable-fks.md) / [0002](0002-unified-attachment-endpoint-and-permission.md)），为 `Attachment` 增加 `submission` 父类型（可空 FK + 更新"恰好一个父级"约束）。大文件走 tus 续传（[ADR 0004](0004-feedback-media-tus-resumable-upload.md)）。
 
 ## 被否的方案
 

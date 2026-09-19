@@ -91,10 +91,12 @@ Backend/
 
 ## 5. 文档导航
 
-- API 接口文档：[`docs/api.md`](docs/api.md)
-- 后台使用教程：[`docs/admin-guide.md`](docs/admin-guide.md)
-- 运维与部署指南：[`docs/deployment.md`](docs/deployment.md)
-- 架构概览：[`docs/architecture.md`](docs/architecture.md)
+- 完整文档索引：[`docs/README.md`](docs/README.md)
+- 快速开始：[`docs/getting-started.md`](docs/getting-started.md) · 配置参考：[`docs/configuration.md`](docs/configuration.md)
+- API 参考：[`docs/api/README.md`](docs/api/README.md)（各模块分册见 `docs/api/`）
+- 架构：[`docs/architecture/overview.md`](docs/architecture/overview.md) · [`docs/architecture/frontend.md`](docs/architecture/frontend.md)
+- 指南：`docs/guides/`（访问控制 / 身份验证 / 审核系统 / 问卷）
+- 运维：[`docs/operations/deployment.md`](docs/operations/deployment.md) · [`docs/operations/admin-guide.md`](docs/operations/admin-guide.md)
 - ADR 设计记录：[`docs/adr/`](docs/adr/)
 
 ## 6. 主要入口和 URL
@@ -140,7 +142,8 @@ sudo ./scripts/install.sh                # 一键部署生产环境
 
 如果你是第一次接手这个项目，建议先读：
 
-1. [docs/admin-guide.md](docs/admin-guide.md)
-2. [docs/api.md](docs/api.md)
-3. [docs/deployment.md](docs/deployment.md)
-4. [docs/architecture.md](docs/architecture.md)
+1. [docs/getting-started.md](docs/getting-started.md)
+2. [docs/architecture/overview.md](docs/architecture/overview.md)
+3. [docs/api/README.md](docs/api/README.md)
+4. [docs/operations/deployment.md](docs/operations/deployment.md)
+5. [docs/operations/admin-guide.md](docs/operations/admin-guide.md)
