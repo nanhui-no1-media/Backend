@@ -7,6 +7,7 @@ import MascotHost from "./components/mascot/MascotHost";
 import { useEmbedMode } from "./embed";
 import { api } from "./api/client";
 import { fetchSitePolicy } from "./api/sitePolicy";
+import { isMobileDevice } from "./utils/device";
 
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage"));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage"));
@@ -56,6 +57,12 @@ function MaybeMascot() {
   const embed = useEmbedMode();
   if (embed) return null;
   return <MascotHost />;
+}
+
+/** 手机访问站点根路径时直接进入手机版（/#/m）；桌面端与深链接不受影响。 */
+function HomeRoute() {
+  if (isMobileDevice()) return <Navigate to="/m" replace />;
+  return <HomePage />;
 }
 
 export default function App() {
@@ -110,7 +117,7 @@ export default function App() {
           <Route path="/join" element={<JoinPage />} />
           <Route path="/join/form" element={<JoinFormPage />} />
           <Route path="/join/editor" element={<ProtectedRoute><JoinEditorPage /></ProtectedRoute>} />
-          <Route path="/" element={<HomePage />} />
+          <Route path="/" element={<HomeRoute />} />
           <Route path="/m" element={<MobileHomePage />} />
           <Route path="/m/news" element={<MobileNewsPage />} />
           <Route path="/m/activity" element={<MobileActivityPage />} />
