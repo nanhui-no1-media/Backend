@@ -194,15 +194,22 @@ class ActivityViewSet(viewsets.ModelViewSet):
     # ── 众议投票 ──
     @action(detail=True, methods=["post"])
     def vote(self, request, pk=None):
-        activity = self.get_object()  # 触发惰性结算（若已到点则已 closed）
-        try:
-            voting.cast_ballot(
-                activity=activity, user=request.user,
-                option_ids=request.data.get("option_ids") or [],
-            )
-        except voting.BallotError as exc:
-            return Response({"detail": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
-        return self._serialized(activity, request)
+            activity = self.get_object()
+            
+            # 获取客户端真实IP
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            client_ip = x_forwarded_for.split(',')[0].strip() if x_forwarded_for else request.META.get('REMOTE_ADDR')
+            
+            # 匿名用户转为None，已登录用户保留
+            user = request.user if request.user.is_authenticated else None
+            
+            try:
+                voting.cast_ballot(
+                    activity=activity,
+                    user=user,
+                    option_ids=request.data.get("option_ids") or [],
+                    ip_address=client_ip,  # ← 新增
+                )
 
     # ── 调研作答（公开受众任何人；仅成员须登录；已登录一人一次；访客按设备一次）──
     @action(detail=True, methods=["post"])

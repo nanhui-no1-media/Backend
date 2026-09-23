@@ -65,16 +65,19 @@ def maybe_close_deliberation_on_full_vote(activity):
     return False
 
 
-def cast_ballot(*, activity, user, option_ids):
+def cast_ballot(*, activity, user, option_ids, ip_address=None):
     """投一张选票。失败抛 ``BallotError``。成功后众议可能提前结算。"""
     if not can_vote(activity, user):
         if activity.type not in ("deliberation", "exhibition"):
             raise BallotError("仅众议/展示可以投票")
         if activity.type == "exhibition" and not activity.voting_enabled:
             raise BallotError("该展示未启用投票")
-        raise BallotError("投票已结束")
-    if Ballot.objects.filter(activity=activity, voter=user).exists():
-        raise BallotError("你已经投过票了，不能修改")
+        if user and getattr(user, 'is_authenticated', False):
+            if Ballot.objects.filter(activity=activity, voter=user).exists():
+               raise BallotError("你已经投过票了，不能修改")
+    else:
+        if ip_address and Ballot.objects.filter(activity=activity, voter__isnull=True, voter_ip=ip_address).exists():
+            raise BallotError("该IP已投过票，不能重复投票")
 
     if not isinstance(option_ids, list) or len(option_ids) < 1:
         raise BallotError("请至少选择一个选项")
@@ -91,7 +94,11 @@ def cast_ballot(*, activity, user, option_ids):
         raise BallotError("存在不属于本活动的选项")
 
     with transaction.atomic():
-        ballot = Ballot.objects.create(activity=activity, voter=user)
+        ballot = Ballot.objects.create(
+        activity=activity, 
+        voter=user,
+        voter_ip=ip_address
+    )
         BallotSelection.objects.bulk_create(
             [BallotSelection(ballot=ballot, option_id=oid) for oid in ids]
         )
