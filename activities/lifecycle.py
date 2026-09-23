@@ -93,8 +93,6 @@ def can_vote(activity, user):
     展示的投票是否启用取决于 ``voting_enabled``：默认 False（纯陈列，仅赞/踩），
     True 时才放行投票。已验证由 IsVerified 把关。
     """
-    if not user.is_authenticated:
-        return False
     if activity.type == "deliberation":
         return activity.status == OPEN
     if activity.type == "exhibition":
