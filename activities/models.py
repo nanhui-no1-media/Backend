@@ -301,7 +301,7 @@ class Ballot(models.Model):
         Activity, on_delete=models.CASCADE,
         related_name="ballots", verbose_name="活动",
     )
-        voter = models.ForeignKey(
+    voter = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE,
         related_name="activity_ballots", 
