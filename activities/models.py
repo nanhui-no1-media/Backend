@@ -301,9 +301,18 @@ class Ballot(models.Model):
         Activity, on_delete=models.CASCADE,
         related_name="ballots", verbose_name="活动",
     )
-    voter = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
-        related_name="activity_ballots", verbose_name="投票人",
+        voter = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE,
+        related_name="activity_ballots", 
+        verbose_name="投票人",
+        null=True,  # ← 允许为空（游客）
+        blank=True, # ← 允许表单留空
+    )
+    voter_ip = models.GenericIPAddressField(  # ← 新增：记录游客IP
+        null=True,
+        blank=True,
+        verbose_name="游客IP"
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

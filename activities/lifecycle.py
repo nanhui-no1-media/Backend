@@ -93,6 +93,12 @@ def can_vote(activity, user):
     展示的投票是否启用取决于 ``voting_enabled``：默认 False（纯陈列，仅赞/踩），
     True 时才放行投票。已验证由 IsVerified 把关。
     """
+        # 兼容游客：如果 user 为 None 或者是匿名用户，直接跳过身份拦截，放行给后续逻辑
+    if user is None or not getattr(user, 'is_authenticated', False):
+        pass  # 游客放行
+    else:
+        if not user.is_verified:  # 你的 IsVerified 逻辑
+            return False
     if activity.type == "deliberation":
         return activity.status == OPEN
     if activity.type == "exhibition":
