@@ -210,6 +210,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
                     option_ids=request.data.get("option_ids") or [],
                     ip_address=client_ip,  # ← 新增
                 )
+            finally:
+                print("42")
 
     # ── 调研作答（公开受众任何人；仅成员须登录；已登录一人一次；访客按设备一次）──
     @action(detail=True, methods=["post"])
