@@ -5,6 +5,7 @@ import uuid
 from django.contrib.auth.models import User
 from django.core.files.storage import default_storage
 from django.db.models import F, Q
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -17,8 +18,8 @@ from reviews.visibility import public_q, visible_queryset
 from tasks.models import Tag
 
 from .models import News, NewsView
-from .permissions import CanManageNews
-from .serializers import NewsDetailSerializer, NewsListSerializer, NewsTagSerializer
+from .permissions import CanManageNews, CanManageNewsDraft
+from .serializers import NewsDetailSerializer, NewsDraftSerializer, NewsListSerializer, NewsTagSerializer
 from .feed import build_feed
 
 # 公开（匿名可访问）的 action
@@ -74,6 +75,9 @@ class NewsViewSet(viewsets.ModelViewSet):
         # 写（POST/PUT/PATCH/DELETE：create/update/destroy/upload_image）须持 news.manage_news。
         if self.action == "mine":
             return [IsAuthenticated()]
+        if self.action == "draft":
+            # 草稿区（自动保存）：读 / 存 / 弃都须 news.manage_news——含未发布内容，不放行匿名读
+            return [CanManageNewsDraft()]
         return [CanManageNews()]
 
     def perform_create(self, serializer):
@@ -107,6 +111,60 @@ class NewsViewSet(viewsets.ModelViewSet):
             )
         path = default_storage.save(_content_image_path(file.name), file)
         return Response({"url": request.build_absolute_uri(default_storage.url(path))})
+
+    @action(detail=True, methods=["get", "post", "delete"], url_path="draft")
+    def draft(self, request, pk=None):
+        """服务端草稿区（编辑页自动保存）。
+
+        - GET：读草稿——仅「已发布且存过草稿」返回内容，否则 ``{"draft": None}``；
+        - POST：保存——已发布新闻写 draft_* 暂存区（公开页保持旧版，直到「保存修改」上线）；
+          未发布新闻直接写正文（稿件本体即草稿，列表可见）；
+        - DELETE：放弃修改（清空已发布新闻的草稿区）。
+        """
+        news = self.get_object()
+
+        if request.method == "GET":
+            if not news.is_published or not news.draft_saved_at:
+                return Response({"draft": None})
+            return Response({"draft": {
+                "title": news.draft_title,
+                "summary": news.draft_summary,
+                "content": news.draft_content,
+                "saved_at": news.draft_saved_at,
+            }})
+
+        if request.method == "DELETE":
+            news.draft_title = ""
+            news.draft_summary = ""
+            news.draft_content = ""
+            news.draft_saved_at = None
+            news.save(update_fields=["draft_title", "draft_summary", "draft_content", "draft_saved_at"])
+            return Response({"draft": None})
+
+        serializer = NewsDraftSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        if news.is_published:
+            if "title" in data:
+                news.draft_title = data["title"]
+            if "summary" in data:
+                news.draft_summary = data["summary"]
+            if "content" in data:
+                news.draft_content = data["content"]
+            news.draft_saved_at = timezone.now()
+            news.save(update_fields=["draft_title", "draft_summary", "draft_content", "draft_saved_at", "updated_at"])
+            return Response({"saved_at": news.draft_saved_at, "is_draft": True})
+
+        # 未发布：直接写正文；空标题不覆盖（避免「我的稿件」出现空标题行）
+        if data.get("title", "").strip():
+            news.title = data["title"]
+        if "summary" in data:
+            news.summary = data["summary"]
+        if "content" in data:
+            news.content = data["content"]
+        news.save(update_fields=["title", "summary", "content", "updated_at"])
+        return Response({"saved_at": timezone.now(), "is_draft": False})
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()

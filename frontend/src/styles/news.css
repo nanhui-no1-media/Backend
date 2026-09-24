@@ -218,6 +218,21 @@ a.news-item:hover h3 { color: var(--brand-700); }
 .compose-stat { display: flex; align-items: center; gap: var(--s-4); font-size: 13px; color: var(--muted); }
 .compose-stat b { color: var(--fg); }
 .cs-saved { display: inline-flex; align-items: center; gap: 4px; color: var(--success, #16a34a); font-weight: 600; }
+.cs-saving { color: var(--muted); }
+.cs-saving::before {
+  content: "";
+  display: inline-block;
+  width: 10px; height: 10px;
+  margin-right: 6px;
+  border: 2px solid var(--line);
+  border-top-color: var(--brand-500, #2563eb);
+  border-radius: 50%;
+  vertical-align: -1px;
+  animation: cs-spin .7s linear infinite;
+}
+@keyframes cs-spin { to { transform: rotate(360deg); } }
+.cs-error { color: var(--danger, #c0392b); font-weight: 600; }
+.cs-hint { color: var(--faint); }
 .compose-actions { display: flex; gap: var(--s-3); }
 
 @media (max-width: 640px) {

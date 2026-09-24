@@ -11,6 +11,20 @@ export interface NewsListResponse {
   results: NewsListItem[];
 }
 
+/** 服务端草稿区：已发布新闻的待发布修改（编辑页自动保存）。 */
+export interface NewsDraft {
+  title: string;
+  summary: string;
+  content: string;
+  saved_at: string;
+}
+
+/** 草稿保存回执：is_draft=false 表示写入的是未发布稿件正文（稿件本体即草稿）。 */
+export interface NewsDraftSaveResult {
+  saved_at: string;
+  is_draft: boolean;
+}
+
 // list 为分页响应；featured/hot/tags 为自定义 action，直接返回对象/数组（不分页）
 export const newsApi = {
   list: (params?: Record<string, string>) => {
@@ -25,6 +39,11 @@ export const newsApi = {
   create: (data: FormData) => request("/news/", { method: "POST", body: data }) as Promise<NewsDetail>,
   update: (id: number, data: FormData) => request(`/news/${id}/`, { method: "PATCH", body: data }) as Promise<NewsDetail>,
   remove: (id: number) => request(`/news/${id}/`, { method: "DELETE" }),
+  // —— 服务端草稿区（编辑页自动保存；读 / 存 / 弃均须 news.manage_news）——
+  getDraft: (id: number) => request(`/news/${id}/draft/`) as Promise<{ draft: NewsDraft | null }>,
+  saveDraft: (id: number, data: { title?: string; summary?: string; content?: string }) =>
+    request(`/news/${id}/draft/`, { method: "POST", body: JSON.stringify(data) }) as Promise<NewsDraftSaveResult>,
+  discardDraft: (id: number) => request(`/news/${id}/draft/`, { method: "DELETE" }) as Promise<{ draft: null }>,
   // 正文内嵌图片上传（信息组）：返回 {url}，供编辑器「插入图片」与 Word 导入内嵌图片使用
   uploadImage: (file: File) => {
     const fd = new FormData();

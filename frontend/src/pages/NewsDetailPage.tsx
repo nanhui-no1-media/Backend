@@ -4,6 +4,7 @@ import Avatar from "../components/Avatar";
 import ArticleToc, { htmlWithHeadingIds } from "../components/ArticleToc";
 import ImageLightbox from "../components/ImageLightbox";
 import PageChrome from "../components/PageChrome";
+import { api } from "../api/client";
 import { newsApi } from "../api/news";
 import { type NewsDetail } from "../types/news";
 import { useEmbedMode } from "../embed";
@@ -20,6 +21,13 @@ const fmtDate = (d: string | null) => {
   return `${dt.getFullYear()}.${p(dt.getMonth() + 1)}.${p(dt.getDate())}`;
 };
 
+const fmtDateTime = (d: string | null) => {
+  if (!d) return "";
+  const dt = new Date(d);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${fmtDate(d)} ${p(dt.getHours())}:${p(dt.getMinutes())}`;
+};
+
 export default function NewsDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -29,7 +37,15 @@ export default function NewsDetailPage() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState("");
+  const [canEdit, setCanEdit] = useState(false);
   const proseRef = useRef<HTMLDivElement>(null);
+
+  // 信息组：前台编辑入口（匿名 / 普通用户静默）
+  useEffect(() => {
+    api.me()
+      .then((d: any) => setCanEdit(!!d.user?.permissions?.can_manage_news))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -91,6 +107,12 @@ export default function NewsDetailPage() {
               comment={news.review_comment}
             />
             )}
+            {!embed && canEdit && news.draft_saved_at && (
+              <div className="alert alert-info compose-notice" style={{ marginTop: "var(--s-4)" }}>
+                <span>公开页显示的是已发布版本；还有一条未发布的修改（{fmtDateTime(news.draft_saved_at)} 保存）。</span>
+                <button type="button" className="alert-link" onClick={() => navigate(`/news/${news.id}/edit`)}>继续编辑</button>
+              </div>
+            )}
             <h1>{news.title}</h1>
 
             <div className="article-meta">
@@ -132,6 +154,11 @@ export default function NewsDetailPage() {
 
             {!embed && (
             <div className="article-actions">
+              {canEdit && (
+                <button className="btn btn-primary" onClick={() => navigate(`/news/${news.id}/edit`)}>
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg> 编辑
+                </button>
+              )}
               <button className="btn btn-secondary" onClick={() => navigate("/news")}>
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M11 6l-6 6 6 6" /></svg> 返回列表
               </button>

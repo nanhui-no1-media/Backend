@@ -169,3 +169,87 @@
 
 /* —— 只读渲染（NewsDetailPage 等不再用本组件；保留 ProposalForm 等可能的只读场景） —— */
 .rte-readonly .tiptap { padding: 0; font-size: 15px; line-height: 1.8; color: var(--fg); }
+
+/* ===== 文档式编辑增补（2026-09：气泡菜单 / 浮动菜单 / 调色板 / 字数） ===== */
+
+/* —— 气泡菜单（选区快捷格式；BubbleMenu 浮层） —— */
+.rte-bubble {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, .16);
+  z-index: 45;
+}
+.rte-bubble .rte-btn { padding: 4px 8px; }
+
+/* —— 浮动菜单（空行块类型切换；FloatingMenu 浮层） —— */
+.rte-float {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, .16);
+  z-index: 45;
+}
+.rte-float .rte-btn { padding: 4px 8px; }
+
+/* —— 调色板弹层（文字颜色 / 高亮） —— */
+.rte-pop-wrap { position: relative; display: inline-flex; }
+.rte-pop-backdrop { position: fixed; inset: 0; z-index: 50; }
+.rte-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  min-width: 176px;
+  padding: var(--s-3);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: 0 10px 32px rgba(15, 23, 42, .18);
+}
+.rte-pop-grid { display: grid; grid-template-columns: repeat(6, 22px); gap: 6px; justify-content: start; }
+.rte-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(15, 23, 42, .2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform var(--dur-1);
+}
+.rte-swatch:hover { transform: scale(1.1); }
+.rte-pop-clear {
+  margin-top: var(--s-2);
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-700);
+  cursor: pointer;
+}
+.rte-pop-clear:hover { border-color: var(--brand-300); color: var(--brand-700); }
+
+/* “A”字形（文字颜色按钮）：底部色条提示可调色 */
+.rte-color-a { font-weight: 700; border-bottom: 2px solid currentColor; line-height: 1.1; }
+
+/* —— 字数栏 —— */
+.rte-foot { display: flex; justify-content: flex-end; padding: 2px var(--s-4) var(--s-3); }
+.rte-count { font-size: 12px; color: var(--faint); }
+
+/* —— 内容区补充：高亮 mark / 上下标 / 禁用按钮 —— */
+.rte-content .tiptap mark { background: #fff3a3; padding: 0 2px; border-radius: 3px; }
+.rte-content .tiptap sub,
+.rte-content .tiptap sup { font-size: .72em; }
+.rte-btn:disabled { opacity: .45; cursor: default; }
+.rte-btn:disabled:hover { background: transparent; color: var(--ink-700); }

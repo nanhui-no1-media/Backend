@@ -13,7 +13,7 @@
 | 路由 | react-router-dom 7（`HashRouter`） | 全部路由集中在 `src/App.tsx` |
 | 构建 | Webpack 5 + ts-loader + css-loader/style-loader | 入口 `src/index.tsx`，产物 `frontend/dist/` |
 | 样式 | 手写 CSS | 全站设计层 `src/styles/cobalt.css`（钴蓝校徽主题，token 来源 DESIGN.md）+ 组件/页面就近 CSS |
-| 富文本 | Tiptap 3 | starter-kit、table、mention、image、link、code-block-lowlight 等；自定义节点见 `components/rte/` |
+| 富文本 | Tiptap 3 | starter-kit、table、mention、image、link、code-block-lowlight、highlight、text-style、text-align、character-count、bubble/floating menu 等；自定义节点见 `components/rte/` |
 | 问卷 | SurveyJS 3（survey-core / react-ui / creator-* / analytics） | 调研填写、问卷编辑器、答复与统计 |
 | 其他依赖 | chart.js、frappe-gantt、docx-preview、mammoth、lowlight、tus-js-client、l2d | 见「静态资源与第三方库」 |
 | 包管理 | npm（`package-lock.json`） | 后端为 uv，前端独立 |
@@ -284,7 +284,7 @@ Django admin 用 iframe 内嵌 SPA 页面（如审核对象预览 `/#/news/5?emb
 - **SurveyJS 全家桶**（survey-core / survey-react-ui / survey-creator-core / survey-creator-react / survey-analytics + chart.js）：SPA 内 `SurveyFill`（填写，`utils/survey.ts` 统一响应式宽度与 `onComplete` 接后端，`utils/surveyLocale.ts` 中文 locale）、`SurveyCreatorPage`（编辑器，`saveSurveyFunc` 直连后端保存）、`SurveyResponsesPage` / `SurveyStatsPage`（答复与 analytics 仪表盘）。构建时另将未哈希 min 文件拷到 `static/surveyjs/` 与 `dist/surveyjs/`，专供 Django admin 的问卷编辑器/结果页模板使用——升级 survey-* 后必须重跑 `npm run copy-surveyjs`。
 - **看板娘（Live2D）**：`vendor/live2d/`（runtime + widget + 模型 + `catalog.json`）构建时拷到 `/static/live2d/`，运行时经 `l2d` npm 包渲染 Cubism 2/6 模型。`MascotHost` 分三态：`widget`（完整挂件，独立懒加载 chunk `mascot/loadWidget`）/ `chip`（「看板娘」小按钮）/ `none`（窄屏 ≤1024px、系统 `prefers-reduced-motion`、考试看板且关闭偏好）。开关存 localStorage（`mascot.enabled`）；考试看板经 `examBoard/prefs.ts` 与 `mascot/speak.ts` 让看板娘播报考试提示与倒计时语音。
 - **Cloudflare Turnstile**：`turnstile.ts` 在注册/找回密码/重发验证邮件/匿名反馈处按需注入脚本（未启用时零请求）；`turnstile_enabled` 与 sitekey 由 `/site-policy/` 下发，`useTurnstile` 负责渲染、重置与卸载组件。
-- **富文本**：Tiptap 3 编辑器（`RichTextEditor.tsx`），自定义原子节点 `rte/VideoNode.ts`（本地上传视频）与 `rte/IframeNode.ts`（仅 https iframe 嵌入，sandbox 属性与后端 `common/rich_text.py` 保持一致）；`utils/iframeEmbed.ts` 解析用户粘贴的 embed HTML（仅取首个 iframe 的 src/title，安全边界仍在服务端 sanitize）。
+- **富文本**：Tiptap 3 编辑器（`RichTextEditor.tsx`），自定义原子节点 `rte/VideoNode.ts`（本地上传视频）与 `rte/IframeNode.ts`（仅 https iframe 嵌入，sandbox 属性与后端 `common/rich_text.py` 保持一致）；`utils/iframeEmbed.ts` 解析用户粘贴的 embed HTML（仅取首个 iframe 的 src/title，安全边界仍在服务端 sanitize）。工具栏扩展高亮 / 文字颜色 / 对齐 / 上下标 / 字数统计与选区气泡菜单、空行浮动菜单；新闻编辑页（`NewsFormPage`）为文档式布局，编辑内容自动保存至服务端草稿区（已发布稿存 `draft_*`，未发布稿直写正文；读写弃均须 `news.manage_news`），详情页提供「编辑 / 继续编辑」入口。
 - **文档处理**：`DocxPreview`（docx-preview 保真渲染 Word 原件）与 mammoth（Word 导入转富文本）。
 - **其他**：`frappe-gantt`（任务甘特，`TaskGantt`，配色映射 cobalt token）；`tus-js-client`（超过同步上限的大文件走 tus 可续传上传，端点 `/uploads/files/`，完成后后端自动挂为统一附件）；字体 Sora / Noto Sans SC 由 `cobalt.css` 以 Google Fonts `@import` 引入。
 

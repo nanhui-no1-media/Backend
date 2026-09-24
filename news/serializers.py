@@ -39,6 +39,14 @@ def _absolute_thumbnail_url(obj, request):
     return _absolute_file_url(obj.cover_thumbnail, request) or _absolute_cover_url(obj, request)
 
 
+def _draft_saved_at_for(obj, request):
+    """草稿保存时间：仅对可编辑者（news.manage_news）暴露；匿名 / 普通用户恒为 null。"""
+    user = getattr(request, "user", None)
+    if user and user.is_authenticated and user.has_perm("news.manage_news") and obj.draft_saved_at:
+        return obj.draft_saved_at
+    return None
+
+
 class NewsTagSerializer(serializers.ModelSerializer):
     """新闻标签（带新闻数）。复用 tasks.Tag，但按新闻维度计数。"""
 
@@ -60,17 +68,22 @@ class NewsListSerializer(serializers.ModelSerializer):
     cover_image_url = serializers.SerializerMethodField()
     cover_thumbnail_url = serializers.SerializerMethodField()
     review_status = serializers.SerializerMethodField()
+    draft_saved_at = serializers.SerializerMethodField()
 
     class Meta:
         model = News
         fields = [
             "id", "title", "summary", "cover_image_url", "cover_thumbnail_url",
             "author", "tags", "featured", "views", "is_published",
-            "review_status", "published_at", "created_at",
+            "draft_saved_at", "review_status", "published_at", "created_at",
         ]
 
     def get_review_status(self, obj):
         return status_of(obj)
+
+    def get_draft_saved_at(self, obj):
+        # 「我的稿件」列表用：有未发布修改时给出标记（权限门同详情序列化）
+        return _draft_saved_at_for(obj, self.context.get("request"))
 
     def get_cover_image_url(self, obj):
         return _absolute_cover_url(obj, self.context.get("request"))
@@ -87,6 +100,18 @@ class NewsAttachmentSerializer(AttachmentSerializer):
         fields = ["id", "file_url", "file_type", "file_name", "file_size"]
 
 
+class NewsDraftSerializer(serializers.Serializer):
+    """服务端草稿区载荷（自动保存，字段可部分缺省；正文同走 sanitize_html 清洗）。"""
+
+    title = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    summary = serializers.CharField(max_length=280, required=False, allow_blank=True)
+    content = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_content(self, value):
+        # 与详情同闸门：草稿也会原样存库，绝不跳过清洗
+        return sanitize_html(value or "")
+
+
 class NewsDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
     """详情序列化：含正文、相关阅读；写入接受封面文件与 tag_ids。"""
 
@@ -99,6 +124,7 @@ class NewsDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
     attachments = NewsAttachmentSerializer(many=True, read_only=True)
     review_status = serializers.SerializerMethodField()
     review_comment = serializers.SerializerMethodField()
+    draft_saved_at = serializers.SerializerMethodField()
 
     tag_ids = serializers.PrimaryKeyRelatedField(
         queryset=Tag.objects.all(), many=True, required=False, write_only=True, source="tags",
@@ -111,6 +137,7 @@ class NewsDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
             "cover_image", "cover_image_url", "cover_thumbnail_url",
             "author", "tags", "tag_ids",
             "featured", "views", "is_published", "review_status", "review_comment", "published_at",
+            "draft_saved_at",
             "related", "created_at", "updated_at", "attachments",
             "comment_thread", "comment_thread_status",
         ]
@@ -129,6 +156,9 @@ class NewsDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
         request = self.context.get("request")
         user = getattr(request, "user", None)
         return comment_for(obj, user)
+
+    def get_draft_saved_at(self, obj):
+        return _draft_saved_at_for(obj, self.context.get("request"))
 
     def get_related(self, obj):
         """已发布且过审、按发布时间最新 3 条（排除自身）。"""
@@ -194,6 +224,13 @@ class NewsDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializer):
         # 由未发布转为发布时补发布时间
         if validated_data.get("is_published") and not instance.published_at:
             instance.published_at = timezone.now()
+        # 正文类字段随本次更新写入正式区 → 草稿区视为已消费（清空）；
+        # 仅动 featured / 评论状态等元数据的更新不清草稿（未发布修改仍待发布）。
+        if any(k in validated_data for k in ("title", "summary", "content")):
+            instance.draft_title = ""
+            instance.draft_summary = ""
+            instance.draft_content = ""
+            instance.draft_saved_at = None
         instance.save()
         if tags is not None:
             instance.tags.set(tags)

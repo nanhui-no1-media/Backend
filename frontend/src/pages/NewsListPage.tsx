@@ -159,6 +159,9 @@ export default function NewsListPage() {
                     <h3>{n.title}</h3>
                     <p>{n.summary}</p>
                     <span className="read">阅读 {n.views}</span>
+                    {mine && n.draft_saved_at && (
+                      <span className="badge badge-brand" style={{ marginLeft: 8 }}>待发布修改</span>
+                    )}
                     {mine && n.review_status && n.review_status !== "approved" && (
                       <span className="badge" style={{ marginLeft: 8 }}>
                         {REVIEW_STATUS_LABELS[n.review_status] ?? n.review_status}

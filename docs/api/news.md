@@ -16,6 +16,7 @@
 | GET | /news/news/{id}/ | 公开 | — | 详情；去重阅读计数；作者与审核者可预览未公开项 |
 | PUT / PATCH | /news/news/{id}/ | 登录 | `news.manage_news` | 编辑（正文 / 封面 / 标签 / 头条 / 发布开关） |
 | DELETE | /news/news/{id}/ | 登录 | `news.manage_news` | 删除 |
+| GET / POST / DELETE | /news/news/{id}/draft/ | 登录 | `news.manage_news` | 服务端草稿区（编辑页自动保存）：读 / 存 / 弃 |
 | POST | /news/news/upload_image/ | 登录 | `news.manage_news` | 正文内嵌图片上传，返回 `{url}` |
 | GET | /news/news/featured/ | 公开 | — | 头条：手工置顶优先，否则阅读人数最高 |
 | GET | /news/news/hot/ | 公开 | — | 热门阅读前 5 |
@@ -135,6 +136,7 @@
   "review_status": "approved",
   "review_comment": "",
   "published_at": "2026-09-12T01:00:00Z",
+  "draft_saved_at": null,
   "related": [
     {
       "id": 41,
@@ -161,7 +163,7 @@
 }
 ```
 
-`review_comment` 仅对待审 / 驳回条目的作者与持 `reviews.moderate` 者非空，其余人得到空串。`related` 为最新 3 条公开稿（排除自身）。`comment_thread` 的 `status` 为 `open` / `muted` / `closed`。写入用字段 `cover_image`、`tag_ids`、`comment_thread_status` 只写不出，不出现在响应中。
+`review_comment` 仅对待审 / 驳回条目的作者与持 `reviews.moderate` 者非空，其余人得到空串。`related` 为最新 3 条公开稿（排除自身）。`comment_thread` 的 `status` 为 `open` / `muted` / `closed`。写入用字段 `cover_image`、`tag_ids`、`comment_thread_status` 只写不出，不出现在响应中。`draft_saved_at` 为草稿区保存时间——仅对持 `news.manage_news` 者非空（匿名 / 普通用户恒为 `null`）；草稿内容本身只经草稿区端点读写（见「服务端草稿」节）。
 
 `cover_thumbnail_url` 为服务端自动生成的缩略图（宽 ≤ 800、保持原比例、JPEG），列表 / 卡片 / feed 用它省流量；无缩略图（旧图 / 生成失败）时回退为与 `cover_image_url` 同值。`cover_image_url` 始终是原图（详情头图 / 大图查看用）。
 
@@ -176,7 +178,7 @@
 
 **认证**：登录；**权限**：`news.manage_news`（任意持权者，无按作者的对象级限制）
 
-**请求体**：与新建相同（PUT 需含 `title`）；额外接受只写字段 `comment_thread_status`（`open` / `muted` / `closed`，由该评论区主人或协管执行，无权者 `403`）。替换封面时旧文件与旧缩略图被删除、缩略图随新封面重建；`is_published` 由假转真且无 `published_at` 时自动补发布时间。
+**请求体**：与新建相同（PUT 需含 `title`）；额外接受只写字段 `comment_thread_status`（`open` / `muted` / `closed`，由该评论区主人或协管执行，无权者 `403`）。替换封面时旧文件与旧缩略图被删除、缩略图随新封面重建；`is_published` 由假转真且无 `published_at` 时自动补发布时间。携带 `title` / `summary` / `content` 中任一字段的更新视为「保存修改」上线——同时清空该新闻的草稿区（已发布稿件的待发布修改就此消费；仅动 `featured` 等元数据的更新不清草稿）。
 
 **响应 `200 OK`**：详情结构（同上）。
 
@@ -186,6 +188,40 @@
 |---|---|
 | 400 | 校验失败（同新建） |
 | 403 | 无写权限 |
+| 404 | 条目不存在 |
+
+### 服务端草稿（自动保存）
+`GET /news/news/{id}/draft/`、`POST /news/news/{id}/draft/`、`DELETE /news/news/{id}/draft/`
+
+**认证**：登录；**权限**：`news.manage_news`（读 / 存 / 弃都须——草稿含未发布内容，不放行匿名）
+
+编辑页自动保存用。语义：
+
+- **已发布新闻**：`POST` 写草稿暂存区（`draft_*` 字段），**公开接口不受影响**（详情 / 列表仍是旧版），直到一次携带 `title` / `summary` / `content` 的更新（「保存修改」）把修改上线并清空草稿；
+- **未发布稿件**：`POST` 直接写正文（稿件本体即草稿，`GET` 恒返回 `null`）——空标题不覆盖已有标题，避免「我的稿件」出现空标题行。
+
+**请求体**（JSON，字段可部分缺省）：`title`（≤200）、`summary`（≤280）、`content`（HTML，服务端经 `sanitize_html` 清洗）。
+
+**响应**
+
+`GET`：
+
+```json
+{"draft": {"title": "改稿标题", "summary": "", "content": "<p>…</p>", "saved_at": "2026-09-26T12:00:00Z"}}
+```
+
+无草稿（或未发布稿件）时 `{"draft": null}`。
+
+`POST`：`{"saved_at": "…", "is_draft": true}`（已发布 → 写草稿区）或 `{"saved_at": "…", "is_draft": false}`（未发布 → 写正文）。
+
+`DELETE`：`{"draft": null}`（放弃修改；正式区不动）。
+
+**错误**
+
+| 状态码 | 场景 |
+|---|---|
+| 400 | 字段超长 |
+| 403 | 无 `news.manage_news` |
 | 404 | 条目不存在 |
 
 ### 删除新闻
