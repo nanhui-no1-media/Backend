@@ -9,10 +9,11 @@
 - 四条路径挂载于 `/recruitment/`（`recruitment/urls.py`）：`/recruitment/` 落地页、`/recruitment/notice/` 招生公告、`/recruitment/schema/` 自我介绍问卷 Schema、`/recruitment/responses/` 报名作答。
 - **招生公告是单例**（`RecruitmentNotice`）：无需建记录，读写均指向唯一一行（`get_solo()`）。**自我介绍问卷**是 `Questionnaire` 中 `kind=join` 的单例（模型住在 `activities`，见 [activities.md](activities.md)）；加入页只是作答入口，编辑走问卷后台 / 本模块的 Schema 端点。
 - 编辑权限复用门户管理员：公告与 Schema 的写入端点、报名结果读取，均需 `about.manage_aboutpage`（`CanEditAbout` / `IsAboutEditor`）；落地页与公告 / Schema 的读取公开。
-- 报名规则：**已登录一人一份；未登录访客按设备标识一份**。访客请求须带 `X-Device-Id` 头（门户生成的标准 UUID，写入 localStorage；见 [ADR-0014](../adr/0014-questionnaire-independent.md)）；缺失或格式非法一律视为未提供。
+- 报名规则：**同一人最多提交 5 次**（`JOIN_MAX_SUBMISSIONS`，recruitment/views.py）——已登录按用户、未登录访客按设备标识分别计数；达到 5 次后提交被拒。访客请求须带 `X-Device-Id` 头（门户生成的标准 UUID，写入 localStorage；见 [ADR-0014](../adr/0014-questionnaire-independent.md)）；缺失或格式非法一律视为未提供。
 - 「立即加入」须先勾选公告确认（`notice_acknowledged` 必须为 `true`），否则提交被拒。
 - 未登录提交不记名（落 `device_id`）；已登录提交记 `user`。设备标识可被清 localStorage / 换浏览器绕过——这是 Web 侧的去重上限，不是硬件标识（ADR-0014）。
 - 作答键名与 SurveyJS 元素 `name` 一一对应（如 `grade`、`intro`），`answers` 按原样 JSON 落库。
+- 问卷中的**文件题**（`type: "file"`）：填答时文件经由 `POST /activities/survey_upload/` 上传（见 [activities.md](activities.md)），答案里存 `[{name, content}]` 列表（`content` 为文件 URL）。
 
 ## 端点一览
 
@@ -62,12 +63,15 @@
       { "type": "skip", "expression": "{grade} = '高三'", "gotoName": "intro" }
     ]
   },
-  "already_responded": false
+  "already_responded": false,
+  "responded_count": 0,
+  "max_submissions": 5
 }
 ```
 
 - `schema` 是问卷当前保存的 SurveyJS JSON（上例为默认 Schema；元素、选项与跳题可由管理员在编辑器中改写）。
-- `already_responded`：已登录按用户查；访客按 `X-Device-Id` 查；两者都没有时恒为 `false`。
+- `already_responded`：是否已提交过（等价于 `responded_count > 0`）；已登录按用户查，访客按 `X-Device-Id` 查。
+- `responded_count` / `max_submissions`：当前请求者已提交次数与次数上限（当前为 5）；前端据此显示「还可提交 N 次」提示与上限拦截。
 
 ### 读取招生公告
 
@@ -223,4 +227,4 @@
 | 400 | 未勾选公告确认：`{"notice_acknowledged": ["请先勾选「我已阅读并知晓公告内容」"]}`；字段缺失时为 DRF 必填报错 |
 | 400 | `answers` 缺失、为空对象或非对象：`{"answers": ["请填写问卷后再提交"]}` |
 | 400 | 访客缺少或格式非法的 `X-Device-Id`：`{"detail": "缺少设备标识"}` |
-| 400 | 重复提交：`{"detail": "你已经提交过了"}`（已登录一人一份；访客按 `X-Device-Id` 一设备一份） |
+| 400 | 达到提交上限：`{"detail": "最多可提交 5 次，你已达到上限。"}`（同一人最多 5 次） |

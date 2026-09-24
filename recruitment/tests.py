@@ -49,13 +49,38 @@ class NoticeAckGateTest(TestCase):
         self.assertEqual(q.responses.count(), 1)
         self.assertEqual(q.responses.get().answers["grade"], "高一")
 
-    def test_guest_same_device_second_post_400(self):
+    def test_guest_same_device_up_to_five_submissions(self):
+        """游客同设备最多提交 5 次；第 6 次拒绝。"""
         payload = {"answers": {"grade": "高一", "intro": "你好"}, "notice_acknowledged": True}
         client = APIClient()
-        self.assertEqual(client.post("/recruitment/responses/", payload, format="json", HTTP_X_DEVICE_ID=DEVICE).status_code, 201)
+        for i in range(5):
+            resp = client.post("/recruitment/responses/", payload, format="json", HTTP_X_DEVICE_ID=DEVICE)
+            self.assertEqual(resp.status_code, 201, f"第 {i + 1} 次应成功")
         again = client.post("/recruitment/responses/", payload, format="json", HTTP_X_DEVICE_ID=DEVICE)
         self.assertEqual(again.status_code, 400)
-        self.assertEqual(Questionnaire.get_join().responses.count(), 1)
+        self.assertEqual(Questionnaire.get_join().responses.count(), 5)
+
+    def test_logged_in_user_up_to_five_submissions(self):
+        """登录用户同样最多 5 次。"""
+        payload = {"answers": {"grade": "高二", "intro": "你好"}, "notice_acknowledged": True}
+        client = APIClient()
+        client.force_authenticate(User.objects.create_user(username="stu", password="x"))
+        for i in range(5):
+            resp = client.post("/recruitment/responses/", payload, format="json")
+            self.assertEqual(resp.status_code, 201, f"第 {i + 1} 次应成功")
+        again = client.post("/recruitment/responses/", payload, format="json")
+        self.assertEqual(again.status_code, 400)
+        self.assertIn("上限", again.data["detail"])
+
+    def test_landing_reports_responded_count(self):
+        """landing 返回已提交次数与上限（前端据此显示提示与限流）。"""
+        payload = {"answers": {"grade": "高一"}, "notice_acknowledged": True}
+        client = APIClient()
+        client.post("/recruitment/responses/", payload, format="json", HTTP_X_DEVICE_ID=DEVICE)
+        resp = client.get("/recruitment/", HTTP_X_DEVICE_ID=DEVICE)
+        self.assertEqual(resp.data["responded_count"], 1)
+        self.assertEqual(resp.data["max_submissions"], 5)
+        self.assertTrue(resp.data["already_responded"])
 
     def test_guest_missing_device_id_rejected(self):
         resp = APIClient().post(

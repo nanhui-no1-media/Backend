@@ -114,7 +114,8 @@ class Questionnaire(models.Model):
 
 
 class QuestionnaireResponse(models.Model):
-    """问卷结果：一份问卷上的一次提交。已登录一人一行；访客按设备标识一行。"""
+    """问卷结果：一份问卷上的一次提交。已登录一人可多行（次数上限由各通道逻辑控制，
+    如加入问卷 ≤5 次、调研 1 次）；访客按设备标识。"""
 
     questionnaire = models.ForeignKey(
         Questionnaire, on_delete=models.CASCADE,
@@ -133,16 +134,14 @@ class QuestionnaireResponse(models.Model):
         verbose_name = "问卷结果"
         verbose_name_plural = "问卷结果"
         ordering = ["-submitted_at"]
-        constraints = [
-            models.UniqueConstraint(
+        indexes = [
+            models.Index(
                 fields=["questionnaire", "user"],
-                condition=models.Q(user__isnull=False),
-                name="unique_questionnaire_response_per_user",
+                name="qresp_questionnaire_user_idx",
             ),
-            models.UniqueConstraint(
+            models.Index(
                 fields=["questionnaire", "device_id"],
-                condition=models.Q(user__isnull=True) & ~models.Q(device_id=""),
-                name="unique_questionnaire_response_per_device",
+                name="qresp_questionnaire_dev_idx",
             ),
         ]
 

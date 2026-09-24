@@ -9,7 +9,8 @@ export default function JoinFormPage() {
   const navigate = useNavigate();
   const [schema, setSchema] = useState<Record<string, unknown> | null>(null);
   const [done, setDone] = useState("");
-  const [already, setAlready] = useState(false);
+  const [count, setCount] = useState(0);
+  const [max, setMax] = useState(5);
 
   useEffect(() => {
     document.title = "自我介绍问卷";
@@ -19,9 +20,12 @@ export default function JoinFormPage() {
     }
     recruitmentApi.landing().then((d) => {
       setSchema(d.schema);
-      if (d.already_responded) setAlready(true);
+      setCount(d.responded_count ?? 0);
+      setMax(d.max_submissions ?? 5);
     });
   }, [navigate]);
+
+  const capped = count >= max;
 
   return (
     <AppShell>
@@ -36,17 +40,39 @@ export default function JoinFormPage() {
         </div>
       </div>
       <div className="container page-body-gap">
-        {already || done ? (
-          <div className="card card-pad"><p>{done || "你已经提交过了。"}</p>
-            <button className="btn btn-primary" onClick={() => navigate("/")}>返回首页</button>
+        {done ? (
+          <div className="card card-pad">
+            <p>{done}</p>
+            <p className="muted" style={{ marginTop: 8 }}>
+              {count >= max
+                ? `你已提交 ${count} 次，达到上限（${max} 次）。`
+                : `你已提交 ${count} 次，还可以再提交 ${max - count} 次。`}
+            </p>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              {count < max && (
+                <button className="btn btn-ghost" onClick={() => window.location.reload()}>再填一份</button>
+              )}
+              <button className="btn btn-primary" onClick={() => navigate("/")}>返回首页</button>
+            </div>
+          </div>
+        ) : capped ? (
+          <div className="card card-pad">
+            <p>你已提交 {count} 次，达到上限（最多 {max} 次）。</p>
+            <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={() => navigate("/")}>返回首页</button>
           </div>
         ) : schema ? (
           <div className="card card-pad">
+            {count > 0 && (
+              <p className="muted" style={{ marginBottom: 12 }}>
+                你已提交过 {count} 次，还可提交 {max - count} 次。
+              </p>
+            )}
             <SurveyFill
               schema={schema}
               onComplete={async (answers) => {
                 const res = await recruitmentApi.submit(answers, true);
                 sessionStorage.removeItem("join_notice_ack");
+                setCount((c) => c + 1);
                 setDone(res.message || "报名已提交");
               }}
             />

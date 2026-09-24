@@ -7,6 +7,8 @@ export interface RecruitmentLanding {
   notice: { content: string; updated_at: string };
   schema: Record<string, unknown>;
   already_responded: boolean;
+  responded_count: number;
+  max_submissions: number;
 }
 
 export const recruitmentApi = {

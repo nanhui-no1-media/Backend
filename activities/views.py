@@ -65,6 +65,17 @@ def _content_image_path(filename):
     return f"activity_content_images/{uuid.uuid4().hex}{ext}"
 
 
+# 问卷文件题：允许的 content-type（图片 + PDF）
+_SURVEY_UPLOAD_TYPES = (
+    "image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf",
+)
+
+
+def _survey_upload_path(filename):
+    ext = os.path.splitext(filename)[1].lower()
+    return f"survey_uploads/{uuid.uuid4().hex}{ext}"
+
+
 def _parse_extensions(raw):
     """允许后缀配置串 → 集合：".jpg, .png" → {".jpg", ".png"}；空串 → 空集（=不限）。"""
     if not raw:
@@ -146,6 +157,9 @@ class ActivityViewSet(viewsets.ModelViewSet):
         if self.action == "upload_image":
             # 正文插图：能发起活动的已验证成员即可（与创建同门禁）
             return [IsAuthenticated(), IsVerified()]
+        if self.action == "survey_upload":
+            # 问卷文件题：填答者含未登录游客（与 respond 同开放度），靠类型/大小限制兜底
+            return [AllowAny()]
         if self.action in ("update", "partial_update", "destroy"):
             return [IsAuthenticated(), CanModifyActivity()]
         return [IsAuthenticated()]
@@ -491,4 +505,21 @@ class ActivityViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         path = default_storage.save(_content_image_path(file.name), file)
+        return Response({"url": request.build_absolute_uri(default_storage.url(path))})
+
+    @action(detail=False, methods=["post"], url_path="survey_upload")
+    def survey_upload(self, request):
+        """问卷文件题上传（填答者，含游客）：返回 {url}。仅图片（JPG/PNG/GIF/WebP）或 PDF。"""
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"detail": "请选择文件。"}, status=status.HTTP_400_BAD_REQUEST)
+        err = upload_error(file)  # 站点同步上限 + 禁止扩展名
+        if err:
+            return Response({"detail": err}, status=status.HTTP_400_BAD_REQUEST)
+        if file.content_type not in _SURVEY_UPLOAD_TYPES:
+            return Response(
+                {"detail": "仅支持图片（JPG / PNG / GIF / WebP）或 PDF。"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        path = default_storage.save(_survey_upload_path(file.name), file)
         return Response({"url": request.build_absolute_uri(default_storage.url(path))})

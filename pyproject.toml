@@ -15,5 +15,6 @@ dependencies = [
     "gunicorn>=26.0.0",
     "pillow>=12.2.0",
     "python-dotenv>=1.2.2",
+    "reportlab>=5.0.1",
     "uvicorn[standard]>=0.52.4",
 ]

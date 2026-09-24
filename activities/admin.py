@@ -1,9 +1,11 @@
 from django.contrib import admin, messages
+from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.html import format_html
 
 from common.surveyjs_admin import SurveyJSAdminMixin, SurveyJSResponseViewMixin
 
+from . import survey_export
 from .lifecycle import archive, can_edit_schema
 from .models import (
     Activity, Ballot, BallotSelection, Questionnaire, QuestionnaireResponse,
@@ -88,6 +90,50 @@ class QuestionnaireAdmin(SurveyJSAdminMixin, admin.ModelAdmin):
                     "admin:activities_questionnaireresponse_survey_view", args=[row.pk],
                 ),
             }
+
+    actions = [
+        "export_stats_csv", "export_stats_json", "export_stats_pdf",
+        "export_responses_csv", "export_responses_json", "export_responses_pdf",
+    ]
+
+    def _export_one(self, request, queryset, kind, fmt):
+        """导出动作共用：要求只选一份问卷，返回下载响应或 None。"""
+        if queryset.count() != 1:
+            self.message_user(request, "请只选择一份问卷再导出。", level=messages.WARNING)
+            return None
+        questionnaire = queryset.first()
+        data, content_type, filename = (
+            survey_export.export_stats(questionnaire, fmt)
+            if kind == "stats"
+            else survey_export.export_responses(questionnaire, fmt)
+        )
+        response = HttpResponse(data, content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+    @admin.action(description="导出统计（CSV）")
+    def export_stats_csv(self, request, queryset):
+        return self._export_one(request, queryset, "stats", "csv")
+
+    @admin.action(description="导出统计（JSON）")
+    def export_stats_json(self, request, queryset):
+        return self._export_one(request, queryset, "stats", "json")
+
+    @admin.action(description="导出统计（PDF）")
+    def export_stats_pdf(self, request, queryset):
+        return self._export_one(request, queryset, "stats", "pdf")
+
+    @admin.action(description="导出全部作答（CSV）")
+    def export_responses_csv(self, request, queryset):
+        return self._export_one(request, queryset, "responses", "csv")
+
+    @admin.action(description="导出全部作答（JSON）")
+    def export_responses_json(self, request, queryset):
+        return self._export_one(request, queryset, "responses", "json")
+
+    @admin.action(description="导出全部作答（PDF）")
+    def export_responses_pdf(self, request, queryset):
+        return self._export_one(request, queryset, "responses", "pdf")
 
     def has_add_permission(self, request):
         # 允许后台直接新建独立问卷（默认「调研」）；「自我介绍」为单例，

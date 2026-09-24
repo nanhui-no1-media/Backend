@@ -39,6 +39,7 @@
 | POST | `/activities/activities/{id}/import_from_collection/` | 登录 | 发起人或 `activities.manage_activity` | 从征集导入作品为展品 |
 | POST | `/activities/activities/{id}/rate/` | 已验证 | — | 展品点赞 / 点踩（三态） |
 | POST | `/activities/activities/upload_image/` | 已验证 | — | 正文内嵌图片上传 |
+| POST | `/activities/activities/survey_upload/` | 公开 | — | 问卷文件题上传（图片 / PDF） |
 
 「认证」口径：公开 = `AllowAny`；登录 = 仅要求已登录（`IsAuthenticated`，未登录 403）；已验证 = 登录且账号已通过任一验证通道（`accounts.IsVerified`，未验证 403）。
 
@@ -367,3 +368,19 @@
 ```
 
 **错误**（400 + `{"detail": "…"}`）：`请选择图片。` / `图片不能超过 5MB。` / `仅支持 JPG、PNG、GIF、WebP 格式。`
+
+### 问卷文件题上传
+
+`POST /activities/activities/survey_upload/`
+
+**认证**：公开（问卷填答者含未登录游客）；**权限**：—。请求为 `multipart/form-data`，字段 `file`（必填，≤ 站点策略同步上传上限，仅 `image/jpeg`、`image/png`、`image/gif`、`image/webp`、`application/pdf`）。
+
+**响应 `200 OK`**
+
+```json
+{"url": "http://localhost:8000/media/survey_uploads/3f2a1c9d8e7b4a5f.png"}
+```
+
+**错误**（400 + `{"detail": "…"}`）：`请选择文件。` / `文件大小不能超过 …` / `仅支持图片（JPG / PNG / GIF / WebP）或 PDF。`
+
+> 问卷填写时由 SurveyJS 的 `onUploadFiles` 事件调用（前端 `utils/survey.ts`）；上传成功后 URL 存入作答（`[{name, content}]`），避免 SurveyJS 默认把文件传到海外服务。
