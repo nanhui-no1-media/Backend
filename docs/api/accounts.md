@@ -92,7 +92,8 @@
 | username | string | 是 | 站点内唯一（大小写不敏感） |
 | password / password2 | string | 是 | 密码（走 Django 密码校验器）与确认密码，须一致 |
 | email | string | 否 | 提供则建 `email` 通道 `pending`（`identifier`=待验地址，归一化小写）并发验证信 |
-| real_name / identity | string | 否 | 可选资料；identity ∈ `student` / `external` / `graduate` / `parent` / `teacher` |
+| real_name | string | 是 | 真实姓名，写入 `Profile.real_name`（不公开展示） |
+| identity | string | 是 | 身份，写入 `Profile.identity`；∈ `student` / `external` / `graduate` / `parent` / `teacher` |
 | turnstile_token | string | 条件 | Turnstile 启用时必填 |
 
 **响应 `201 Created`**
@@ -103,7 +104,7 @@
 
 `User.email` 保持空（待验邮箱住通道 `identifier`，验证通过才晋升）；未提供邮箱或验证通道关闭时 `message` 为 `"注册成功。"` 且不建通道。
 
-**错误**：400 字段校验（用户名 / 邮箱占用、两次密码不一致、密码强度、身份枚举非法、邮箱格式，单条或数组）或 Turnstile 未通过 `{"error": "人机校验失败，请刷新后重试。"}`；403 `{"error": "当前未开放注册。", "reason": "registration_closed"}`；429 每 IP 每日注册次数超限；500 `{"error": "注册失败，请稍后重试。"}`。
+**错误**：400 字段校验（用户名 / 邮箱占用、两次密码不一致、密码强度、真实姓名缺失、身份缺失或枚举非法、邮箱格式，单条或数组）或 Turnstile 未通过 `{"error": "人机校验失败，请刷新后重试。"}`；403 `{"error": "当前未开放注册。", "reason": "registration_closed"}`；429 每 IP 每日注册次数超限；500 `{"error": "注册失败，请稍后重试。"}`。
 
 ### 邮箱验证与重发
 

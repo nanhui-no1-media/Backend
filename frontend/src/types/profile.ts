@@ -38,3 +38,12 @@ export const ROLE_BADGE: Record<RoleVariant, string> = {
   admin: "badge-role-admin",
   superadmin: "badge-role-superadmin",
 };
+
+/** 身份枚举（与后端 Profile.IDENTITY_CHOICES 对齐）：注册页 / 人工审批共用。 */
+export const IDENTITY_OPTIONS: { value: string; label: string }[] = [
+  { value: "student", label: "在校生" },
+  { value: "external", label: "外校生" },
+  { value: "graduate", label: "毕业生" },
+  { value: "parent", label: "家长" },
+  { value: "teacher", label: "教师" },
+];

@@ -43,6 +43,7 @@ class Verification(models.Model):
 1. **统一「已验证」**（任一通道通过），取代 `email_verified` 管登录、`identity_verified` 管操作的双布尔拆分。两布尔降级为通道状态记录，用来*计算*那一个「已验证」。
 2. **注册↔验证分离**：注册只建号；邮箱绑定、身份证明提交都挪到验证面板；证明仍是人工通道证据；面板里自选走哪条通道。
 3. **注册必填** = 用户名 + 密码 + Turnstile；邮箱**可选**；`real_name` / `identity` 降为可选资料（`real_name` 改在提交证明时收）。
+   > **2026-09 修订**：`real_name` / `identity` 回到注册必填（注册页收集、写入 `Profile`）；邮箱与身份证明仍留在验证面板。
 4. **通道状态用 `Verification` 模型存**（非 Profile 布尔）。
 5. **模型形状**：每 `(user, channel)` 一行、in-place 更新（不留尝试历史，审计走 `IdentityProof`）；枚举 `{pending, approved, rejected}`；`IdentityProof` 为人工通道证据。
 6. **登录与验证解耦**：未验证可登（访客），只 `is_active` 拒停用；移除 `email_verified` 登录卡点。

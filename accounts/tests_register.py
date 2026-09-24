@@ -1,7 +1,8 @@
-"""注册（ADR-0006 注册↔验证分离）：建登录身份（用户名 + 密码 + Turnstile），邮箱可选。
+"""注册（ADR-0006 注册↔验证分离，2026-09 修订）：建登录身份（用户名 + 密码 + Turnstile）
++ 真实姓名 / 身份（必填，写入 Profile），邮箱可选。
 
 覆盖：最小注册建 User+Profile（无 Verification 行 ⇒ 访客）；带邮箱注册建 email 通道 pending
-并发验证信（User.email 保持空）；可选资料 real_name/identity；用户名/邮箱唯一；密码校验；
+并发验证信（User.email 保持空）；必填 real_name/identity；用户名/邮箱唯一；密码校验；
 注册限流；Turnstile 接线；证明材料落私有存储（IdentityProof 在 #38 人工通道经 ORM 造）。
 """
 from pathlib import Path
@@ -28,12 +29,14 @@ def proof(name="proof.png", content_type="image/png"):
 
 
 def valid_payload(**overrides):
-    """一份合法注册 payload（multipart）：仅用户名 + 双密码 + Turnstile 必填。"""
+    """一份合法注册 payload（multipart）：用户名 + 双密码 + 真实姓名 + 身份 + Turnstile 必填。"""
     files = overrides.pop("proof_files", None)  # 注册不再要证明；保留参数兼容旧调用
     base = {
         "username": "newbie",
         "password": "StrongPass123!",
         "password2": "StrongPass123!",
+        "real_name": "张三",
+        "identity": "student",
         "turnstile_token": "dummy",
     }
     base.update(overrides)
@@ -91,18 +94,29 @@ class RegisterViewTest(TestCase):
         v = Verification.objects.get(user__username="newbie", channel=Verification.CHANNEL_EMAIL)
         self.assertEqual(v.identifier, "newbie@example.com")
 
-    # ---- 可选资料 ----
-    def test_optional_real_name_identity_stored_when_provided(self):
-        self.post(valid_payload(real_name="张三", identity="student"))
+    # ---- 真实姓名 / 身份（必填）----
+    def test_real_name_identity_stored_on_profile(self):
+        self.post(valid_payload(real_name="李四", identity="teacher"))
         user = User.objects.get(username="newbie")
-        self.assertEqual(user.profile.real_name, "张三")
-        self.assertEqual(user.profile.identity, "student")
+        self.assertEqual(user.profile.real_name, "李四")
+        self.assertEqual(user.profile.identity, "teacher")
 
-    def test_optional_fields_blank_when_omitted(self):
-        self.post(valid_payload())
-        user = User.objects.get(username="newbie")
-        self.assertEqual(user.profile.real_name, "")
-        self.assertEqual(user.profile.identity, "")
+    def test_register_requires_real_name(self):
+        resp = self.post(valid_payload(real_name=""))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("真实姓名", str(resp.json()["error"]))
+        self.assertFalse(User.objects.filter(username="newbie").exists())
+
+    def test_register_requires_real_name_not_just_spaces(self):
+        # 空白串 strip 后为空 → 同样拒绝
+        resp = self.post(valid_payload(real_name="   "))
+        self.assertEqual(resp.status_code, 400)
+
+    def test_register_requires_identity(self):
+        resp = self.post(valid_payload(identity=""))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("身份", str(resp.json()["error"]))
+        self.assertFalse(User.objects.filter(username="newbie").exists())
 
     # ---- 唯一性 ----
     def test_duplicate_username_rejected(self):
@@ -146,8 +160,8 @@ class RegisterViewTest(TestCase):
         self.assertEqual(resp.status_code, 400)
 
     # ---- 字段校验 ----
-    def test_invalid_identity_rejected_when_provided(self):
-        # identity 可选；填了须合法枚举（teacher 现为合法身份，用非法值测）
+    def test_invalid_identity_rejected(self):
+        # identity 必填且须合法枚举（teacher 为合法身份，用非法值测）
         self.assertEqual(self.post(valid_payload(identity="alien")).status_code, 400)
 
     def test_invalid_email_format_rejected(self):
@@ -166,7 +180,7 @@ class RegisterViewTest(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertFalse(User.objects.filter(username="newbie").exists())
 
-    # ---- 回归：不再强制邮箱 / 证明 ----
+    # ---- 回归：不再强制邮箱 / 证明（真实姓名 / 身份为必填，见上）----
     def test_email_not_required(self):
         resp = self.post(valid_payload())  # 不带 email
         self.assertEqual(resp.status_code, 201)

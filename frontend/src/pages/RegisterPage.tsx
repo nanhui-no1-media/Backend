@@ -6,15 +6,18 @@ import AppShell from "../components/AppShell";
 import PasswordInput from "../components/PasswordInput";
 import { useLoginModal } from "../components/LoginModalProvider";
 import { useTurnstile } from "../turnstile";
+import { IDENTITY_OPTIONS } from "../types/profile";
 
 /**
- * 注册页（ADR-0006 注册↔验证分离）：只建登录身份（用户名 + 双密码 + Turnstile）。
- * 邮箱 / 真实姓名 / 身份证明都挪到登录后的「账号验证」面板（绑定邮箱 / 提交身份证明）。
+ * 注册页（ADR-0006 注册↔验证分离，2026-09 修订）：建登录身份（用户名 + 双密码 + Turnstile）
+ * + 真实姓名 / 身份（必填，写入 Profile）；邮箱 / 身份证明仍在登录后的「账号验证」面板。
  *
  * 后端为权威校验源；前端只做轻量预检（必填、密码一致、长度），其余错误由后端返回展示。
  */
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
+  const [realName, setRealName] = useState("");
+  const [identity, setIdentity] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [error, setError] = useState("");
@@ -36,6 +39,14 @@ export default function RegisterPage() {
       setError("请填写用户名。");
       return;
     }
+    if (!realName.trim()) {
+      setError("请填写真实姓名。");
+      return;
+    }
+    if (!identity) {
+      setError("请选择身份。");
+      return;
+    }
     if (password !== password2) {
       setError("两次输入的密码不一致。");
       return;
@@ -52,6 +63,8 @@ export default function RegisterPage() {
     setLoading(true);
     const fd = new FormData();
     fd.append("username", username.trim());
+    fd.append("real_name", realName.trim());
+    fd.append("identity", identity);
     fd.append("password", password);
     fd.append("password2", password2);
     if (turnstileToken) fd.append("turnstile_token", turnstileToken);
@@ -140,6 +153,32 @@ export default function RegisterPage() {
                         placeholder="再输一次"
                         autoComplete="new-password"
                       />
+                    </div>
+                    <div className="field">
+                      <label className="label">真实姓名</label>
+                      <input
+                        className="input"
+                        value={realName}
+                        onChange={(e) => setRealName(e.target.value)}
+                        placeholder="用于身份核验，不公开展示"
+                        autoComplete="name"
+                        maxLength={100}
+                        required
+                      />
+                    </div>
+                    <div className="field">
+                      <label className="label">身份</label>
+                      <select
+                        className="input"
+                        value={identity}
+                        onChange={(e) => setIdentity(e.target.value)}
+                        required
+                      >
+                        <option value="" disabled>请选择身份</option>
+                        {IDENTITY_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
                     </div>
                     <div ref={containerRef} />
                     <button
