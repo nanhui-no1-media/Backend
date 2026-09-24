@@ -230,7 +230,10 @@ export default function ExhibitionPanel({
                           <span>{b.voter.nickname || b.voter.username}</span>
                         </>
                       ) : (
-                        <span className="muted">游客</span>
+                        <>
+                          <span className="avatar avatar--sm" style={{ background: "#d1d5db" }} aria-hidden="true" />
+                          <span className="muted">游客</span>
+                        </>
                       )}
                       <span className="muted">投：{names.join("、") || "—"}</span>
                     </li>

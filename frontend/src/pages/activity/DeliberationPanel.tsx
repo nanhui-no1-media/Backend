@@ -110,7 +110,10 @@ function BallotDetails({ a }: { a: ActivityDetail }) {
                 <span>{b.voter.nickname || b.voter.username}</span>
               </>
             ) : (
-              <span className="muted">游客</span>
+              <>
+                <span className="avatar avatar--sm" style={{ background: "#d1d5db" }} aria-hidden="true" />
+                <span className="muted">游客</span>
+              </>
             )}
             <span className="muted">投：{b.option_ids.map((oid) => options.find((o) => o.id === oid)?.text).filter(Boolean).join("、")}</span>
           </li>
