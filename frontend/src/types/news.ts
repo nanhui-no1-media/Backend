@@ -25,6 +25,7 @@ export interface NewsListItem {
   title: string;
   summary: string;
   cover_image_url: string | null;
+  cover_thumbnail_url: string | null;
   author: NewsAuthor;
   tags: NewsTag[];
   featured: boolean;

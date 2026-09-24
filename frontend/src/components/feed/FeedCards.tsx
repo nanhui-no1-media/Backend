@@ -33,7 +33,7 @@ function Cover({ url, emoji = "📰" }: { url: string | null; emoji?: string }) 
 export function FeaturedNewsCard({ item, onClick }: { item: NewsFeedItem; onClick: () => void }) {
   return (
     <button type="button" className="feed-featured" onClick={onClick}>
-      <Cover url={item.cover_image_url} />
+      <Cover url={item.cover_thumbnail_url || item.cover_image_url} />
       <div className="feed-featured-body">
         <span className="badge badge-brand">头条</span>
         <h3>{item.title}</h3>
@@ -49,7 +49,7 @@ export function FeaturedNewsCard({ item, onClick }: { item: NewsFeedItem; onClic
 export function NewsCard({ item, onClick }: { item: NewsFeedItem; onClick: () => void }) {
   return (
     <button type="button" className="feed-cell feed-cell--news" onClick={onClick}>
-      <Cover url={item.cover_image_url} />
+      <Cover url={item.cover_thumbnail_url || item.cover_image_url} />
       <div className="feed-cell-body">
         <span className="badge badge-brand">新闻</span>
         <h4>{item.title}</h4>

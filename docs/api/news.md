@@ -55,6 +55,7 @@
       "title": "社团招新公告",
       "summary": "2026 学年传媒社招新安排。",
       "cover_image_url": "https://8.153.145.175/media/news_covers/6f1c9d2ab3.jpg",
+      "cover_thumbnail_url": "https://8.153.145.175/media/news_covers/thumbs/6f1c9d2ab3.jpg",
       "author": {"id": 3, "username": "info", "nickname": "信息组", "avatar": "/media/avatars/1a2b.png"},
       "tags": [{"id": 1, "name": "公告", "color": "#007bff", "news_count": 2}],
       "featured": true,
@@ -82,7 +83,7 @@
 | title | 字符串 | 是 | 上限 200 |
 | summary | 字符串 | 否 | 上限 280 |
 | content | 字符串 | 否 | HTML 正文，服务端经 `sanitize_html` 清洗 |
-| cover_image | 文件 | 否 | jpg / png / gif / webp，≤ 2MB |
+| cover_image | 文件 | 否 | jpg / png / gif / webp，≤ 5MB；服务端自动生成缩略图（`cover_thumbnail_url`，列表 / 卡片用） |
 | tag_ids | 整数数组 | 否 | 复用 `tasks.Tag` |
 | featured | 布尔 | 否 | 头条 |
 | is_published | 布尔 | 否 | 默认 `true`；为真且无发布时间时自动补 `published_at` |
@@ -95,7 +96,7 @@
 
 | 状态码 | 场景 |
 |---|---|
-| 400 | `title` 缺失 / 封面超 2MB / 封面类型不支持 |
+| 400 | `title` 缺失 / 封面超 5MB / 封面类型不支持 |
 | 403 | 无 `news.manage_news` |
 
 ### 作者预览（我的新闻）
@@ -125,6 +126,7 @@
   "summary": "2026 学年传媒社招新安排。",
   "content": "<p>报名时间：<strong>9 月 20 日</strong>。</p>",
   "cover_image_url": "https://8.153.145.175/media/news_covers/6f1c9d2ab3.jpg",
+  "cover_thumbnail_url": "https://8.153.145.175/media/news_covers/thumbs/6f1c9d2ab3.jpg",
   "author": {"id": 3, "username": "info", "nickname": "信息组", "avatar": "/media/avatars/1a2b.png"},
   "tags": [{"id": 1, "name": "公告", "color": "#007bff", "news_count": 2}],
   "featured": true,
@@ -161,6 +163,8 @@
 
 `review_comment` 仅对待审 / 驳回条目的作者与持 `reviews.moderate` 者非空，其余人得到空串。`related` 为最新 3 条公开稿（排除自身）。`comment_thread` 的 `status` 为 `open` / `muted` / `closed`。写入用字段 `cover_image`、`tag_ids`、`comment_thread_status` 只写不出，不出现在响应中。
 
+`cover_thumbnail_url` 为服务端自动生成的缩略图（宽 ≤ 800、保持原比例、JPEG），列表 / 卡片 / feed 用它省流量；无缩略图（旧图 / 生成失败）时回退为与 `cover_image_url` 同值。`cover_image_url` 始终是原图（详情头图 / 大图查看用）。
+
 **错误**
 
 | 状态码 | 场景 |
@@ -172,7 +176,7 @@
 
 **认证**：登录；**权限**：`news.manage_news`（任意持权者，无按作者的对象级限制）
 
-**请求体**：与新建相同（PUT 需含 `title`）；额外接受只写字段 `comment_thread_status`（`open` / `muted` / `closed`，由该评论区主人或协管执行，无权者 `403`）。替换封面时旧文件被删除；`is_published` 由假转真且无 `published_at` 时自动补发布时间。
+**请求体**：与新建相同（PUT 需含 `title`）；额外接受只写字段 `comment_thread_status`（`open` / `muted` / `closed`，由该评论区主人或协管执行，无权者 `403`）。替换封面时旧文件与旧缩略图被删除、缩略图随新封面重建；`is_published` 由假转真且无 `published_at` 时自动补发布时间。
 
 **响应 `200 OK`**：详情结构（同上）。
 
@@ -272,13 +276,14 @@
     "timestamp": "2026-09-12T01:00:00+00:00",
     "summary": "2026 学年传媒社招新安排。",
     "cover_image_url": "https://8.153.145.175/media/news_covers/6f1c9d2ab3.jpg",
+    "cover_thumbnail_url": "https://8.153.145.175/media/news_covers/thumbs/6f1c9d2ab3.jpg",
     "views": 128
   },
   "items": [
     {"type": "activity", "id": 8, "title": "春季影展", "timestamp": "2026-09-10T06:00:00+00:00",
      "activity_type": "exhibition", "status": "open"},
     {"type": "news", "id": 41, "title": "校运会摄影组招募", "timestamp": "2026-09-05T02:00:00+00:00",
-     "summary": "摄影志愿者报名。", "cover_image_url": null, "views": 31},
+     "summary": "摄影志愿者报名。", "cover_image_url": null, "cover_thumbnail_url": null, "views": 31},
     {"type": "task", "id": 17, "title": "整理器材清单", "timestamp": "2026-09-04T09:30:00+00:00",
      "status": "in_progress", "priority": "medium",
      "assignee": {"id": 4, "username": "student", "nickname": "小南", "avatar": null}}

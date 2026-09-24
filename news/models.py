@@ -11,6 +11,11 @@ def cover_upload_path(instance, filename):
     return f"news_covers/{uuid.uuid4().hex}{ext}"
 
 
+def cover_thumbnail_path(instance, filename):
+    """封面缩略图：news_covers/thumbs/ 下（文件名由序列化器按封面名生成）。"""
+    return f"news_covers/thumbs/{filename}"
+
+
 class News(models.Model):
     """新闻 / 公告。"""
 
@@ -18,6 +23,7 @@ class News(models.Model):
     summary = models.CharField("摘要", max_length=280, blank=True, default="")
     content = models.TextField("正文（HTML）", blank=True, default="")
     cover_image = models.ImageField("封面图", upload_to=cover_upload_path, blank=True)
+    cover_thumbnail = models.ImageField("封面缩略图", upload_to=cover_thumbnail_path, blank=True)
 
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,

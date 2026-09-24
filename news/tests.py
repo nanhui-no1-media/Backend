@@ -1,8 +1,12 @@
+import os
 from datetime import timedelta
+from io import BytesIO
 
 from django.contrib.auth.models import AnonymousUser, Group, User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, RequestFactory
 from django.utils import timezone
+from PIL import Image
 from rest_framework.test import APIClient
 
 from activities.models import Activity
@@ -359,3 +363,96 @@ class NewsAuthorEmailVisibilityTest(TestCase):
         resp = self.client.get("/news/news/mine/")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["results"][0]["author"]["email"], "author@example.com")
+
+
+class NewsCoverThumbnailTest(TestCase):
+    """封面上传：5MB 上限、缩略图生成 / 回退 / 换封面清理。"""
+
+    def setUp(self):
+        self.author = _info(User.objects.create_user(username="reporter", password="x"))
+        self.client = APIClient()
+        self.client.force_authenticate(self.author)
+
+    @staticmethod
+    def _image_file(width=1600, height=900, fmt="JPEG", name=None):
+        buf = BytesIO()
+        Image.new("RGB", (width, height), (180, 40, 40)).save(buf, format=fmt)
+        ext = "jpg" if fmt == "JPEG" else fmt.lower()
+        ct = "image/jpeg" if fmt == "JPEG" else f"image/{ext}"
+        return SimpleUploadedFile(name or f"cover.{ext}", buf.getvalue(), content_type=ct)
+
+    def _post_news(self, cover=None, title="带封面新闻"):
+        data = {"title": title, "is_published": True}
+        if cover is not None:
+            data["cover_image"] = cover
+        return self.client.post("/news/news/", data, format="multipart")
+
+    def test_upload_generates_thumbnail(self):
+        """上传 1600x900 封面 → 缩略图 800x450（宽 ≤800、保持比例、JPEG）。"""
+        resp = self._post_news(self._image_file())
+        self.assertEqual(resp.status_code, 201)
+        news = News.objects.get(title="带封面新闻")
+        self.assertTrue(news.cover_thumbnail)
+        with Image.open(news.cover_thumbnail.path) as img:
+            self.assertEqual(img.format, "JPEG")
+            self.assertEqual((img.width, img.height), (800, 450))
+
+    def test_small_image_kept_size(self):
+        """小图（≤800 宽）缩略图不放大。"""
+        self._post_news(self._image_file(400, 300))
+        news = News.objects.get(title="带封面新闻")
+        with Image.open(news.cover_thumbnail.path) as img:
+            self.assertEqual((img.width, img.height), (400, 300))
+
+    def test_list_exposes_thumbnail_url(self):
+        """列表返回 cover_thumbnail_url（缩略图 /thumbs/ 路径）。"""
+        self._post_news(self._image_file())
+        approve_news(News.objects.get(title="带封面新闻"))
+        resp = self.client.get("/news/news/")
+        item = next(n for n in resp.data["results"] if n["title"] == "带封面新闻")
+        self.assertIn("/thumbs/", item["cover_thumbnail_url"])
+
+    def test_thumbnail_url_falls_back_to_cover(self):
+        """旧数据无缩略图 → cover_thumbnail_url 回退原图 URL。"""
+        news = approve_news(News.objects.create(title="旧新闻", author=self.author, is_published=True))
+        news.cover_image = self._image_file(300, 200, name="old.jpg")
+        news.save()
+        resp = self.client.get(f"/news/news/{news.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["cover_thumbnail_url"], resp.data["cover_image_url"])
+
+    @staticmethod
+    def _noise_jpeg(width=2400, height=2400, quality=95):
+        """随机噪点 JPEG（不可压缩 → 体积大）；2400x2400 约 6.4MB。"""
+        img = Image.frombytes("RGB", (width, height), os.urandom(width * height * 3))
+        buf = BytesIO()
+        img.save(buf, "JPEG", quality=quality)
+        return buf.getvalue()
+
+    def test_cover_over_5mb_rejected(self):
+        """封面 >5MB（有效图）→ 400 拒绝。"""
+        payload = self._noise_jpeg()
+        self.assertGreater(len(payload), 5 * 1024 * 1024)  # 前提：确实超限
+        big = SimpleUploadedFile("big.jpg", payload, content_type="image/jpeg")
+        resp = self._post_news(big)
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("5MB", str(resp.data))
+
+    def test_replace_cover_regenerates_and_cleans(self):
+        """换封面 → 缩略图重建、旧缩略图文件删除。"""
+        self._post_news(self._image_file())
+        news = News.objects.get(title="带封面新闻")
+        old_thumb_name = news.cover_thumbnail.name
+        storage = news.cover_thumbnail.storage
+        self.assertTrue(storage.exists(old_thumb_name))
+        resp = self.client.patch(
+            f"/news/news/{news.pk}/",
+            {"cover_image": self._image_file(600, 600, name="new.jpg")},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 200)
+        news.refresh_from_db()
+        self.assertNotEqual(news.cover_thumbnail.name, old_thumb_name)
+        self.assertFalse(storage.exists(old_thumb_name))
+        with Image.open(news.cover_thumbnail.path) as img:
+            self.assertEqual((img.width, img.height), (600, 600))

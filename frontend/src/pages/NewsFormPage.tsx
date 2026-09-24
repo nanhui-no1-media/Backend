@@ -125,8 +125,8 @@ export default function NewsFormPage() {
   }, [title, summary, content, tagIds, featured, isPublished, commentThreadStatus]);
 
   const onPickCover = (f: File | null) => {
-    if (f && f.size > 2 * 1024 * 1024) {
-      setError("封面图不能超过 2MB。");
+    if (f && f.size > 5 * 1024 * 1024) {
+      setError("封面图不能超过 5MB。");
       return;
     }
     setError("");
@@ -258,7 +258,7 @@ export default function NewsFormPage() {
             <div className="compose-pill">
               <span className="cp-label">封面</span>
               <button type="button" className="compose-cover" onClick={() => fileRef.current?.click()}
-                      title="上传封面图（建议 16:10，≤2MB）">
+                      title="上传封面图（≤5MB，建议横向）">
                 {coverPreview
                   ? <img src={coverPreview} alt="封面" />
                   : <span className="cc-empty"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="8.5" cy="9.5" r="1.5" /><path d="M21 16l-5-5L5 20" /></svg>添加封面</span>}
