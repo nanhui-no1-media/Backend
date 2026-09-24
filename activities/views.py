@@ -8,12 +8,14 @@ import uuid
 
 from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.models import is_verified
 from accounts.permissions import IsVerified
 
 from attachments.create import create_attachment
@@ -25,7 +27,7 @@ from reviews.visibility import status_of, visible_queryset
 
 from . import exhibition, voting
 from .debt import annotate_activity_debt
-from .device import device_id_from_request
+from .device import client_ip_from_request, device_id_from_request
 from .lifecycle import (
     CLOSED,
     COLLECTING,
@@ -96,9 +98,11 @@ class ActivityViewSet(viewsets.ModelViewSet):
         )
         user = self.request.user
         if not user.is_authenticated:
-            # 访客：仅过审且公开的调研（其他类型标题泄漏只走首页 feed）
+            # 访客：过审的公开调研 + 公开受众的众议/展示（公开投票入口；
+            # 其他类型标题泄漏只走首页 feed）
             return visible_queryset(qs, user, "activity", action="list").filter(
-                type="survey", audience="public",
+                Q(type="survey", audience="public")
+                | Q(type__in=("deliberation", "exhibition"), audience="public"),
             )
         if self.action == "mine":
             qs = qs.filter(creator=user)
@@ -125,7 +129,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
         if self.action == "responses":
             return [IsAuthenticated()]
         if self.action == "vote":
-            return [IsAuthenticated(), IsVerified()]
+            # 公开受众允许游客投票；成员受众的登录 / 验证门禁在视图内按受众把关。
+            return [AllowAny()]
         if self.action == "submit":
             return [IsAuthenticated(), IsVerified()]
         if self.action == "rate":
@@ -191,27 +196,27 @@ class ActivityViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("活动开放后不可修改，仅待开始期间可改")
         super().perform_update(serializer)
 
-    # ── 众议投票 ──
+    # ── 众议投票（公开受众任何人；仅成员须登录 + 已验证）──
     @action(detail=True, methods=["post"])
     def vote(self, request, pk=None):
-            activity = self.get_object()
-            
-            # 获取客户端真实IP
-            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-            client_ip = x_forwarded_for.split(',')[0].strip() if x_forwarded_for else request.META.get('REMOTE_ADDR')
-            
-            # 匿名用户转为None，已登录用户保留
-            user = request.user if request.user.is_authenticated else None
-            
-            try:
-                voting.cast_ballot(
-                    activity=activity,
-                    user=user,
-                    option_ids=request.data.get("option_ids") or [],
-                    ip_address=client_ip,  # ← 新增
-                )
-            finally:
-                print("42")
+        activity = self.get_object()  # 触发惰性结算（若已到点则已 closed）
+        user = request.user if request.user.is_authenticated else None
+        if activity.audience != "public":
+            if user is None:
+                return Response({"detail": "仅成员可投票，请先登录"}, status=status.HTTP_401_UNAUTHORIZED)
+            if not is_verified(user):
+                return Response({"detail": "请先完成账号验证后再投票。"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            voting.cast_ballot(
+                activity=activity,
+                user=user,
+                option_ids=request.data.get("option_ids") or [],
+                ip_address=client_ip_from_request(request),
+                device_id=device_id_from_request(request),
+            )
+        except voting.BallotError as exc:
+            return Response({"detail": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+        return self._serialized(activity, request)
 
     # ── 调研作答（公开受众任何人；仅成员须登录；已登录一人一次；访客按设备一次）──
     @action(detail=True, methods=["post"])

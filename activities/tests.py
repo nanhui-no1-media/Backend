@@ -1490,3 +1490,229 @@ class SurveyResponsesViewTest(TestCase):
         self.client.force_authenticate(self.author)
         self.assertEqual(
             self.client.get(f"/activities/activities/{did}/responses/").status_code, 400)
+
+
+class PublicVotingGuestTest(TestCase):
+    """公开受众投票：游客按设备标识判重（记录 IP），成员行为不变。"""
+
+    DEV1 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    DEV2 = "11111111-2222-4333-8444-555555555555"
+
+    def setUp(self):
+        self.author = grant_verification(User.objects.create_user(username="pauthor", password="x"))
+        self.member = grant_verification(User.objects.create_user(username="pmember", password="x"))
+        self.visitor = User.objects.create_user(username="pvisitor", password="x")  # 未验证
+        self.client = APIClient()
+
+    def _create(self, **extra):
+        payload = {
+            "type": "deliberation", "title": "公开众议", "body": "<p>x</p>",
+            "max_choices_per_voter": 1, "audience": "public",
+            "option_texts": ["A", "B"],
+        }
+        payload.update(extra)
+        self.client.force_authenticate(self.author)
+        return _publish_created(
+            self.client.post("/activities/activities/",
+                             data=json.dumps(payload), content_type="application/json")
+        )
+
+    def _guest_vote(self, aid, option_ids, device=None, xff=None):
+        self.client.force_authenticate(None)
+        extra = {}
+        if device is not None:
+            extra["HTTP_X_DEVICE_ID"] = device
+        if xff is not None:
+            extra["HTTP_X_FORWARDED_FOR"] = xff
+        return self.client.post(
+            f"/activities/activities/{aid}/vote/",
+            data=json.dumps({"option_ids": option_ids}),
+            content_type="application/json", **extra,
+        )
+
+    def _vote(self, user, aid, option_ids):
+        return _json(self.client, "post", f"/activities/activities/{aid}/vote/", user,
+                     {"option_ids": option_ids})
+
+    # ---- 创建：受众对众议/展示生效 ----
+
+    def test_create_public_deliberation_keeps_audience(self):
+        resp = self._create()
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["audience"], "public")
+
+    def test_create_collection_drops_audience(self):
+        self.client.force_authenticate(self.author)
+        resp = _publish_created(self.client.post(
+            "/activities/activities/",
+            data=json.dumps({"type": "collection", "title": "征集",
+                             "body": "<p>x</p>", "audience": "public"}),
+            content_type="application/json",
+        ))
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["audience"], "members")  # 征集无受众语义，回落默认
+
+    def test_deliberation_audience_immutable(self):
+        a = self._create()
+        resp = _json(self.client, "patch", f"/activities/activities/{a.data['id']}/",
+                     self.author, {"audience": "members"})
+        self.assertEqual(resp.status_code, 400)
+
+    # ---- 游客投票 ----
+
+    def test_guest_votes_public_deliberation_with_device(self):
+        a = self._create()
+        aid, oid = a.data["id"], a.data["options"][0]["id"]
+        resp = self._guest_vote(aid, [oid], device=self.DEV1, xff="203.0.113.9")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["my_selections"], [oid])
+        self.assertEqual(resp.data["total_ballots"], 1)
+        ballot = Activity.objects.get(pk=aid).ballots.get()
+        self.assertIsNone(ballot.voter_id)
+        self.assertEqual(ballot.device_id, self.DEV1)
+        self.assertEqual(ballot.voter_ip, "203.0.113.9")
+
+    def test_guest_without_device_rejected(self):
+        a = self._create()
+        resp = self._guest_vote(a.data["id"], [a.data["options"][0]["id"]])
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data["detail"], "缺少设备标识")
+
+    def test_same_device_cannot_vote_twice(self):
+        a = self._create()
+        aid, oid = a.data["id"], a.data["options"][0]["id"]
+        self.assertEqual(self._guest_vote(aid, [oid], device=self.DEV1).status_code, 200)
+        resp = self._guest_vote(aid, [oid], device=self.DEV1)
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data["detail"], "该设备已投过票，不能重复投票")
+
+    def test_different_devices_can_vote(self):
+        a = self._create()
+        aid, oid = a.data["id"], a.data["options"][0]["id"]
+        self.assertEqual(self._guest_vote(aid, [oid], device=self.DEV1).status_code, 200)
+        self.assertEqual(self._guest_vote(aid, [oid], device=self.DEV2).status_code, 200)
+        self.assertEqual(Activity.objects.get(pk=aid).ballots.count(), 2)
+
+    def test_guest_ip_from_xff_last_segment(self):
+        # 最左可伪造（客户端自带）；真实 IP 由 Nginx 追加在末段 → 取末段
+        a = self._create()
+        aid, oid = a.data["id"], a.data["options"][0]["id"]
+        self._guest_vote(aid, [oid], device=self.DEV1, xff="1.2.3.4, 198.51.100.7")
+        ballot = Activity.objects.get(pk=aid).ballots.get()
+        self.assertEqual(ballot.voter_ip, "198.51.100.7")
+
+    def test_guest_ip_fallback_remote_addr(self):
+        a = self._create()
+        aid, oid = a.data["id"], a.data["options"][0]["id"]
+        self._guest_vote(aid, [oid], device=self.DEV1)
+        ballot = Activity.objects.get(pk=aid).ballots.get()
+        self.assertEqual(ballot.voter_ip, "127.0.0.1")  # 测试客户端默认 REMOTE_ADDR
+
+    def test_guest_selection_roundtrip_by_device(self):
+        a = self._create()
+        aid, oid = a.data["id"], a.data["options"][0]["id"]
+        self._guest_vote(aid, [oid], device=self.DEV1)
+        self.client.force_authenticate(None)
+        r1 = self.client.get(f"/activities/activities/{aid}/", HTTP_X_DEVICE_ID=self.DEV1)
+        self.assertEqual(r1.data["my_selections"], [oid])
+        r2 = self.client.get(f"/activities/activities/{aid}/", HTTP_X_DEVICE_ID=self.DEV2)
+        self.assertIsNone(r2.data["my_selections"])
+
+    def test_guest_ballot_listed_with_null_voter(self):
+        a = self._create()
+        aid, oid = a.data["id"], a.data["options"][0]["id"]
+        self._guest_vote(aid, [oid], device=self.DEV1)
+        self.client.force_authenticate(self.author)
+        resp = self.client.get(f"/activities/activities/{aid}/")
+        self.assertEqual(resp.data["total_ballots"], 1)
+        self.assertEqual(len(resp.data["ballots"]), 1)
+        self.assertIsNone(resp.data["ballots"][0]["voter"])
+
+    # ---- 成员行为不变 ----
+
+    def test_members_activity_404_for_guest(self):
+        a = self._create(audience="members")
+        aid, oid = a.data["id"], a.data["options"][0]["id"]
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(f"/activities/activities/{aid}/").status_code, 404)
+        self.assertEqual(self._guest_vote(aid, [oid], device=self.DEV1).status_code, 404)
+
+    def test_unverified_user_403_on_members_activity(self):
+        a = self._create(audience="members")
+        resp = self._vote(self.visitor, a.data["id"], [a.data["options"][0]["id"]])
+        self.assertEqual(resp.status_code, 403)
+
+    def test_verified_member_votes_public_without_device(self):
+        a = self._create()
+        aid, oid = a.data["id"], a.data["options"][0]["id"]
+        resp = self._vote(self.member, aid, [oid])
+        self.assertEqual(resp.status_code, 200)
+        ballot = Activity.objects.get(pk=aid).ballots.get()
+        self.assertEqual(ballot.voter_id, self.member.pk)
+        self.assertEqual(ballot.device_id, "")
+        self.assertIsNone(ballot.voter_ip)
+
+    def test_public_activity_visible_to_guest(self):
+        a = self._create()
+        self.client.force_authenticate(None)
+        resp = self.client.get(f"/activities/activities/{a.data['id']}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["audience"], "public")
+
+    # ---- 提前结算只数已验证成员的票 ----
+
+    def test_guest_votes_do_not_trigger_early_close(self):
+        # 2 名已验证成员（author/member）；游客票不参与提前结算
+        a = self._create()
+        aid, oid = a.data["id"], a.data["options"][0]["id"]
+        self.assertEqual(self._guest_vote(aid, [oid], device=self.DEV1).status_code, 200)
+        self.assertEqual(self._guest_vote(aid, [oid], device=self.DEV2).status_code, 200)
+        self.assertEqual(Activity.objects.get(pk=aid).status, "open")  # 游客票不触发
+        self.assertEqual(self._vote(self.member, aid, [oid]).status_code, 200)
+        self.assertEqual(Activity.objects.get(pk=aid).status, "open")
+        self.assertEqual(self._vote(self.author, aid, [oid]).status_code, 200)
+        self.assertEqual(Activity.objects.get(pk=aid).status, "closed")  # 成员全投完才结算
+
+    def test_guest_vote_closed_public_rejected(self):
+        a = self._create()
+        aid, oid = a.data["id"], a.data["options"][0]["id"]
+        Activity.objects.filter(pk=aid).update(status="closed")
+        resp = self._guest_vote(aid, [oid], device=self.DEV1)
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data["detail"], "投票已结束")
+
+
+class PublicExhibitionGuestVoteTest(TestCase):
+    """公开展示（启用投票）：游客可对展品投票。"""
+
+    DEV1 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+
+    def setUp(self):
+        self.curator = grant_verification(User.objects.create_user(username="xcurator", password="x"))
+        self.client = APIClient()
+
+    def _img(self, name="a.png"):
+        return SimpleUploadedFile(name, b"x", content_type="image/png")
+
+    def test_guest_votes_public_exhibition(self):
+        self.client.force_authenticate(self.curator)
+        r = _publish_created(self.client.post("/activities/activities/", data=json.dumps({
+            "type": "exhibition", "title": "公开影展", "body": "<p>x</p>",
+            "voting_enabled": True, "max_choices_per_voter": 1, "audience": "public",
+        }), content_type="application/json"))
+        aid = r.data["id"]
+        self.client.force_authenticate(self.curator)
+        self.client.post(f"/activities/activities/{aid}/add_exhibit/",
+                         data={"files": [self._img()]})
+        self.client.force_authenticate(self.curator)
+        detail = self.client.get(f"/activities/activities/{aid}/")
+        oid = detail.data["exhibits"][0]["vote_option_id"]
+
+        self.client.force_authenticate(None)
+        resp = self.client.post(
+            f"/activities/activities/{aid}/vote/",
+            data=json.dumps({"option_ids": [oid]}),
+            content_type="application/json", HTTP_X_DEVICE_ID=self.DEV1,
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["my_selections"], [oid])

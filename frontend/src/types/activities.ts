@@ -20,7 +20,7 @@ export interface ActivityListItem {
   status: ActivityStatus;
   title: string;
   creator: TaskUser | null;
-  audience?: SurveyAudience; // 调研：公开 / 仅成员；其他类型默认 members
+  audience?: SurveyAudience; // 受众：调研=作答资格，众议/展示=投票资格（公开时游客可投）
   review_status?: "pending" | "approved" | "rejected" | "removed" | null;
   owed?: "vote" | "submit" | null;
   start_at: string | null;
@@ -38,7 +38,7 @@ export interface VoteOption {
 
 export interface Ballot {
   id: number;
-  voter: TaskUser;
+  voter: TaskUser | null; // 公开受众的游客票（无账号）为 null
   option_ids: number[];
   created_at: string;
 }
@@ -95,7 +95,7 @@ export interface ActivityDetail {
   // 展示
   exhibits: Exhibit[] | null;
   voting_enabled: boolean; // 展示是否启用活动级投票；false=纯陈列（仅展品+赞/踩）
-  // 调研
+  // 受众（调研=作答资格；众议/展示=投票资格）
   audience: SurveyAudience;
   schema: Record<string, unknown>;
   my_response: Record<string, unknown> | null; // 当前身份（登录用户或访客设备）的作答；未答为 null
@@ -126,6 +126,7 @@ export interface DeliberationFormData {
   body: string;
   max_choices_per_voter: number;
   is_secret_ballot: boolean;
+  audience: SurveyAudience;
   start_at?: string;
   end_at?: string;
   option_texts: string[];
@@ -153,6 +154,7 @@ export interface ExhibitionFormData {
   voting_enabled: boolean;
   max_choices_per_voter: number; // 启用投票时有意义
   is_secret_ballot: boolean;
+  audience: SurveyAudience;
   start_at?: string;
   end_at?: string;
   comment_thread_status?: ThreadStatus;

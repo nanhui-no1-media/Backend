@@ -178,3 +178,48 @@ class MaybeCloseDeliberationTest(TestCase):
         self.assertTrue(maybe_close_deliberation_on_full_vote(self.activity))
         self.activity.refresh_from_db()
         self.assertEqual(self.activity.status, CLOSED)
+
+
+class GuestBallotTest(TestCase):
+    """公开受众：游客按设备标识判重（记录 IP 与设备），成员受众仍拦游客。"""
+
+    DEVICE = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+
+    def setUp(self):
+        self.author = grant_verification(User.objects.create_user(username="gauthor", password="x"))
+        self.activity = Activity.objects.create(
+            type="deliberation", status=OPEN, title="公开众议",
+            creator=self.author, max_choices_per_voter=1, audience="public",
+        )
+        self.oa = VoteOption.objects.create(activity=self.activity, text="A", order=0)
+
+    def test_guest_ballot_records_device_and_ip(self):
+        ballot = cast_ballot(
+            activity=self.activity, user=None, option_ids=[self.oa.pk],
+            ip_address="203.0.113.5", device_id=self.DEVICE,
+        )
+        self.assertIsNone(ballot.voter_id)
+        self.assertEqual(ballot.device_id, self.DEVICE)
+        self.assertEqual(ballot.voter_ip, "203.0.113.5")
+
+    def test_guest_ballot_requires_device(self):
+        with self.assertRaises(BallotError) as ctx:
+            cast_ballot(activity=self.activity, user=None, option_ids=[self.oa.pk])
+        self.assertEqual(ctx.exception.detail, "缺少设备标识")
+
+    def test_guest_ballot_device_dedup(self):
+        cast_ballot(activity=self.activity, user=None, option_ids=[self.oa.pk],
+                    device_id=self.DEVICE)
+        with self.assertRaises(BallotError) as ctx:
+            cast_ballot(activity=self.activity, user=None, option_ids=[self.oa.pk],
+                        device_id=self.DEVICE)
+        self.assertEqual(ctx.exception.detail, "该设备已投过票，不能重复投票")
+
+    def test_members_audience_rejects_guest(self):
+        members = Activity.objects.create(
+            type="deliberation", status=OPEN, title="成员众议", max_choices_per_voter=1,
+        )
+        VoteOption.objects.create(activity=members, text="A", order=0)
+        with self.assertRaises(BallotError) as ctx:
+            cast_ballot(activity=members, user=None, option_ids=[1])
+        self.assertEqual(ctx.exception.detail, "仅成员可投票，请先登录")

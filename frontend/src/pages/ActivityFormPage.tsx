@@ -70,6 +70,18 @@ export default function ActivityFormPage() {
     setEndAt(defaultEnd(t === "deliberation" ? 3 : 7));
   };
 
+  // 受众选择（调研=作答资格；众议/展示=投票资格——公开时游客可投）。创建后不可改。
+  const audienceField = (hint: string) => (
+    <div className="field">
+      <label className="label">受众{editId ? "（已固定）" : ""}</label>
+      <div className="seg" role="radiogroup">
+        <button type="button" className="seg-btn" aria-selected={audience === "members"} disabled={!!editId} onClick={() => !editId && setAudience("members")}>仅成员</button>
+        <button type="button" className="seg-btn" aria-selected={audience === "public"} disabled={!!editId} onClick={() => !editId && setAudience("public")}>公开</button>
+      </div>
+      <div className="hint">{hint}</div>
+    </div>
+  );
+
   const setOption = (i: number, v: string) =>
     setOptions((opts) => opts.map((o, idx) => (idx === i ? v : o)));
 
@@ -92,10 +104,12 @@ export default function ActivityFormPage() {
         setOptions(a.options ? a.options.map((o) => o.text) : ["", ""]);
         setK(a.max_choices_per_voter);
         setSecret(a.is_secret_ballot);
+        setAudience(a.audience || "members");
       } else if (a.type === "exhibition") {
         setVotingEnabled(a.voting_enabled);
         setK(a.max_choices_per_voter);
         setSecret(a.is_secret_ballot);
+        setAudience(a.audience || "members");
       } else if (a.type === "survey") {
         setAudience(a.audience || "members");
       }
@@ -140,6 +154,7 @@ export default function ActivityFormPage() {
           body,
           max_choices_per_voter: k,
           is_secret_ballot: secret,
+          audience,
           start_at: toIso(startAt),
           end_at: toIso(endAt),
           option_texts: options.map((o) => o.trim()).filter(Boolean),
@@ -174,6 +189,7 @@ export default function ActivityFormPage() {
           voting_enabled: votingEnabled,
           max_choices_per_voter: k,
           is_secret_ballot: secret,
+          audience,
           start_at: toIso(startAt),
           end_at: toIso(endAt),
           comment_thread_status: commentThreadStatus,
@@ -292,6 +308,7 @@ export default function ActivityFormPage() {
                   <span>秘密投票 —— 仅聚合计数可见，个人投票明细仅超级管理员可见</span>
                 </label>
               </div>
+              {audienceField("公开：未登录访客也能投票（按设备防重复）；仅成员：须登录后投票。创建后不可改。")}
             </>
           ) : type === "collection" ? (
             <>
@@ -362,17 +379,11 @@ export default function ActivityFormPage() {
                   </div>
                 </div>
               )}
+              {audienceField("公开：未登录访客可浏览，启用投票时也能直接投票（按设备防重复）；仅成员：须登录。创建后不可改。")}
             </>
           ) : (
             <>
-              <div className="field">
-                <label className="label">受众{editId ? "（已固定）" : ""}</label>
-                <div className="seg" role="radiogroup">
-                  <button type="button" className="seg-btn" aria-selected={audience === "members"} disabled={!!editId} onClick={() => !editId && setAudience("members")}>仅成员</button>
-                  <button type="button" className="seg-btn" aria-selected={audience === "public"} disabled={!!editId} onClick={() => !editId && setAudience("public")}>公开</button>
-                </div>
-                <div className="hint">公开：访客可列出、打开、提交；仅成员：须登录。创建后不可改。问卷在创建后于详情页编辑。</div>
-              </div>
+              {audienceField("公开：访客可列出、打开、提交；仅成员：须登录。创建后不可改。问卷在创建后于详情页编辑。")}
               <div className="field">
                 <label className="label">征答截止</label>
                 <input className="input" type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />

@@ -2,7 +2,7 @@
 
 社团成员发起的四类活动（众议 / 征集 / 展示 / 调研）的创建、参与、布展与生命周期接口，全部由 `activities/urls.py` 的 `DefaultRouter`（`ActivityViewSet`）暴露。
 
-> 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0007](../adr/0007-activity-independent.md)、[ADR-0011](../adr/0011-survey-activity-type.md)、[ADR-0014](../adr/0014-questionnaire-independent.md)、[ADR-0017](../adr/0017-unified-moderation-system.md)
+> 全局约定（认证 / 错误 / 分页 / CSRF）见 [API 总览](README.md)。相关设计记录：[ADR-0007](../adr/0007-activity-independent.md)、[ADR-0011](../adr/0011-survey-activity-type.md)、[ADR-0014](../adr/0014-questionnaire-independent.md)、[ADR-0017](../adr/0017-unified-moderation-system.md)、[ADR-0019](../adr/0019-public-audience-voting.md)
 
 ## 模块约定
 
@@ -14,20 +14,20 @@
   - 设未来的 `start_at` 即进入 `scheduled`，到点自动开放（征集→`collecting`，其余→`open`）；到 `end_at` 自动结算众议 / 展示 / 调研。征集无 `end_at` 惰性结算，由「提前关闭」或满 `max_submissions` 收口。
 - **审核轴**（`reviews` app，[ADR-0017](../adr/0017-unified-moderation-system.md)）：`review_status` ∈ `pending` / `approved` / `rejected` / `removed` / `null`（尚无审核行），只门控「公开展示」，不阻断活动自身状态机。列表 / 详情只出已过审（或无审核行）的活动；自己发起的全部活动（含待审 / 驳回 / 下架）走 `mine` 预览。
 - **`owed`**（列表 / 详情字段）：`vote` / `submit` / `null`——已验证成员在「投票中且未投」「收件中且未投」「展示中启用投票且未投」时欠的行动；仅对已验证成员计算。
-- **`X-Device-Id`**：访客调研作答的一次性标识（门户写入 localStorage 的 UUID）；缺失或非法按无标识处理。
+- **`X-Device-Id`**：访客调研作答 / 公开受众投票的设备标识（门户写入 localStorage 的 UUID）；缺失或非法按无标识处理。
 
 ## 端点一览
 
 | 方法 | 路径 | 认证 | 权限 | 说明 |
 |---|---|---|---|---|
-| GET | `/activities/activities/` | 公开 | — | 活动列表（分页；访客仅见公开受众的调研） |
+| GET | `/activities/activities/` | 公开 | — | 活动列表（分页；访客仅见公开受众的调研与众议 / 展示） |
 | POST | `/activities/activities/` | 已验证 | — | 发起活动（创建即开审核） |
-| GET | `/activities/activities/{id}/` | 公开 | — | 活动详情（访客仅公开调研） |
+| GET | `/activities/activities/{id}/` | 公开 | — | 活动详情（访客仅公开受众的调研与众议 / 展示） |
 | PUT | `/activities/activities/{id}/` | 登录 | 发起人或 `activities.manage_activity` | 全量更新（仅待开始；调研 Schema 见下） |
 | PATCH | `/activities/activities/{id}/` | 登录 | 发起人或 `activities.manage_activity` | 局部更新（同上） |
 | DELETE | `/activities/activities/{id}/` | 登录 | 发起人或 `activities.manage_activity` | 删除活动（无状态门禁） |
 | GET | `/activities/activities/mine/` | 登录 | — | 我发起的活动（含待审 / 驳回 / 下架） |
-| POST | `/activities/activities/{id}/vote/` | 已验证 | — | 投选票（众议；启用投票的展示） |
+| POST | `/activities/activities/{id}/vote/` | 公开 / 已验证 | — | 投选票（众议；启用投票的展示；公开受众游客可投） |
 | POST | `/activities/activities/{id}/respond/` | 公开 | — | 调研作答（访客需设备标识） |
 | GET | `/activities/activities/{id}/responses/` | 登录 | — | 问卷作答查看（发起人 / 管理看全部，其余看自己） |
 | POST | `/activities/activities/{id}/submit/` | 已验证 | — | 征集投稿（一束文件 = 一个作品） |
@@ -48,7 +48,7 @@
 
 `GET /activities/activities/`
 
-**认证**：公开；**权限**：—。未登录时查询范围被收窄为 `type=survey` 且 `audience=public`（且审核轴公开）的调研；登录成员可见全部审核轴公开的活动。
+**认证**：公开；**权限**：—。未登录时查询范围被收窄为「审核轴公开」且 `audience=public` 的调研与众议 / 展示；登录成员可见全部审核轴公开的活动。
 
 **查询参数**
 
@@ -102,7 +102,7 @@
 | max_submissions | int | 否 | 征集：最大作品数；`null` = 不限，设了则满额自动收口 |
 | review_enabled | bool | 否 | 征集：默认 true；false = 提交即公开、跳过复审 |
 | voting_enabled | bool | 否 | 展示：默认 false；true = 每展品绑定一个投票选项（创建后不可改） |
-| audience | string | 否 | 调研：`public` / `members`，默认 `members`；创建后不可改 |
+| audience | string | 否 | 受众：`public` / `members`，默认 `members`；调研=作答资格，众议 / 展示=投票资格（`public` 时未登录游客也可投，按设备标识判重）。创建后不可改；征集忽略此字段 |
 | schema | object | 否 | 调研：SurveyJS Schema，须含 `pages`；非调研类型忽略 |
 | comment_thread_status | string | 否 | 评论区状态 `open` / `muted` / `closed`，缺省 `open` |
 
@@ -121,7 +121,7 @@
 
 `GET /activities/activities/{id}/`
 
-**认证**：公开；**权限**：—。未登录只能取到 `type=survey` 且 `audience=public` 的公开调研，其余一律 404；登录成员可取全部审核轴公开的活动、自己发起的活动，`reviews.moderate` 持有者可取全部。
+**认证**：公开；**权限**：—。未登录只能取到 `audience=public` 的公开调研与众议 / 展示，其余一律 404；登录成员可取全部审核轴公开的活动、自己发起的活动，`reviews.moderate` 持有者可取全部。
 
 **响应 `200 OK`**（详情序列化器，众议示例；其余类型差异见后）
 
@@ -152,10 +152,10 @@
 
 - `review_comment`：审核评语，仅发起人或 `reviews.moderate` 持有者可见，其余为空串。
 - `options`：仅众议返回数组（`VoteOptionSerializer`：`id` / `text` / `order` / `vote_count`）；其余类型为 `null`。
-- `ballots` / `my_selections` / `total_ballots`：无投票轴（非众议、或展示未启用投票）为 `null`；秘密投票下 `ballots` 仅超管可见（其余为 `null`）；`my_selections` 为当前用户已投的 option id 列表（未投 `null`）。
+- `ballots` / `my_selections` / `total_ballots`：无投票轴（非众议、或展示未启用投票）为 `null`；秘密投票下 `ballots` 仅超管可见（其余为 `null`）；`my_selections` 为当前身份已投的 option id 列表（登录按用户、访客按设备标识；未投 `null`）；公开受众下游客票的 `voter` 为 `null`。
 - `my_submission` / `submissions`：仅征集返回。`my_submission` 是本人作品（无则 `null`）；`submissions` 复审者（发起人 / `activities.manage_activity` / `activities.review_collection`）见全部作品，其余登录成员只见 `review_status=accepted` 的作品；`review_enabled=false` 时全部作品公开。作品结构：`id` / `submitter` / `files`（附件：`id` / `file_url` / `file_type` / `file_name` / `file_size` / `uploaded_by` / `uploaded_at`）/ `review_status`（`pending` / `accepted` / `rejected`）/ `review_comment` / `reviewed_at` / `created_at`。
 - `exhibits`：仅展示返回。展品结构：`id` / `title` / `files` / `vote_option_id`（未启用投票为 `null`）/ `vote_count` / `like_count` / `dislike_count` / `my_rating`（`like` / `dislike` / `null`）/ `created_at`。
-- 调研：`audience`、`schema`、`my_response`（当前身份——登录用户或访客设备——的作答，未答 `null`）、`response_count`（作答总数，不作答列表）、`schema_editable`（问卷可否改，走生命周期判断）。非调研类型 `audience` 恒为 `members`、`schema` 为默认空 Schema、后三者分别为 `null` / `null` / `false`。
+- 调研：`audience`、`schema`、`my_response`（当前身份——登录用户或访客设备——的作答，未答 `null`）、`response_count`（作答总数，不作答列表）、`schema_editable`（问卷可否改，走生命周期判断）。非调研类型 `schema` 为默认空 Schema、后三者分别为 `null` / `null` / `false`。
 - `comment_thread`：`id` / `status` / `can_manage`（当前用户能否管理该评论区）。
 
 ### 更新活动
@@ -202,13 +202,15 @@
 
 `POST /activities/activities/{id}/vote/`
 
-**认证**：已验证；**权限**：—。众议在 `open` 期间人人可投；展示只在 `voting_enabled=true` 且 `open` 时开放投票（`option_ids` 填展品对应的 `vote_option_id`）。
+**认证**：`audience=public` 公开（`AllowAny`——游客与任何登录态均可投）；`audience=members` 须登录 + 已验证（未登录 401、未验证 403）。众议在 `open` 期间可投；展示只在 `voting_enabled=true` 且 `open` 时开放投票（`option_ids` 填展品对应的 `vote_option_id`）。
 
-**请求体**：`{"option_ids": [31, 32]}`——选项 id 数组：至少 1 项、不得重复、不得超过 `max_choices_per_voter`，且都须属于本活动。一人一张选票，投出后不可更改；全部已验证成员投完时众议自动结算（转 `closed`）。
+**请求体**：`{"option_ids": [31, 32]}`——选项 id 数组：至少 1 项、不得重复、不得超过 `max_choices_per_voter`，且都须属于本活动。一人一张选票，投出后不可更改；全部已验证成员投完时众议自动结算（转 `closed`；公开受众下游客票不参与结算）。
 
-**响应 `200 OK`**：活动详情（`options[].vote_count`、`ballots`、`my_selections`、`total_ballots` 随票数更新）。
+**判重与留痕**：登录用户按账号一人一张；`audience=public` 的游客按 `X-Device-Id` 头（UUID）一设备一张，未带合法标识返回 400；游客票记录 IP（取 `X-Forwarded-For` 末段，即 Nginx 追加的真实来源）与设备标识备查。
 
-**错误**（均为 400 + `{"detail": "…"}`）：类型非众议 / 展示 → `仅众议/展示可以投票`；展示未启用投票 → `该展示未启用投票`；已投过票 → `你已经投过票了，不能修改`；非 `open` → `投票已结束`；未选或非数组 → `请至少选择一个选项`；重复选项 → `不能重复选择同一选项`；超过 K 值 → `最多选择 {max_choices_per_voter} 项`；选项非法 → `无效的选项` / `存在不属于本活动的选项`。
+**响应 `200 OK`**：活动详情（`options[].vote_count`、`ballots`、`my_selections`、`total_ballots` 随票数更新；游客的 `my_selections` 按设备标识回显）。
+
+**错误**（均为 400 + `{"detail": "…"}`，另有 401 / 403 见上）：类型非众议 / 展示 → `仅众议/展示可以投票`；展示未启用投票 → `该展示未启用投票`；非 `open` → `投票已结束`；已投过票 → `你已经投过票了，不能修改`（游客重复 → `该设备已投过票，不能重复投票`）；游客缺设备标识 → `缺少设备标识`；未选或非数组 → `请至少选择一个选项`；重复选项 → `不能重复选择同一选项`；超过 K 值 → `最多选择 {max_choices_per_voter} 项`；选项非法 → `无效的选项` / `存在不属于本活动的选项`。
 
 ### 调研作答
 

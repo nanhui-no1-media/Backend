@@ -88,6 +88,17 @@ class CanVoteTest(TestCase):
         # 展示启用投票时方可投
         self.assertTrue(can_vote(self.exhibit_voting, self.user))
 
+    def test_public_deliberation_allows_guest(self):
+        # 公开受众：游客（未登录）也可投
+        self.deliberation.audience = "public"
+        self.deliberation.save(update_fields=["audience"])
+        self.assertTrue(can_vote(self.deliberation, AnonymousUser()))
+
+    def test_public_closed_deliberation_blocks_guest(self):
+        self.closed.audience = "public"
+        self.closed.save(update_fields=["audience"])
+        self.assertFalse(can_vote(self.closed, AnonymousUser()))
+
 
 class TransitionOverdueTest(TestCase):
     def test_overdue_open_flips_to_closed(self):

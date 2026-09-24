@@ -112,5 +112,5 @@ Nginx（一层代理）→ Gunicorn ASGI 单 worker，systemd 托管；更新与
 
 ## 设计记录
 
-- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0018）。
+- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0019）。
 - 领域术语与项目概览：仓库根目录 [CONTEXT.md](../../CONTEXT.md)。

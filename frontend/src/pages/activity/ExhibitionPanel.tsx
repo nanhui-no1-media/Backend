@@ -224,8 +224,17 @@ export default function ExhibitionPanel({
                     .map((ex) => ex.title || "未命名");
                   return (
                     <li key={b.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0" }}>
-                      <Avatar user={b.voter} />
-                      <span>{b.voter.nickname || b.voter.username}</span>
+                      {b.voter ? (
+                        <>
+                          <Avatar user={b.voter} />
+                          <span>{b.voter.nickname || b.voter.username}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="avatar avatar--sm" style={{ background: "#d1d5db" }} aria-hidden="true" />
+                          <span className="muted">游客</span>
+                        </>
+                      )}
                       <span className="muted">投：{names.join("、") || "—"}</span>
                     </li>
                   );

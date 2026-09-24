@@ -225,6 +225,8 @@ class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializ
         activity_type = attrs.get("type") or getattr(self.instance, "type", None)
         if activity_type != "survey":
             attrs.pop("schema", None)
+        # 受众：调研=作答资格；众议/展示=投票资格（公开时游客可投）。征集无受众语义。
+        if activity_type not in ("survey", "deliberation", "exhibition"):
             attrs.pop("audience", None)
         # 开始 < 截止（两者都给时；update 取实例现值兜底 partial）
         start_at = attrs.get("start_at", getattr(self.instance, "start_at", None))
@@ -318,10 +320,17 @@ class ActivityDetailSerializer(CommentThreadHostMixin, serializers.ModelSerializ
         if not voting_active(obj):
             return None
         request = self.context.get("request")
-        user = getattr(request, "user", None)
-        if not user or not user.is_authenticated:
+        if request is None:
             return None
-        ballot = obj.ballots.filter(voter=user).first()
+        user = getattr(request, "user", None)
+        if user and user.is_authenticated:
+            ballot = obj.ballots.filter(voter=user).first()
+        else:
+            # 公开受众的游客：按设备标识回显自己的票（与 get_my_response 同思路）
+            device_id = device_id_from_request(request)
+            if not device_id:
+                return None
+            ballot = obj.ballots.filter(voter__isnull=True, device_id=device_id).first()
         if ballot is None:
             return None
         return list(ballot.selections.values_list("option_id", flat=True))

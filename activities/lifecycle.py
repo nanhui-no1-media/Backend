@@ -88,17 +88,15 @@ def can_respond(activity, user):
 # ---- 众议 --------------------------------------------------------------
 
 def can_vote(activity, user):
-    """投票守卫：众议始终可投；展示仅 ``voting_enabled`` 时——状态=open、用户已认证。
+    """投票守卫：类型与状态（众议=open；展示=``voting_enabled`` 且 open）+ 受众放行。
 
-    展示的投票是否启用取决于 ``voting_enabled``：默认 False（纯陈列，仅赞/踩），
-    True 时才放行投票。已验证由 IsVerified 把关。
+    受众 ``public``：任何人（含未登录游客——视图按设备标识判重、记录 IP）；
+    受众 ``members``：须已登录（验证轴由 ``IsVerified`` 在视图层把关）。
     """
-        # 兼容游客：如果 user 为 None 或者是匿名用户，直接跳过身份拦截，放行给后续逻辑
-    if user is None or not getattr(user, 'is_authenticated', False):
-        pass  # 游客放行
-    else:
-        if not user.is_verified:  # 你的 IsVerified 逻辑
-            return False
+    if activity.audience != "public" and not (
+        user and getattr(user, "is_authenticated", False)
+    ):
+        return False
     if activity.type == "deliberation":
         return activity.status == OPEN
     if activity.type == "exhibition":

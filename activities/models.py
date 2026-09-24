@@ -291,10 +291,11 @@ class VoteOption(models.Model):
 
 
 class Ballot(models.Model):
-    """一名成员在一次众议中的选票（一人一张，一经投出不可改）。
+    """一次投票中的一张选票（一经投出不可改）。
 
-    具体选择（选了哪些选项）见 BallotSelection。秘密投票下 voter 仅超管可见
-    （序列化层裁剪），DB 仍记录以强制一人一张 + 防重复。
+    登录用户一人一张（voter）；公开受众的游客按设备标识一张（device_id），
+    并记录 IP（voter_ip）备查。具体选择（选了哪些选项）见 BallotSelection。
+    秘密投票下 voter 仅超管可见（序列化层裁剪），DB 仍记录以强制一人一张 + 防重复。
     """
 
     activity = models.ForeignKey(
@@ -302,28 +303,30 @@ class Ballot(models.Model):
         related_name="ballots", verbose_name="活动",
     )
     voter = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.CASCADE,
-        related_name="activity_ballots", 
-        verbose_name="投票人",
-        null=True,  # ← 允许为空（游客）
-        blank=True, # ← 允许表单留空
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="activity_ballots", verbose_name="投票人",
+        null=True, blank=True,  # 公开受众的游客票为空
     )
-    voter_ip = models.GenericIPAddressField(  # ← 新增：记录游客IP
-        null=True,
-        blank=True,
-        verbose_name="游客IP"
-    )
+    voter_ip = models.GenericIPAddressField("游客IP", null=True, blank=True)
+    device_id = models.CharField("设备标识", max_length=36, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "选票"
         verbose_name_plural = "选票"
         unique_together = ["activity", "voter"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["activity", "device_id"],
+                condition=models.Q(voter__isnull=True) & ~models.Q(device_id=""),
+                name="unique_ballot_per_device",
+            ),
+        ]
         ordering = ["created_at"]
 
     def __str__(self):
-        return f"{self.voter_id} -> {self.activity_id}" # type: ignore
+        who = self.voter_id if self.voter_id else "游客"
+        return f"{who} -> {self.activity_id}" # type: ignore
 
 
 class BallotSelection(models.Model):
