@@ -31,6 +31,8 @@ export interface NewsListItem {
   featured: boolean;
   views: number;
   is_published: boolean;
+  /** 服务端草稿保存时间：仅对持 news.manage_news 者非空（草稿区有未发布修改时）。 */
+  draft_saved_at?: string | null;
   review_status?: "pending" | "approved" | "rejected" | "removed" | null;
   published_at: string | null;
   created_at: string;

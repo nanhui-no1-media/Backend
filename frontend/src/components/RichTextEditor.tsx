@@ -1,6 +1,14 @@
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, useEditorState, EditorContent } from "@tiptap/react";
+import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
+import Highlight from "@tiptap/extension-highlight";
+import Subscript from "@tiptap/extension-subscript";
+import Superscript from "@tiptap/extension-superscript";
+import TextAlign from "@tiptap/extension-text-align";
+import { TextStyle } from "@tiptap/extension-text-style";
+import { Color } from "@tiptap/extension-color";
+import CharacterCount from "@tiptap/extension-character-count";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { Table } from "@tiptap/extension-table";
@@ -38,7 +46,13 @@ interface Props {
   iframeEmbed?: boolean;
 }
 
-/* 小图标（仅用于「动作」类按钮：图片 / 链接 / 导入 Word / 嵌入网页） */
+type EditorInstance = NonNullable<ReturnType<typeof useEditor>>;
+
+/* 调色板：与后端 common/rich_text.py 的 hex 值白名单对齐（只发 #rrggbb）。 */
+const TEXT_COLORS = ["#111827", "#64748b", "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#2563eb", "#9333ea"];
+const HIGHLIGHT_COLORS = ["#fff3a3", "#bbf7d0", "#bfdbfe", "#fbcfe8", "#fed7aa", "#e9d5ff"];
+
+/* 小图标（动作类按钮 + 对齐 / 高亮） */
 const Icon = {
   image: (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -65,6 +79,150 @@ const Icon = {
       <circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
     </svg>
   ),
+  highlight: (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+    </svg>
+  ),
+  alignLeft: (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18M3 10h12M3 14h18M3 18h12" />
+    </svg>
+  ),
+  alignCenter: (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18M6 10h12M3 14h18M6 18h12" />
+    </svg>
+  ),
+  alignRight: (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18M9 10h12M3 14h18M9 18h12" />
+    </svg>
+  ),
+  alignJustify: (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18M3 10h18M3 14h18M3 18h18" />
+    </svg>
+  ),
+};
+
+/** 编辑器正文字数（character-count 扩展；缺省回退文本长度）。 */
+const countChars = (editor: EditorInstance): number =>
+  (editor.storage as unknown as { characterCount?: { characters: () => number } })
+    .characterCount?.characters() ?? editor.getText().length;
+
+/** 气泡菜单内容：选区快捷格式。useEditorState 订阅格式态（不随全组件重渲染刷新）。 */
+const BubbleFormatBar = ({ editor, onAddLink }: { editor: EditorInstance; onAddLink: () => void }) => {
+  const state = useEditorState({
+    editor,
+    selector: ({ editor: e }) => ({
+      bold: e.isActive("bold"),
+      italic: e.isActive("italic"),
+      underline: e.isActive("underline"),
+      strike: e.isActive("strike"),
+      highlight: e.isActive("highlight"),
+      link: e.isActive("link"),
+    }),
+  });
+  const btn = (label: ReactNode, action: () => void, active: boolean, title: string) => (
+    <button type="button" className={`rte-btn${active ? " active" : ""}`} title={title} aria-label={title} aria-pressed={active}
+            onMouseDown={(e) => e.preventDefault()} onClick={action}>{label}</button>
+  );
+  return (
+    <>
+      {btn(<b>B</b>, () => editor.chain().focus().toggleBold().run(), state.bold, "加粗")}
+      {btn(<i>I</i>, () => editor.chain().focus().toggleItalic().run(), state.italic, "斜体")}
+      {btn(<u>U</u>, () => editor.chain().focus().toggleUnderline().run(), state.underline, "下划线")}
+      {btn(<s>S</s>, () => editor.chain().focus().toggleStrike().run(), state.strike, "删除线")}
+      {btn(Icon.highlight, () => editor.chain().focus().toggleHighlight().run(), state.highlight, "高亮")}
+      <span className="rte-divider" />
+      {btn(Icon.link, onAddLink, state.link, "插入 / 编辑链接")}
+    </>
+  );
+};
+
+/** 浮动菜单内容：空行块类型快速切换。 */
+const FloatingBlockBar = ({ editor }: { editor: EditorInstance }) => {
+  const state = useEditorState({
+    editor,
+    selector: ({ editor: e }) => ({
+      paragraph: e.isActive("paragraph") && !e.isActive("heading"),
+      h1: e.isActive("heading", { level: 1 }),
+      h2: e.isActive("heading", { level: 2 }),
+      h3: e.isActive("heading", { level: 3 }),
+      quote: e.isActive("blockquote"),
+    }),
+  });
+  const btn = (label: ReactNode, action: () => void, active: boolean, title: string) => (
+    <button type="button" className={`rte-btn${active ? " active" : ""}`} title={title} aria-label={title} aria-pressed={active}
+            onMouseDown={(e) => e.preventDefault()} onClick={action}>{label}</button>
+  );
+  return (
+    <>
+      {btn("正文", () => editor.chain().focus().setParagraph().run(), state.paragraph, "正文")}
+      {btn("H1", () => editor.chain().focus().toggleHeading({ level: 1 }).run(), state.h1, "标题 1")}
+      {btn("H2", () => editor.chain().focus().toggleHeading({ level: 2 }).run(), state.h2, "标题 2")}
+      {btn("H3", () => editor.chain().focus().toggleHeading({ level: 3 }).run(), state.h3, "标题 3")}
+      {btn("“", () => editor.chain().focus().toggleBlockquote().run(), state.quote, "引用")}
+    </>
+  );
+};
+
+/** 调色板弹层：文字颜色（text）/ 高亮背景色（hl）。按钮防焦点丢失，选色后收回。 */
+const SwatchPopover = ({ editor, kind }: { editor: EditorInstance; kind: "text" | "hl" }) => {
+  const [open, setOpen] = useState(false);
+  const colors = kind === "text" ? TEXT_COLORS : HIGHLIGHT_COLORS;
+  const active = kind === "text" ? !!editor.getAttributes("textStyle").color : editor.isActive("highlight");
+
+  const apply = (c: string | null) => {
+    if (kind === "text") {
+      if (c) editor.chain().focus().setColor(c).run();
+      else editor.chain().focus().unsetColor().run();
+    } else {
+      if (c) editor.chain().focus().setHighlight({ color: c }).run();
+      else editor.chain().focus().unsetHighlight().run();
+    }
+    setOpen(false);
+  };
+
+  return (
+    <div className="rte-pop-wrap">
+      <button
+        type="button"
+        className={`rte-btn${open || active ? " active" : ""}`}
+        title={kind === "text" ? "文字颜色" : "高亮"}
+        aria-label={kind === "text" ? "文字颜色" : "高亮"}
+        aria-expanded={open}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {kind === "text" ? <span className="rte-color-a">A</span> : Icon.highlight}
+      </button>
+      {open && (
+        <>
+          <div className="rte-pop-backdrop" onMouseDown={() => setOpen(false)} />
+          <div className="rte-pop" onMouseDown={(e) => e.preventDefault()}>
+            <div className="rte-pop-grid">
+              {colors.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className="rte-swatch"
+                  style={{ background: c }}
+                  title={c}
+                  aria-label={`颜色 ${c}`}
+                  onClick={() => apply(c)}
+                />
+              ))}
+            </div>
+            <button type="button" className="rte-pop-clear" onClick={() => apply(null)}>
+              {kind === "text" ? "恢复默认色" : "清除高亮"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
 };
 
 const Toolbar = ({
@@ -94,7 +252,7 @@ const Toolbar = ({
 }) => {
   if (!editor) return null;
 
-  const btn = (label: ReactNode, action: () => void, active: boolean, title: string) => (
+  const btn = (label: ReactNode, action: () => void, active: boolean, title: string, disabled = false) => (
     <button
       type="button"
       className={`rte-btn${active ? " active" : ""}`}
@@ -102,13 +260,22 @@ const Toolbar = ({
       title={title}
       aria-label={title}
       aria-pressed={active}
+      disabled={disabled}
     >
       {label}
     </button>
   );
 
+  const aBtn = (label: ReactNode, align: "left" | "center" | "right" | "justify", title: string) =>
+    btn(label, () => editor!.chain().focus().setTextAlign(align).run(), editor!.isActive({ textAlign: align }), title);
+
   return (
     <div className="rte-toolbar">
+      <div className="rte-group">
+        {btn("↶", () => editor!.chain().focus().undo().run(), false, "撤销", !editor!.can().undo())}
+        {btn("↷", () => editor!.chain().focus().redo().run(), false, "重做", !editor!.can().redo())}
+      </div>
+      <span className="rte-divider" />
       <div className="rte-group">
         {btn("H1", () => editor!.chain().focus().toggleHeading({ level: 1 }).run(), editor!.isActive("heading", { level: 1 }), "标题 1")}
         {btn("H2", () => editor!.chain().focus().toggleHeading({ level: 2 }).run(), editor!.isActive("heading", { level: 2 }), "标题 2")}
@@ -118,8 +285,23 @@ const Toolbar = ({
       <div className="rte-group">
         {btn(<b>B</b>, () => editor!.chain().focus().toggleBold().run(), editor!.isActive("bold"), "加粗")}
         {btn(<i>I</i>, () => editor!.chain().focus().toggleItalic().run(), editor!.isActive("italic"), "斜体")}
+        {btn(<u>U</u>, () => editor!.chain().focus().toggleUnderline().run(), editor!.isActive("underline"), "下划线")}
         {btn(<s>S</s>, () => editor!.chain().focus().toggleStrike().run(), editor!.isActive("strike"), "删除线")}
         {btn("</>", () => editor!.chain().focus().toggleCodeBlock().run(), editor!.isActive("codeBlock"), "代码块")}
+      </div>
+      <span className="rte-divider" />
+      <div className="rte-group">
+        <SwatchPopover editor={editor} kind="hl" />
+        <SwatchPopover editor={editor} kind="text" />
+        {btn(<span>X<sub>2</sub></span>, () => editor!.chain().focus().toggleSubscript().run(), editor!.isActive("subscript"), "下标")}
+        {btn(<span>X<sup>2</sup></span>, () => editor!.chain().focus().toggleSuperscript().run(), editor!.isActive("superscript"), "上标")}
+      </div>
+      <span className="rte-divider" />
+      <div className="rte-group">
+        {aBtn(Icon.alignLeft, "left", "左对齐")}
+        {aBtn(Icon.alignCenter, "center", "居中")}
+        {aBtn(Icon.alignRight, "right", "右对齐")}
+        {aBtn(Icon.alignJustify, "justify", "两端对齐")}
       </div>
       <span className="rte-divider" />
       <div className="rte-group">
@@ -184,12 +366,23 @@ export default function RichTextEditor({
   const onStatsRef = useRef(onStats); onStatsRef.current = onStats;
 
   const editor = useEditor({
+    // 注意：不要开 shouldRerenderOnTransaction —— React 菜单组件（BubbleMenu/FloatingMenu）
+    // 每次渲染都会 dispatch 一次 updateOptions 事务，与“事务→整树重渲染”形成死循环（React #185）。
+    // 需要实时状态的局部 UI 用 useEditorState 订阅（见 BubbleFormatBar / FloatingBlockBar）。
     extensions: [
-      StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] } }),
+      // link 由下方显式注册（自定义 target/_blank 等属性），避免与 StarterKit 内置的重复注册
+      StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] }, link: false }),
       Link.configure({
         autolink: true,
         HTMLAttributes: { target: "_blank", rel: "noopener noreferrer nofollow" },
       }),
+      Highlight.configure({ multicolor: true }),
+      Subscript,
+      Superscript,
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
+      TextStyle,
+      Color,
+      CharacterCount,
       TaskList,
       TaskItem.configure({ nested: true }),
       Table.configure({ resizable: true }),
@@ -320,6 +513,30 @@ export default function RichTextEditor({
         onInsertVideoFile={() => videoInput.current?.click()}
         onInsertIframe={insertIframe}
       />
+
+      {/* 选区快捷格式：选中文字时浮出（位置用插件默认 top / offset 8） */}
+      {editor && (
+        <BubbleMenu
+          editor={editor}
+          updateDelay={80}
+          shouldShow={({ editor: ed, state }) =>
+            !state.selection.empty &&
+            !ed.isActive("codeBlock") &&
+            !("node" in state.selection)
+          }
+          className="rte-bubble"
+        >
+          <BubbleFormatBar editor={editor} onAddLink={addLink} />
+        </BubbleMenu>
+      )}
+
+      {/* 空行浮出：快速切换块类型 */}
+      {editor && (
+        <FloatingMenu editor={editor} options={{ placement: "bottom-start", offset: 8 }} className="rte-float">
+          <FloatingBlockBar editor={editor} />
+        </FloatingMenu>
+      )}
+
       <EditorContent editor={editor} className="rte-content" />
       {err && <div className="rte-err">{err}</div>}
       {videoProgress != null && (
@@ -330,6 +547,7 @@ export default function RichTextEditor({
           </div>
         </div>
       )}
+      {editor && <div className="rte-foot"><span className="rte-count tnum">{countChars(editor)} 字</span></div>}
       <input
         ref={imageInput} type="file" accept="image/*" className="rte-file"
         onChange={(e) => { insertImage(e.target.files?.[0] ?? null); e.target.value = ""; }}

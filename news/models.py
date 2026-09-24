@@ -38,6 +38,13 @@ class News(models.Model):
     is_published = models.BooleanField("已发布", default=True)
     published_at = models.DateTimeField("发布时间", null=True, blank=True)
 
+    # 服务端草稿区（自动保存）：已发布新闻的「待发布修改」暂存，公开接口不可见；
+    # 点「保存修改」时随更新消费清空。未发布稿件的自动保存直接写正文（稿件本体即草稿）。
+    draft_title = models.CharField("草稿标题", max_length=200, blank=True, default="")
+    draft_summary = models.CharField("草稿摘要", max_length=280, blank=True, default="")
+    draft_content = models.TextField("草稿正文（HTML）", blank=True, default="")
+    draft_saved_at = models.DateTimeField("草稿保存时间", null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

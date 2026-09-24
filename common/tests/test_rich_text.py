@@ -110,6 +110,67 @@ class RichTextSanitizeTest(SimpleTestCase):
         self.assertIn("class=", out)
         self.assertIn("marker", out)
 
+    # ---- 行内样式白名单（对齐 / 文字颜色；2026-09-26 起）----
+    def test_keeps_text_align_style(self):
+        out = self._clean('<p style="text-align: center">x</p>')
+        self.assertIn('style="text-align: center"', out)
+
+    def test_keeps_hex_and_rgb_color_style(self):
+        self.assertIn("color: #ff0000", self._clean('<span style="color: #ff0000">红</span>'))
+        self.assertIn("rgb(255, 0, 0)", self._clean('<span style="color: rgb(255, 0, 0)">红</span>'))
+
+    def test_strips_unsafe_style_props_keeps_safe(self):
+        out = self._clean('<p style="position: fixed; top: 0; text-align: right">x</p>')
+        self.assertNotIn("position", out)
+        self.assertNotIn("top", out)
+        self.assertIn("text-align: right", out)
+
+    def test_strips_style_url_value(self):
+        # url() 不在值白名单 → 值整体剥除，且不留空 style 属性
+        out = self._clean('<p style="background-color: url(https://evil.example/x.png)">x</p>')
+        self.assertNotIn("url", out)
+        self.assertNotIn("style", out)
+
+    def test_strips_style_expression_value(self):
+        out = self._clean('<p style="color: expression(alert(1))">x</p>')
+        self.assertNotIn("expression", out)
+        self.assertNotIn("style", out)
+
+    def test_style_not_allowed_on_other_tags(self):
+        # style 只在 p / h1-h6 / span 上放行；img 携带 style 被剥
+        out = self._clean('<img src="https://e/x.png" style="position: fixed">')
+        self.assertNotIn("style", out)
+        self.assertIn("e/x.png", out)
+
+    def test_keeps_inline_marks(self):
+        # 编辑器下划线 / 高亮 / 角标输出：u / mark / sub / sup
+        out = self._clean("<p><u>下划线</u><mark>高亮</mark>H<sub>2</sub>O<sup>2</sup></p>")
+        for frag in ("<u>", "</u>", "<mark>", "<sub>", "<sup>"):
+            self.assertIn(frag, out)
+
+    def test_style_keeps_alongside_class(self):
+        out = self._clean('<span class="marker" style="color: #0a0">x</span>')
+        self.assertIn("class=", out)
+        self.assertIn("color: #0a0", out)
+
+    # ---- 高亮（mark 背景色；2026-09-26 起）----
+    def test_mark_keeps_background_color(self):
+        # 编辑器高亮（multicolor）输出 <mark style="background-color: …; color: inherit">
+        out = self._clean('<mark style="background-color: #fff3a3; color: inherit">高亮</mark>')
+        self.assertIn("background-color: #fff3a3", out)
+        self.assertIn("<mark", out)
+        self.assertNotIn("inherit", out)  # color: inherit 值不在白名单 → 剥除
+
+    def test_mark_strips_url_and_empty_style(self):
+        out = self._clean('<mark style="background-color: url(https://evil.example/x)">x</mark>')
+        self.assertNotIn("url", out)
+        self.assertNotIn("style", out)  # 值被剥 → 空 style 一并清掉
+
+    def test_mark_style_keeps_safe_strips_position(self):
+        out = self._clean('<mark style="position: fixed; background-color: rgb(255, 243, 163)">x</mark>')
+        self.assertNotIn("position", out)
+        self.assertIn("background-color: rgb(255, 243, 163)", out)
+
     # ---- 边界 ----
     def test_empty_passthrough(self):
         self.assertEqual(sanitize_html(""), "")

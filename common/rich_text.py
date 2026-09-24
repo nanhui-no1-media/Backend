@@ -2,7 +2,13 @@
 
 服务端清洗可挡住成员绕过编辑器、直接经 API 注入的 <script> / 事件处理器 / javascript: 等。
 被 news（新闻正文）与 about（关于页正文）共用——白名单与前端 RichTextEditor
-（TipTap：StarterKit + TaskList + Table + Image + Video + Iframe）输出对齐。
+（TipTap：StarterKit + TaskList + Table + Image + Video + Iframe + Underline /
+Highlight / TextAlign / Color 等）输出对齐。
+
+行内样式闸门（2026-09-26 起）：编辑器「对齐 / 文字颜色 / 高亮」会输出 style 属性。
+仅对 p / h1-h6 / span / mark 放行 style（mark 即高亮，只需背景色），且经 _StyleSanitizer
+（bleach css_sanitizer 接口）只保留 text-align / color / background-color 三种属性 +
+受限值格式（hex / rgb(a)）；url()、expression、定位类属性等一律剥除。
 """
 import bleach
 import re
@@ -75,6 +81,16 @@ def _stamp_iframe_attrs(html: str) -> str:
 
 _ALLOWED_ATTRS = {
     "*": ["class"],
+    # 行内样式：仅编辑器「对齐 / 文字颜色 / 高亮」输出所需标签（值经 _StyleSanitizer 过滤）
+    "p": ["style"],
+    "h1": ["style"],
+    "h2": ["style"],
+    "h3": ["style"],
+    "h4": ["style"],
+    "h5": ["style"],
+    "h6": ["style"],
+    "span": ["class", "style"],
+    "mark": ["style"],
     "a": ["href", "title", "target", "rel"],
     "img": ["src", "alt", "title", "width", "height"],
     "iframe": _iframe_attr_filter,
@@ -87,10 +103,45 @@ _ALLOWED_ATTRS = {
 }
 _ALLOWED_PROTOCOLS = ["http", "https", "mailto", "tel"]
 
+# ---- 行内样式白名单（见模块 docstring）----
+# 值格式：hex 色 / rgb(a)（字符集受限，杜绝 url()、表达式、注入）；text-align 仅四方位。
+_COLOR_VALUE_RE = re.compile(
+    r"\A(?:#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})"
+    r"|rgba?\([\d\s.,%]{1,64}\))\Z"
+)
+_STYLE_PROPS = {
+    "text-align": re.compile(r"\A(?:left|right|center|justify)\Z"),
+    "color": _COLOR_VALUE_RE,
+    "background-color": _COLOR_VALUE_RE,
+}
+
+
+class _StyleSanitizer:
+    """bleach css_sanitizer 接口：清洗 style 属性值——仅白名单属性 + 受限值格式。"""
+
+    def sanitize_css(self, css: str) -> str:
+        kept = []
+        for decl in (css or "").split(";"):
+            prop, sep, val = decl.partition(":")
+            if not sep:
+                continue
+            prop = prop.strip().lower()
+            val = val.strip()
+            pattern = _STYLE_PROPS.get(prop)
+            if pattern and pattern.match(val):
+                kept.append(f"{prop}: {val}")
+        return "; ".join(kept)
+
+
+_STYLE_SANITIZER = _StyleSanitizer()
+# 清洗后残留的空 style（值被整体剥除）：连属性一起去掉，避免输出 style=""。
+_EMPTY_STYLE_RE = re.compile(r"\sstyle=(?:\"\"|'')")
+
 
 def sanitize_html(html: str) -> str:
     """清洗正文 HTML：仅保留白名单标签/属性/协议，其余剥离（strip=True，内容保留）；
-    iframe 仅放行 https src、剥 srcdoc/用户 sandbox/用户 allow，存活者统一盖 sandbox+allow 戳。"""
+    iframe 仅放行 https src、剥 srcdoc/用户 sandbox/用户 allow，存活者统一盖 sandbox+allow 戳；
+    style 仅 p / h1-h6 / span / mark 上放行，值经 _StyleSanitizer 只留 text-align / color / background-color。"""
     if not html:
         return html
     cleaned = bleach.clean(
@@ -99,6 +150,8 @@ def sanitize_html(html: str) -> str:
         attributes=_ALLOWED_ATTRS,
         protocols=_ALLOWED_PROTOCOLS,
         strip=True,
+        css_sanitizer=_STYLE_SANITIZER,  # pyright: ignore[reportArgumentType] —— 鸭子类型：只需 sanitize_css 方法（免 tinycss2 依赖）
     )
     cleaned = _IFRAME_WITHOUT_SRC_RE.sub("", cleaned)  # 清 http / 无 src 的空壳 iframe
+    cleaned = _EMPTY_STYLE_RE.sub("", cleaned)  # 清值被剥除后残留的空 style
     return _stamp_iframe_attrs(cleaned)
