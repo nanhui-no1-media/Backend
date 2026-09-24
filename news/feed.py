@@ -31,6 +31,7 @@ def _news_dict(news, request):
         "timestamp": (news.published_at or news.created_at).isoformat(),
         "summary": news.summary,
         "cover_image_url": _abs_url(request, news.cover_image),
+        "cover_thumbnail_url": _abs_url(request, news.cover_thumbnail) or _abs_url(request, news.cover_image),
         "views": news.views,
     }
 

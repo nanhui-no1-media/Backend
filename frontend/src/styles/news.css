@@ -69,8 +69,14 @@ a.news-item:hover h3 { color: var(--brand-700); }
 .article-meta .sep { opacity: .5; }
 .article-meta .date { font-family: var(--font-mono); }
 
-.article-hero { margin: var(--s-6) 0 var(--s-8); border-radius: var(--r-lg); overflow: hidden; aspect-ratio: 21 / 9; }
-.article-hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 头图：按原图比例完整展示（不裁剪）；超高 / 小图居中留边 */
+.article-hero {
+  margin: var(--s-6) 0 var(--s-8); border-radius: var(--r-lg); overflow: hidden;
+  background: var(--bg-soft);
+  display: flex; align-items: center; justify-content: center;
+}
+.article-hero img { max-width: 100%; max-height: 720px; width: auto; height: auto; display: block; cursor: zoom-in; }
+.article-hero.ph-img { min-height: 320px; flex-direction: column; gap: var(--s-2); }
 
 /* 正文（TipTap 风格富文本） */
 .prose { font-size: 17px; line-height: 1.85; color: var(--ink-900); }
@@ -91,6 +97,7 @@ a.news-item:hover h3 { color: var(--brand-700); }
 .prose figure { margin: var(--s-7) 0; }
 .prose figure .ph-img { border-radius: var(--r-md); aspect-ratio: 16/9; }
 .prose figcaption { margin-top: var(--s-2); font-size: 13px; color: var(--faint); text-align: center; }
+.prose img { max-width: 100%; height: auto; border-radius: var(--r-md); cursor: zoom-in; }
 .prose a { color: var(--brand-600); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--brand-200); }
 
 .article-tags { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-8); padding-top: var(--s-5); border-top: 1px solid var(--line); }
@@ -135,6 +142,7 @@ a.news-item:hover h3 { color: var(--brand-700); }
   .detail-layout { grid-template-columns: 1fr; }
   .detail-side { position: static; }
   .related-grid { grid-template-columns: repeat(2, 1fr); }
+  .article-hero img { max-height: 60vh; }
 }
 @media (max-width: 640px) {
   .prose { font-size: 16px; }
@@ -230,3 +238,13 @@ a.news-item:hover h3 { color: var(--brand-700); }
   width: 100%;
   aspect-ratio: 16 / 9;
 }
+
+/* 图片大图查看（头图 / 正文图点击触发；点击空白或 Esc 关闭） */
+.image-lightbox {
+  position: fixed; inset: 0; z-index: 210;
+  background: oklch(0.27 0.03 255 / .82);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: var(--s-4) var(--s-4) calc(var(--s-4) + env(safe-area-inset-bottom)); cursor: zoom-out;
+}
+.image-lightbox img { max-width: 96vw; max-height: 88vh; object-fit: contain; border-radius: var(--r-sm); cursor: default; }
+.image-lightbox-hint { margin-top: var(--s-3); font-size: 13px; color: oklch(1 0 0 / .75); }

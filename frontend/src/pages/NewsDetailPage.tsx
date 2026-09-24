@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import Avatar from "../components/Avatar";
 import ArticleToc, { htmlWithHeadingIds } from "../components/ArticleToc";
+import ImageLightbox from "../components/ImageLightbox";
 import PageChrome from "../components/PageChrome";
 import { newsApi } from "../api/news";
 import { type NewsDetail } from "../types/news";
@@ -27,6 +28,8 @@ export default function NewsDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState("");
+  const proseRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -36,6 +39,22 @@ export default function NewsDetailPage() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // 正文图片点击 → 大图查看（事件委托：正文 HTML 不能直接挂 React onClick）
+  useEffect(() => {
+    const el = proseRef.current;
+    if (!el) return;
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.tagName === "IMG") {
+        e.preventDefault();
+        const img = t as HTMLImageElement;
+        if (img.src) setLightboxUrl(img.src);
+      }
+    };
+    el.addEventListener("click", onClick);
+    return () => el.removeEventListener("click", onClick);
+  }, [news]);
 
   const copyLink = async () => {
     try { await navigator.clipboard.writeText(window.location.href); } catch { /* ignore */ }
@@ -89,7 +108,8 @@ export default function NewsDetailPage() {
 
             <div className={"article-hero" + (news.cover_image_url ? "" : " ph-img")}>
               {news.cover_image_url ? (
-                <img src={news.cover_image_url} alt={news.title} />
+                <img src={news.cover_image_url} alt={news.title}
+                     onClick={() => setLightboxUrl(news.cover_image_url || "")} />
               ) : (
                 <>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z" /><circle cx="12" cy="13" r="3.2" /></svg>
@@ -99,7 +119,7 @@ export default function NewsDetailPage() {
             </div>
 
             {news.content ? (
-              <div className="prose" dangerouslySetInnerHTML={{ __html: prepared.html }} />
+              <div className="prose" ref={proseRef} dangerouslySetInnerHTML={{ __html: prepared.html }} />
             ) : (
               <div className="prose"><p className="lead">（暂无正文）</p></div>
             )}
@@ -156,6 +176,10 @@ export default function NewsDetailPage() {
 
         <CommentSection host={{ news: news.id }} />
 
+        {lightboxUrl && (
+          <ImageLightbox url={lightboxUrl} alt={news.title} onClose={() => setLightboxUrl("")} />
+        )}
+
         {!embed && related.length > 0 && (
           <section style={{ paddingBottom: "var(--s-16)" }}>
             <div className="section-head">
@@ -170,7 +194,7 @@ export default function NewsDetailPage() {
                    onClick={(e) => { e.preventDefault(); navigate(`/news/${r.id}`); }}>
                   <div className={"card-media" + (r.cover_image_url ? "" : " ph-img")}>
                     {r.cover_image_url ? (
-                      <img src={r.cover_image_url} alt={r.title} />
+                      <img src={r.cover_thumbnail_url || r.cover_image_url} alt={r.title} />
                     ) : (
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8" /><path d="M4 12h16" /></svg>
                     )}

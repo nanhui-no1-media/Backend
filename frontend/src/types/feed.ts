@@ -23,6 +23,7 @@ export interface NewsFeedItem extends FeedItemBase {
   type: "news";
   summary: string;
   cover_image_url: string | null;
+  cover_thumbnail_url: string | null;
   views: number;
 }
 
