@@ -104,8 +104,14 @@ function BallotDetails({ a }: { a: ActivityDetail }) {
       <ul style={{ marginTop: 8 }}>
         {a.ballots.map((b) => (
           <li key={b.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0" }}>
-            <Avatar user={b.voter} />
-            <span>{b.voter.nickname || b.voter.username}</span>
+            {b.voter ? (
+              <>
+                <Avatar user={b.voter} />
+                <span>{b.voter.nickname || b.voter.username}</span>
+              </>
+            ) : (
+              <span className="muted">游客</span>
+            )}
             <span className="muted">投：{b.option_ids.map((oid) => options.find((o) => o.id === oid)?.text).filter(Boolean).join("、")}</span>
           </li>
         ))}

@@ -155,7 +155,7 @@ export default function ActivityDetailShell({
               <span className="act-medal-ico">{ACTIVITY_TYPE_META[a.type].emoji}</span>
               {ACTIVITY_TYPE_META[a.type].label}
             </span>
-            {isSurvey && (
+            {(isSurvey || a.audience === "public") && (
               <span className={"badge " + (a.audience === "public" ? "badge-brand" : "badge-neutral")}>
                 {AUDIENCE_LABELS[a.audience]}
               </span>

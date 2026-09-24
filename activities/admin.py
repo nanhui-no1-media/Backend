@@ -148,9 +148,9 @@ class VoteOptionAdmin(admin.ModelAdmin):
 
 @admin.register(Ballot)
 class BallotAdmin(admin.ModelAdmin):
-    list_display = ["activity", "voter", "created_at"]
+    list_display = ["activity", "voter", "voter_ip", "device_id", "created_at"]
     list_filter = ["activity__type"]
-    search_fields = ["activity__title", "voter__username"]
+    search_fields = ["activity__title", "voter__username", "device_id"]
     autocomplete_fields = ["activity", "voter"]
 
 

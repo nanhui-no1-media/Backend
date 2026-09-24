@@ -2,7 +2,7 @@
 
 视图 ``vote`` 动作是 HTTP 适配器；本模块是领域接缝。
 """
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from .lifecycle import CLOSED, OPEN, SCHEDULED, can_vote
@@ -44,10 +44,12 @@ def ballots_visible_to(activity, user):
 
 
 def maybe_close_deliberation_on_full_vote(activity):
-    """全员投完即提前结算：众议 open 状态下，若已投票数 ≥ 已验证成员数，翻 closed。
+    """全员投完即提前结算：众议 open 状态下，若已验证成员已投数 ≥ 已验证成员数，翻 closed。
 
     分母 = 已验证成员数（``accounts.verified_member_count``）。
-    在 ``cast_ballot`` 里调用（只有投票会改变票数）。逐行条件更新保证并发安全。
+    分子只数**已验证成员**的票——公开受众下游客票与未验证用户票不参与提前结算
+    （否则会虚增票数提前关闭）。在 ``cast_ballot`` 里调用（只有投票会改变票数）。
+    逐行条件更新保证并发安全。
     """
     if activity.type != "deliberation" or activity.status != OPEN:
         return False
@@ -56,8 +58,10 @@ def maybe_close_deliberation_on_full_vote(activity):
     total = verified_member_count()
     if total <= 0:
         return False
-    # 绕开预取缓存：用 Ballot 模型直接计票。
-    if Ballot.objects.filter(activity_id=activity.pk).count() >= total:
+    # 绕开预取缓存：用 Ballot 模型直接计票（仅已验证成员的票，按人去重）。
+    if Ballot.objects.filter(
+        activity_id=activity.pk, voter__verifications__status="approved",
+    ).values("voter_id").distinct().count() >= total:
         changed = Activity.objects.filter(
             pk=activity.pk, status=OPEN,
         ).update(status=CLOSED, updated_at=timezone.now())
@@ -65,19 +69,31 @@ def maybe_close_deliberation_on_full_vote(activity):
     return False
 
 
-def cast_ballot(*, activity, user, option_ids, ip_address=None):
-    """投一张选票。失败抛 ``BallotError``。成功后众议可能提前结算。"""
+def cast_ballot(*, activity, user, option_ids, ip_address=None, device_id=""):
+    """投一张选票。失败抛 ``BallotError``。成功后众议可能提前结算。
+
+    判重：登录用户按 ``voter`` 一人一张；公开受众的游客按设备标识（``device_id``）
+    一设备一张。游客票另记 IP 与设备标识（审计），登录票不记（身份即凭据）。
+    """
     if not can_vote(activity, user):
         if activity.type not in ("deliberation", "exhibition"):
             raise BallotError("仅众议/展示可以投票")
         if activity.type == "exhibition" and not activity.voting_enabled:
             raise BallotError("该展示未启用投票")
-        if user and getattr(user, 'is_authenticated', False):
-            if Ballot.objects.filter(activity=activity, voter=user).exists():
-               raise BallotError("你已经投过票了，不能修改")
+        if activity.status != OPEN:
+            raise BallotError("投票已结束")
+        raise BallotError("仅成员可投票，请先登录")
+    is_member = bool(user and getattr(user, "is_authenticated", False))
+    if is_member:
+        if Ballot.objects.filter(activity=activity, voter=user).exists():
+            raise BallotError("你已经投过票了，不能修改")
     else:
-        if ip_address and Ballot.objects.filter(activity=activity, voter__isnull=True, voter_ip=ip_address).exists():
-            raise BallotError("该IP已投过票，不能重复投票")
+        if not device_id:
+            raise BallotError("缺少设备标识")
+        if Ballot.objects.filter(
+            activity=activity, voter__isnull=True, device_id=device_id,
+        ).exists():
+            raise BallotError("该设备已投过票，不能重复投票")
 
     if not isinstance(option_ids, list) or len(option_ids) < 1:
         raise BallotError("请至少选择一个选项")
@@ -94,11 +110,17 @@ def cast_ballot(*, activity, user, option_ids, ip_address=None):
         raise BallotError("存在不属于本活动的选项")
 
     with transaction.atomic():
-        ballot = Ballot.objects.create(
-        activity=activity, 
-        voter=user,
-        voter_ip=ip_address
-    )
+        try:
+            ballot = Ballot.objects.create(
+                activity=activity, voter=user,
+                voter_ip=ip_address if not is_member else None,
+                device_id="" if is_member else device_id,
+            )
+        except IntegrityError:
+            # 并发窗口兜底（DB 唯一约束）：同一用户 / 同一设备的双请求同时过判重。
+            raise BallotError(
+                "你已经投过票了，不能修改" if is_member else "该设备已投过票，不能重复投票"
+            ) from None
         BallotSelection.objects.bulk_create(
             [BallotSelection(ballot=ballot, option_id=oid) for oid in ids]
         )
