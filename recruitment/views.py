@@ -25,14 +25,23 @@ class IsAboutEditor(BasePermission):
         return bool(user and user.is_authenticated and user.has_perm("about.manage_aboutpage"))
 
 
-def _already_responded(questionnaire, request):
+# 加入（自我介绍）问卷：同一人（登录按 user / 游客按设备）最多提交次数。
+JOIN_MAX_SUBMISSIONS = 5
+
+
+def _join_response_count(questionnaire, request):
+    """当前请求者（登录按 user / 游客按 device）在加入问卷上的已提交次数。"""
     user = request.user if request.user.is_authenticated else None
     if user is not None:
-        return questionnaire.responses.filter(user=user).exists()
+        return questionnaire.responses.filter(user=user).count()
     device_id = device_id_from_request(request)
     if not device_id:
-        return False
-    return questionnaire.responses.filter(user__isnull=True, device_id=device_id).exists()
+        return 0
+    return questionnaire.responses.filter(user__isnull=True, device_id=device_id).count()
+
+
+def _already_responded(questionnaire, request):
+    return _join_response_count(questionnaire, request) > 0
 
 
 class RecruitmentLandingView(APIView):
@@ -43,10 +52,13 @@ class RecruitmentLandingView(APIView):
     def get(self, request):
         notice = RecruitmentNotice.objects.get_solo()
         questionnaire = Questionnaire.get_join()
+        count = _join_response_count(questionnaire, request)
         return Response({
             "notice": RecruitmentNoticeSerializer(notice).data,
             "schema": questionnaire.schema,
-            "already_responded": _already_responded(questionnaire, request),
+            "already_responded": count > 0,
+            "responded_count": count,
+            "max_submissions": JOIN_MAX_SUBMISSIONS,
         })
 
 
@@ -88,10 +100,16 @@ class JoinResponseView(ListCreateAPIView):
         if user is None:
             if not device_id:
                 return Response({"detail": "缺少设备标识"}, status=status.HTTP_400_BAD_REQUEST)
-            if questionnaire.responses.filter(user__isnull=True, device_id=device_id).exists():
-                return Response({"detail": "你已经提交过了"}, status=status.HTTP_400_BAD_REQUEST)
-        elif questionnaire.responses.filter(user=user).exists():
-            return Response({"detail": "你已经提交过了"}, status=status.HTTP_400_BAD_REQUEST)
+            count = questionnaire.responses.filter(
+                user__isnull=True, device_id=device_id,
+            ).count()
+        else:
+            count = questionnaire.responses.filter(user=user).count()
+        if count >= JOIN_MAX_SUBMISSIONS:
+            return Response(
+                {"detail": f"最多可提交 {JOIN_MAX_SUBMISSIONS} 次，你已达到上限。"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
             with transaction.atomic():
                 instance = serializer.save(
@@ -100,7 +118,7 @@ class JoinResponseView(ListCreateAPIView):
                     device_id=device_id if user is None else "",
                 )
         except IntegrityError:
-            return Response({"detail": "你已经提交过了"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "提交失败，请稍后重试。"}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {"ok": True, "id": instance.pk, "message": "报名已提交，我们会尽快与你联系。"},
             status=status.HTTP_201_CREATED,

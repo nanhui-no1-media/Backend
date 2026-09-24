@@ -120,4 +120,11 @@ export const activityApi = {
     fd.append("image", file);
     return request("/activities/upload_image/", { method: "POST", body: fd });
   },
+
+  // 问卷文件题上传（填答者，含游客）：返回 {url}
+  surveyUpload: (file: File): Promise<{ url: string }> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request("/activities/survey_upload/", { method: "POST", body: fd });
+  },
 };

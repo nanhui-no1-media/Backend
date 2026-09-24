@@ -180,6 +180,36 @@ class ActivityUploadImageTest(TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
+class SurveyUploadTest(TestCase):
+    """问卷文件题上传端点：填答者（含游客）可传；类型限制。"""
+
+    def _file(self, name="a.png", content_type="image/png", data=b"\x89PNG\r\n"):
+        return SimpleUploadedFile(name, data, content_type=content_type)
+
+    def test_guest_can_upload_image(self):
+        resp = APIClient().post("/activities/activities/survey_upload/", {"file": self._file()})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("url", resp.data)
+
+    def test_guest_can_upload_pdf(self):
+        resp = APIClient().post(
+            "/activities/activities/survey_upload/",
+            {"file": self._file("a.pdf", "application/pdf", b"%PDF-1.4")},
+        )
+        self.assertEqual(resp.status_code, 200)
+
+    def test_rejects_non_image_pdf(self):
+        resp = APIClient().post(
+            "/activities/activities/survey_upload/",
+            {"file": self._file("a.txt", "text/plain", b"hi")},
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_rejects_missing_file(self):
+        resp = APIClient().post("/activities/activities/survey_upload/", {})
+        self.assertEqual(resp.status_code, 400)
+
+
 class DeliberationVotingTest(TestCase):
     """T2：众议投票（自定义选项、K 选、不可改、惰性结算、公开计票）。"""
 
