@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { useSitePolicy } from "../../api/sitePolicy";
+import { IDENTITY_OPTIONS } from "../../types/profile";
 import "../../styles/profile.css";
 
 // 前后端契约（#36）：通道集 + 通道对象键集，与后端 /auth/verification/ 对齐
@@ -127,14 +128,6 @@ function EmailCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: 
     </CardShell>
   );
 }
-
-const IDENTITY_OPTIONS: { value: string; label: string }[] = [
-  { value: "student", label: "在校生" },
-  { value: "external", label: "外校生" },
-  { value: "graduate", label: "毕业生" },
-  { value: "parent", label: "家长" },
-  { value: "teacher", label: "教师" },
-];
 
 function ManualCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: () => void; closed: boolean }) {
   const [realName, setRealName] = useState("");

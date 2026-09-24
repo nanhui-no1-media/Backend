@@ -415,12 +415,12 @@ def password_reset_confirm_view(request):
 
 @require_POST
 def register_view(request):
-    """注册（ADR-0006）：建登录身份（用户名 + 密码 + Turnstile），邮箱可选。
+    """注册（ADR-0006，2026-09 修订）：建登录身份（用户名 + 密码 + Turnstile）+ 真实姓名 / 身份（必填）。
 
-    注册↔验证分离：不再强制邮箱 / 身份证明 / real_name / identity。新号无 Verification 行 ⇒
-    未验证（访客）。若提供邮箱：建 email 通道 pending（identifier=待验地址）并发验证信，
+    注册↔验证分离：邮箱 / 身份证明仍挪在验证面板；但 real_name / identity 为注册必填，
+    写入 Profile（identity 须合法枚举）。新号无 Verification 行 ⇒ 未验证（访客）。
+    若提供邮箱：建 email 通道 pending（identifier=待验地址）并发验证信，
     ``User.email`` 保持空（待验邮箱不住 User.email）——验证通过才晋升（见 verify_email_view）。
-    real_name / identity 是可选资料（identity 若填须为合法枚举）。
     """
     if not get_policy().registration_enabled:
         return JsonResponse(
@@ -453,8 +453,12 @@ def register_view(request):
         except ValidationError as e:
             errors.extend(e.messages)
 
-    # 身份是可选资料；填了须是合法枚举。
-    if identity and identity not in IDENTITY_CHOICE_KEYS:
+    # 真实姓名 / 身份：注册页必填（identity 须合法枚举）。
+    if not real_name:
+        errors.append("真实姓名不能为空")
+    if not identity:
+        errors.append("请选择身份")
+    elif identity not in IDENTITY_CHOICE_KEYS:
         errors.append("请选择有效身份")
 
     # 邮箱可选；填了须格式合法 + 唯一（User.email 或他人 pending identifier 均判重）。

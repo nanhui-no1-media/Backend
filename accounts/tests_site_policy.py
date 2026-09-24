@@ -116,6 +116,8 @@ class VerificationClosedTest(_PolicyTestCase):
             "username": "newbie",
             "password": "StrongPass123!",
             "password2": "StrongPass123!",
+            "real_name": "张三",
+            "identity": "student",
             "email": "newbie@example.com",
             "turnstile_token": "dummy",
         })
