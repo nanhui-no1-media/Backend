@@ -48,22 +48,25 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function firstOf<T extends { id: number }>(
   fetchPage: (page: number) => Promise<{ results: T[]; next: string | null }>,
   excludeId?: number,
+  skip?: Set<number>,
 ): Promise<T | null> {
   let page = 1;
   for (;;) {
     const data = await fetchPage(page);
-    const hit = (data.results || []).find((row) => row.id !== excludeId);
+    const hit = (data.results || []).find(
+      (row) => row.id !== excludeId && !(skip && skip.has(row.id)),
+    );
     if (hit) return hit;
     if (!data.next) return null;
     page += 1;
   }
 }
 
-async function firstIdentity(status: IdentityReviewStatus, excludeId?: number) {
-  return firstOf((page) => identityReviewsApi.list({ status, page: String(page) }), excludeId);
+async function firstIdentity(status: IdentityReviewStatus, excludeId?: number, skip?: Set<number>) {
+  return firstOf((page) => identityReviewsApi.list({ status, page: String(page) }), excludeId, skip);
 }
 
-async function firstContent(type: ReviewTargetType, status: ReviewStatus | "", excludeId?: number) {
+async function firstContent(type: ReviewTargetType, status: ReviewStatus | "", excludeId?: number, skip?: Set<number>) {
   return firstOf(async (page) => {
     const params: Record<string, string> = { ordering: "created_at", page: String(page) };
     if (status) params.status = status;
@@ -72,28 +75,30 @@ async function firstContent(type: ReviewTargetType, status: ReviewStatus | "", e
       results: (data.results || []).filter((row) => row.target_type === type),
       next: data.next,
     };
-  }, excludeId);
+  }, excludeId, skip);
 }
 
-async function firstFeedback(status: FeedbackStatus | "", excludeId?: number) {
+async function firstFeedback(status: FeedbackStatus | "", excludeId?: number, skip?: Set<number>) {
   return firstOf((page) => {
     const params: Record<string, string> = { ordering: "created_at", page: String(page) };
     if (status) params.status = status;
     return feedbackApi.list(params);
-  }, excludeId);
+  }, excludeId, skip);
 }
 
-async function firstReport(status: ReportStatus | "", excludeId?: number) {
+async function firstReport(status: ReportStatus | "", excludeId?: number, skip?: Set<number>) {
   return firstOf((page) => {
     const params: Record<string, string> = { ordering: "created_at", page: String(page) };
     if (status) params.status = status;
     return reportsApi.list(params);
-  }, excludeId);
+  }, excludeId, skip);
 }
 
 export default function ReviewQueuePage() {
   const navigate = useNavigate();
   const gen = useRef(0);
+  // 本轮已浏览/已处理的条目（「下一条」与处理动作后前进都跳过它们），切桌/切状态时重置
+  const visitedRef = useRef<Set<number>>(new Set());
 
   const [canContent, setCanContent] = useState(false);
   const [canIdentity, setCanIdentity] = useState(false);
@@ -132,48 +137,54 @@ export default function ReviewQueuePage() {
     rStatus: ReportStatus | "",
     excludeId?: number,
     token?: number,
-  ) => {
+  ): Promise<"ok" | "empty" | "error"> => {
     setLoading(true);
     setError("");
     setLightboxUrl("");
+    const skip = visitedRef.current;
     try {
       if (nextKind === "identity") {
-        const item = await firstIdentity(idStatus, excludeId);
-        if (token != null && token !== gen.current) return;
+        const item = await firstIdentity(idStatus, excludeId, skip);
+        if (token != null && token !== gen.current) return "ok";
         setIdentityItem(item);
         setContentRow(null);
         setFeedbackItem(null);
         setReportItem(null);
+        return item ? "ok" : "empty";
       } else if (nextKind === "feedback") {
-        const row = await firstFeedback(fStatus, excludeId);
+        const row = await firstFeedback(fStatus, excludeId, skip);
         const detail = row ? await feedbackApi.get(row.id) : null;
-        if (token != null && token !== gen.current) return;
+        if (token != null && token !== gen.current) return "ok";
         setIdentityItem(null);
         setContentRow(null);
         setFeedbackItem(detail);
         setReportItem(null);
+        return row ? "ok" : "empty";
       } else if (nextKind === "reports") {
-        const row = await firstReport(rStatus, excludeId);
-        if (token != null && token !== gen.current) return;
+        const row = await firstReport(rStatus, excludeId, skip);
+        if (token != null && token !== gen.current) return "ok";
         setIdentityItem(null);
         setContentRow(null);
         setFeedbackItem(null);
         setReportItem(row);
+        return row ? "ok" : "empty";
       } else {
-        const row = await firstContent(nextKind, cStatus, excludeId);
-        if (token != null && token !== gen.current) return;
+        const row = await firstContent(nextKind, cStatus, excludeId, skip);
+        if (token != null && token !== gen.current) return "ok";
         setIdentityItem(null);
         setContentRow(row);
         setFeedbackItem(null);
         setReportItem(null);
+        return row ? "ok" : "empty";
       }
     } catch (e: any) {
-      if (token != null && token !== gen.current) return;
+      if (token != null && token !== gen.current) return "ok";
       setError(e.message || "加载失败");
       setIdentityItem(null);
       setContentRow(null);
       setFeedbackItem(null);
       setReportItem(null);
+      return "error";
     } finally {
       if (token == null || token === gen.current) setLoading(false);
     }
@@ -228,6 +239,7 @@ export default function ReviewQueuePage() {
   useEffect(() => {
     if (booting || !kind) return;
     const token = ++gen.current;
+    visitedRef.current = new Set();  // 切桌 / 切状态：新一轮浏览从头开始
     setFlash("");
     loadPane(kind, identityStatus, contentStatus, feedbackStatus, reportStatus, undefined, token);
   }, [booting, kind, identityStatus, contentStatus, feedbackStatus, reportStatus, loadPane]);
@@ -255,11 +267,36 @@ export default function ReviewQueuePage() {
 
   const afterAction = async (excludeId: number, notice: string) => {
     setFlash(notice);
+    visitedRef.current.add(excludeId);  // 已处理的条目不再重复出现
     const token = ++gen.current;
     await sleep(ADVANCE_MS);
     if (token !== gen.current || !kind) return;
     setFlash("");
     await loadPane(kind, identityStatus, contentStatus, feedbackStatus, reportStatus, excludeId, token);
+  };
+
+  // 「下一条」：不处理当前条目，直接跳到队列中下一条未浏览的
+  const skipNext = async () => {
+    if (!kind) return;
+    const currentId = kind === "identity" ? identityItem?.id
+      : kind === "feedback" ? feedbackItem?.id
+      : kind === "reports" ? reportItem?.id
+      : contentRow?.id;
+    if (currentId == null) return;
+    // 本轮浏览完时恢复当前显示，避免误显示「本队列已空」
+    const prev = { identity: identityItem, content: contentRow, feedback: feedbackItem, report: reportItem };
+    visitedRef.current.add(currentId);
+    const token = ++gen.current;
+    setFlash("");
+    const result = await loadPane(kind, identityStatus, contentStatus, feedbackStatus, reportStatus, currentId, token);
+    if (token !== gen.current) return;
+    if (result === "empty") {
+      setIdentityItem(prev.identity);
+      setContentRow(prev.content);
+      setFeedbackItem(prev.feedback);
+      setReportItem(prev.report);
+      setFlash("已是最后一条");
+    }
   };
 
   const runIdentity = async (
@@ -479,6 +516,12 @@ export default function ReviewQueuePage() {
                               onClick={() => setLightboxUrl(p.url)}
                               aria-label="查看完整证明图">
                         <img src={p.url} alt="身份证明" />
+                        <span className="desk-proof-time">
+                          {new Date(p.uploaded_at).toLocaleString("zh-CN", {
+                            month: "2-digit", day: "2-digit",
+                            hour: "2-digit", minute: "2-digit",
+                          })} 上传
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -498,6 +541,9 @@ export default function ReviewQueuePage() {
                               )}>驳回</button>
                     </>
                   )}
+                  <button className="btn btn-ghost" disabled={busy || loading} onClick={skipNext}>
+                    下一条
+                  </button>
                   <button className="btn btn-danger" disabled={busy}
                           onClick={() => runIdentity(
                             () => identityReviewsApi.disable(identityItem.id),
@@ -549,6 +595,11 @@ export default function ReviewQueuePage() {
                 {feedbackItem.status === "closed" && feedbackItem.close_note && (
                   <p className="empty-text">了结说明：{feedbackItem.close_note}</p>
                 )}
+                <div className="desk-actions">
+                  <button className="btn btn-ghost" disabled={busy || loading} onClick={skipNext}>
+                    下一条
+                  </button>
+                </div>
               </div>
             ) : kind === "reports" && reportItem ? (
               <div className="desk-pane">
@@ -611,6 +662,11 @@ export default function ReviewQueuePage() {
                 {reportItem.status !== "open" && reportItem.resolution_comment && (
                   <p className="empty-text">处理说明：{reportItem.resolution_comment}</p>
                 )}
+                <div className="desk-actions">
+                  <button className="btn btn-ghost" disabled={busy || loading} onClick={skipNext}>
+                    下一条
+                  </button>
+                </div>
               </div>
             ) : contentRow ? (
               <ReviewPreview
@@ -621,6 +677,7 @@ export default function ReviewQueuePage() {
                   setContentRow(updated);
                   await afterAction(updated.id, notice);
                 }}
+                onSkip={skipNext}
               />
             ) : null}
           </>

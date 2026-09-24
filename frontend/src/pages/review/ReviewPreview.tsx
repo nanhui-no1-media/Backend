@@ -209,10 +209,12 @@ export default function ReviewPreview({
   review,
   flash,
   onModerated,
+  onSkip,
 }: {
   review: ReviewItem;
   flash?: string;
   onModerated: (updated: ReviewItem, notice: string) => void | Promise<void>;
+  onSkip?: () => void;
 }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
@@ -313,6 +315,11 @@ export default function ReviewPreview({
               onClick={() => void run(() => reviewsApi.remove(review.id), "已下架")}
             >
               下架
+            </button>
+          )}
+          {onSkip && (
+            <button className="btn btn-ghost" disabled={busy} onClick={onSkip}>
+              下一条
             </button>
           )}
         </div>
