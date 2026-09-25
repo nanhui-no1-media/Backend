@@ -409,7 +409,7 @@ class BannerCurrentHttpTest(TestCase):
 
 
 class NotificationPreferencesApiTest(TestCase):
-    """订阅偏好 API：矩阵读取 / 更新 / 校验（站内基线不可关）。"""
+    """订阅偏好 API：矩阵读取 / 更新 / 校验（所有通道可开关）。"""
 
     URL = "/messaging/notification-preferences/"
 
@@ -429,7 +429,7 @@ class NotificationPreferencesApiTest(TestCase):
         channel_keys = {c["key"] for c in data["channels"]}
         self.assertEqual(channel_keys, {"site", "email", "webhook", "sms"})
         review = next(s for s in data["sources"] if s["key"] == "review")
-        self.assertTrue(review["channels"]["site"])  # 站内恒开
+        self.assertTrue(review["channels"]["site"])  # 站内默认开启（可关闭）
 
     def test_patch_enables_email_subscription(self):
         resp = self.client.patch(
@@ -454,14 +454,32 @@ class NotificationPreferencesApiTest(TestCase):
         )
         self.assertEqual(resp.status_code, 400)
 
-    def test_site_channel_is_not_closable(self):
+    def test_site_channel_can_be_disabled(self):
+        """用户有权拒绝接收：站内可与其它通道一样关闭，矩阵回读为关。"""
         resp = self.client.patch(
             self.URL,
             {"updates": [{"source": "review", "channel": "site", "enabled": False}]},
             format="json",
         )
         self.assertEqual(resp.status_code, 200)
-        self.assertFalse(
-            NotificationSubscription.objects.filter(user=self.user, channel_key="site").exists()
+        self.assertTrue(
+            NotificationSubscription.objects.filter(
+                user=self.user, source_key="review", channel_key="site", enabled=False,
+            ).exists()
         )
+        review = next(s for s in resp.json()["sources"] if s["key"] == "review")
+        self.assertFalse(review["channels"]["site"])
+
+    def test_site_channel_can_be_reenabled(self):
+        NotificationSubscription.objects.create(
+            user=self.user, source_key="review", channel_key="site", enabled=False,
+        )
+        resp = self.client.patch(
+            self.URL,
+            {"updates": [{"source": "review", "channel": "site", "enabled": True}]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        review = next(s for s in resp.json()["sources"] if s["key"] == "review")
+        self.assertTrue(review["channels"]["site"])
 

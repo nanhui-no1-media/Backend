@@ -6,7 +6,7 @@ from .registry import all_channels, all_sources
 
 
 def build_preferences(user) -> dict:
-    """构建订阅矩阵：源 × 通道（缺行回退源默认；站内恒为基线）。"""
+    """构建订阅矩阵：源 × 通道（缺行回退源默认；站内默认开启、可关闭）。"""
     rows = {
         (s.source_key, s.channel_key): s.enabled
         for s in NotificationSubscription.objects.filter(user=user)
@@ -30,7 +30,7 @@ def build_preferences(user) -> dict:
         matrix = {}
         for ch in all_channels():
             if ch.key == "site":
-                matrix[ch.key] = True  # 站内为基线（落库事实源），恒开
+                matrix[ch.key] = rows.get((src.key, ch.key), True)  # 站内默认开启，用户可关闭
                 continue
             matrix[ch.key] = rows.get((src.key, ch.key), ch.key in src.default_channels)
         sources.append({
@@ -63,8 +63,7 @@ def apply_updates(user, updates) -> None:
             raise PreferencesError(f"未知源：{source}")
         if channel not in valid_channels:
             raise PreferencesError(f"未知通道：{channel}")
-        if channel == "site":
-            continue  # 站内为基线，不可关闭
+        # 站内与其它通道一致：用户有权拒绝接收（关闭后该源整体静默，见 dispatch）
         NotificationSubscription.objects.update_or_create(
             user=user, source_key=source, channel_key=channel,
             defaults={"enabled": bool(item.get("enabled"))},

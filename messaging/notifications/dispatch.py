@@ -23,7 +23,8 @@ def dispatch(
 ) -> list:
     """统一分发入口。
 
-    - 站内：每条落库（Notification）并实时 push；
+    - 站内：每条落库（Notification）并实时 push；用户可在订阅中关闭某源的站内
+      （拒绝接收），关闭后该源对该用户整体静默（不落库、不推送、不外发）；
     - 外发：按用户订阅（惰性默认）为启用的通道创建 NotificationDelivery，
       并同步投递（失败留痕、不自动重试；在事务中调用时挂到提交后执行，
       避免「邮件已发、数据回滚」的幽灵通知）。
@@ -37,6 +38,8 @@ def dispatch(
 
     rows: list = []
     for user in recipients:
+        if not site_enabled(user, source_key):
+            continue  # 用户已拒绝接收该源的站内通知：整体静默
         row = Notification.objects.create(
             recipient=user,
             category=source_key,
@@ -49,6 +52,17 @@ def dispatch(
     return rows
 
 
+def site_enabled(user, source_key: str) -> bool:
+    """该源是否对该用户开启站内（默认开启；用户可关闭以拒绝接收）。"""
+    row = (
+        NotificationSubscription.objects
+        .filter(user=user, source_key=source_key, channel_key="site")
+        .values_list("enabled", flat=True)
+        .first()
+    )
+    return True if row is None else bool(row)
+
+
 def subscribed_channels(user, source_key: str) -> list:
     """用户在某源上启用的通道列表（缺行回退到源定义 default_channels）。"""
     source = get_source(source_key)
@@ -58,6 +72,8 @@ def subscribed_channels(user, source_key: str) -> list:
         .filter(user=user, source_key=source_key)
         .values_list("channel_key", "enabled")
     )
+    if not rows.get("site", True):
+        return []  # 站内被关闭 = 拒绝接收：该源整体静默（与 dispatch 一致）
     result = []
     for channel in all_channels():
         enabled = rows.get(channel.key, channel.key in defaults)
