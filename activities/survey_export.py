@@ -473,8 +473,8 @@ def _answer_of(q, v, story, styles):
 
 
 def _answer_block(label, submitted, questions, answers, story, styles):
-    """一份作答：信息条 + 逐题渲染。"""
-    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    """一份作答：信息条 + 逐题渲染（每题题干与答案保持同页）。"""
+    from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
 
     answers = answers or {}
     head = Table(
@@ -493,10 +493,10 @@ def _answer_block(label, submitted, questions, answers, story, styles):
     story.append(Spacer(1, 9))
 
     for q in questions:
-        story.append(Paragraph(_esc(q["title"]), styles["q"]))
-        story.append(Spacer(1, 3))
-        _answer_of(q, answers.get(q["name"]), story, styles)
-        story.append(Spacer(1, 10))
+        blk = [Paragraph(_esc(q["title"]), styles["q"]), Spacer(1, 3)]
+        _answer_of(q, answers.get(q["name"]), blk, styles)
+        blk.append(Spacer(1, 10))
+        story.append(KeepTogether(blk))
     story.append(Spacer(1, 6))
 
 
@@ -598,15 +598,15 @@ def _vbar_chart(items):
 
 
 def _stats_block(s, story, styles):
-    """单题统计渲染。"""
-    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    """单题统计渲染（题干与图表/列表保持同页）。"""
+    from reportlab.platypus import KeepTogether, Paragraph, Spacer
 
-    story.append(Paragraph(_esc(s["title"]), styles["q"]))
-    story.append(Paragraph(
+    blk = [Paragraph(_esc(s["title"]), styles["q"])]
+    blk.append(Paragraph(
         f'<font color="{C_FAINT}">{_esc(_type_label(s["type"]))} · 作答 {s["answered"]} 份</font>',
         styles["meta"],
     ))
-    story.append(Spacer(1, 4))
+    blk.append(Spacer(1, 4))
 
     if "counts" in s:
         counts = s["counts"]
@@ -616,35 +616,37 @@ def _stats_block(s, story, styles):
             avg = s["average"]
             n = max(0, min(mx, int(round(avg))))
             stars = "★" * n + "☆" * (mx - n)
-            story.append(Paragraph(
+            blk.append(Paragraph(
                 f'平均分：<font color="{C_BRAND}">{stars}</font>　{avg:g} / {mx}',
                 styles["ans"],
             ))
-            story.append(Spacer(1, 4))
+            blk.append(Spacer(1, 4))
         items = _sorted_counts(s)
         if not items:
-            story.append(Paragraph("（暂无作答）", styles["muted"]))
+            blk.append(Paragraph("（暂无作答）", styles["muted"]))
         elif s["type"] in SCORE_TYPES:
-            story.append(_vbar_chart(items))          # 评分分布：柱状图
+            blk.append(_vbar_chart(items))            # 评分分布：柱状图
         elif s["type"] in MULTI_CHOICE_TYPES:
             if len(items) <= PIE_MAX_SLICES:
-                story.append(_vbar_chart(items))      # 多选：柱状图
+                blk.append(_vbar_chart(items))        # 多选：柱状图
             else:
-                story.append(_counts_table(items, total, styles))
+                blk.append(_counts_table(items, total, styles))
         elif s["type"] in CHOICE_TYPES:
             if len(items) <= PIE_MAX_SLICES:
-                story.append(_pie_chart(items, total, styles))  # 单选：饼图
+                blk.append(_pie_chart(items, total, styles))  # 单选：饼图
             else:
-                story.append(_counts_table(items, total, styles))
+                blk.append(_counts_table(items, total, styles))
         else:
-            story.append(_counts_table(items, total, styles))
+            blk.append(_counts_table(items, total, styles))
     elif "files" in s:
         for f in s["files"]:
-            story.append(Paragraph(_esc(f), styles["ans"]))
+            blk.append(Paragraph(_esc(f), styles["ans"]))
     else:
         for i, a in enumerate(s.get("answers", []), 1):
-            story.append(Paragraph(f"{i}. {_esc(a)}", styles["ans"]))
-    story.append(Spacer(1, 14))
+            blk.append(Paragraph(f"{i}. {_esc(a)}", styles["ans"]))
+
+    blk.append(Spacer(1, 14))
+    story.append(KeepTogether(blk))
 
 
 def _responses_pdf(sections):
