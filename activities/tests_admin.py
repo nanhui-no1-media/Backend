@@ -5,7 +5,7 @@ from django.contrib import admin
 from django.contrib.auth.models import Permission, User
 from django.test import Client, RequestFactory, TestCase
 
-from .admin import ActivityAdmin
+from .admin import ActivityAdmin, QuestionnaireResponseAdmin
 from .lifecycle import ARCHIVED, COLLECTING, OPEN
 from .models import Activity, Questionnaire, QuestionnaireResponse
 
@@ -230,3 +230,67 @@ class ActivityAdminArchiveTest(TestCase):
         )
         self.collection.refresh_from_db()
         self.assertEqual(self.collection.status, COLLECTING)
+
+
+class QuestionnaireResponseAdminExportActionTest(TestCase):
+    """「问卷结果」列表页导出动作：勾选多条聚合为单个文件。"""
+
+    def setUp(self):
+        self.adm = User.objects.create_superuser("resp_adm", "r@e.com", "x")
+        self.q1 = Questionnaire.objects.create(kind=Questionnaire.KIND_SURVEY, schema={
+            "title": "问卷甲",
+            "pages": [{"name": "p1", "elements": [
+                {"type": "text", "name": "note", "title": "备注"},
+            ]}],
+        })
+        self.q2 = Questionnaire.objects.create(kind=Questionnaire.KIND_SURVEY, schema={
+            "title": "问卷乙",
+            "pages": [{"name": "p1", "elements": [
+                {"type": "radiogroup", "name": "grade", "title": "年级", "choices": ["高一", "高二"]},
+            ]}],
+        })
+        users = [User.objects.create_user(f"rsel{i}") for i in range(1, 4)]
+        self.r1 = QuestionnaireResponse.objects.create(
+            questionnaire=self.q1, user=users[0], answers={"note": "a1"},
+        )
+        self.r2 = QuestionnaireResponse.objects.create(
+            questionnaire=self.q1, user=users[1], answers={"note": "a2"},
+        )
+        self.r3 = QuestionnaireResponse.objects.create(
+            questionnaire=self.q2, user=users[2], answers={"grade": "高一"},
+        )
+        self.ma = QuestionnaireResponseAdmin(QuestionnaireResponse, admin.site)
+        self.factory = RequestFactory()
+
+    def _req(self):
+        req = self.factory.post("/admin/activities/questionnaireresponse/")
+        req.user = self.adm
+        return req
+
+    def test_actions_listed_on_changelist(self):
+        c = Client()
+        c.force_login(self.adm)
+        page = c.get("/admin/activities/questionnaireresponse/")
+        self.assertEqual(page.status_code, 200)
+        body = page.content.decode()
+        self.assertIn("导出为 CSV", body)
+        self.assertIn("导出为 PDF", body)
+
+    def test_export_selected_csv_aggregates_across_questionnaires(self):
+        qs = QuestionnaireResponse.objects.filter(pk__in=[self.r1.pk, self.r3.pk])
+        resp = self.ma.export_selected_csv(self._req(), qs)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("text/csv", resp["Content-Type"])
+        self.assertIn("attachment;", resp["Content-Disposition"])
+        body = resp.content.decode("utf-8-sig")
+        self.assertIn("问卷：问卷甲", body)
+        self.assertIn("问卷：问卷乙", body)
+        self.assertIn("rsel1", body)
+        self.assertIn("rsel3", body)
+        self.assertNotIn("rsel2", body)
+
+    def test_export_selected_pdf(self):
+        resp = self.ma.export_selected_pdf(self._req(), QuestionnaireResponse.objects.all())
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.content.startswith(b"%PDF"))
+        self.assertIn("attachment;", resp["Content-Disposition"])
