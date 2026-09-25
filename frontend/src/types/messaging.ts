@@ -141,3 +141,32 @@ export function notificationTitle(n: Notification): string {
     || NOTIFICATION_CATEGORY_LABELS[n.category]
     || "通知";
 }
+
+
+// ---- 订阅偏好（源 × 通道） ----
+export interface NotificationSourcePref {
+  key: string;
+  name: string;
+  description: string;
+  events: { key: string; name: string }[];
+  channels: Record<string, boolean>;
+}
+
+export interface NotificationChannelInfo {
+  key: string;
+  name: string;
+  description: string;
+  available: boolean;
+}
+
+export interface NotificationPreferences {
+  sources: NotificationSourcePref[];
+  channels: NotificationChannelInfo[];
+}
+
+export interface SubscriptionUpdate {
+  source: string;
+  channel: string;
+  enabled: boolean;
+}
+
