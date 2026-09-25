@@ -111,9 +111,10 @@ a.prop-card { color: inherit; }
   background: var(--bg); border-top: 1px solid var(--line); text-align: center;
 }
 .desk-actions {
-  display: flex; flex-wrap: wrap; gap: var(--s-2);
+  display: flex; flex-wrap: wrap; gap: var(--s-3);
   margin-top: var(--s-6); padding-top: var(--s-5); border-top: 1px solid var(--line);
 }
+.desk-actions .btn-danger { margin-left: auto; }
 .desk-toolbar {
   position: sticky; top: var(--nav-h); z-index: 4;
   margin: calc(-1 * var(--s-6)); margin-bottom: var(--s-5);
