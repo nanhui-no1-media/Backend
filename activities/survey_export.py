@@ -56,6 +56,14 @@ C_FAINT = "#8e9aa6"       # ink-400
 C_SOFT = "#f4f7fb"        # bg-soft
 C_BAR_BG = "#e6edf6"
 
+# 图表色板（品牌蓝阶；相邻色明度交替，便于区分）
+PALETTE = [
+    "#0c63b4", "#3da5f3", "#0a4f8f", "#79c2fa",
+    "#1f87e0", "#5fb0e8", "#083b6e", "#a8d4f7",
+]
+
+PIE_MAX_SLICES = 8  # 选项超过该数时饼图/柱状图退回条形列表（标签会挤）
+
 FONT = "NotoSansSC"
 FONT_PATH = Path(__file__).resolve().parent / "fonts" / "NotoSansSC.ttf"
 CONTENT_W = 483        # A4 宽 595pt − 左右边距 56pt × 2
@@ -326,6 +334,7 @@ def _para_styles():
         "head": s("head", fontSize=10.5, leading=15, textColor=C_BRAND_DARK),
         "num": s("num", fontSize=9.5, leading=14, textColor=C_INK, alignment=TA_RIGHT),
         "pct": s("pct", fontSize=9.5, leading=14, textColor=C_MUTED, alignment=TA_RIGHT),
+        "legend": s("legend", fontSize=9, leading=15.5, textColor=C_INK),
     }
 
 
@@ -491,6 +500,103 @@ def _answer_block(label, submitted, questions, answers, story, styles):
     story.append(Spacer(1, 6))
 
 
+def _counts_table(items, total, styles):
+    """计数条形列表（选项 / 比例条 / 计数 / 百分比）。"""
+    from reportlab.platypus import Paragraph, Table, TableStyle
+
+    rows = []
+    for k, n in items:
+        frac = n / total
+        rows.append([
+            Paragraph(_esc(k), styles["opt"]),
+            _bar(frac),
+            Paragraph(str(n), styles["num"]),
+            Paragraph(f"{frac:.0%}", styles["pct"]),
+        ])
+    t = Table(rows, colWidths=[240, 133, 55, 55])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    return t
+
+
+def _pie_chart(items, total, styles):
+    """饼图 + 图例列表（色块 / 文本 / 计数 / 百分比）并排。"""
+    from reportlab.graphics.charts.piecharts import Pie
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.platypus import Paragraph, Table, TableStyle
+
+    d = Drawing(150, 150)
+    pie = Pie()
+    pie.x, pie.y, pie.width, pie.height = 22, 22, 106, 106
+    pie.data = [c for _, c in items]
+    pie.slices.strokeWidth = 1.2
+    pie.slices.strokeColor = _hex("#ffffff")
+    for i in range(len(items)):
+        pie.slices[i].fillColor = _hex(PALETTE[i % len(PALETTE)])
+    d.add(pie)
+
+    legend = []
+    for i, (label, c) in enumerate(items):
+        color = PALETTE[i % len(PALETTE)]
+        pct = (c / total) if total else 0
+        legend.append(Paragraph(
+            f'<font color="{color}">■</font> {_esc(label)}　'
+            f'<font color="{C_MUTED}">{c}（{pct:.0%}）</font>',
+            styles["legend"],
+        ))
+
+    t = Table([[d, legend]], colWidths=[160, CONTENT_W - 160])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (0, 0), "MIDDLE"),
+        ("VALIGN", (1, 0), (1, 0), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return t
+
+
+def _vbar_chart(items):
+    """垂直柱状图（柱顶计数）；适用于评分分布与选项较少的分布。"""
+    from reportlab.graphics.charts.barcharts import VerticalBarChart
+    from reportlab.graphics.shapes import Drawing
+
+    n = len(items)
+    max_v = max((c for _, c in items), default=1) or 1
+    step = 1 if max_v <= 10 else (5 if max_v <= 40 else 10)
+    top = ((max_v + step - 1) // step) * step
+
+    width, height = CONTENT_W - 4, 152
+    d = Drawing(width, height)
+    bc = VerticalBarChart()
+    bc.x, bc.y = 36, 30
+    bc.width, bc.height = width - 50, height - 48
+    bc.data = [[c for _, c in items]]
+    bc.categoryAxis.categoryNames = [str(l) for l, _ in items]
+    bc.categoryAxis.labels.fontName = FONT
+    bc.categoryAxis.labels.fontSize = 7.5
+    bc.categoryAxis.labels.dy = -7
+    bc.valueAxis.labels.fontName = FONT
+    bc.valueAxis.labels.fontSize = 7.5
+    bc.valueAxis.valueMin = 0
+    bc.valueAxis.valueMax = top
+    bc.valueAxis.valueStep = step
+    bc.barWidth = 18 if n <= 6 else 12
+    bc.bars[0].fillColor = _hex(C_BRAND)
+    bc.barLabelFormat = "%d"
+    bc.barLabels.fontName = FONT
+    bc.barLabels.fontSize = 8
+    bc.barLabels.dy = 2
+    d.add(bc)
+    return d
+
+
 def _stats_block(s, story, styles):
     """单题统计渲染。"""
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
@@ -515,27 +621,23 @@ def _stats_block(s, story, styles):
                 styles["ans"],
             ))
             story.append(Spacer(1, 4))
-        rows = []
-        for k, n in _sorted_counts(s):
-            frac = n / total
-            rows.append([
-                Paragraph(_esc(k), styles["opt"]),
-                _bar(frac),
-                Paragraph(str(n), styles["num"]),
-                Paragraph(f"{frac:.0%}", styles["pct"]),
-            ])
-        if not rows:
+        items = _sorted_counts(s)
+        if not items:
             story.append(Paragraph("（暂无作答）", styles["muted"]))
+        elif s["type"] in SCORE_TYPES:
+            story.append(_vbar_chart(items))          # 评分分布：柱状图
+        elif s["type"] in MULTI_CHOICE_TYPES:
+            if len(items) <= PIE_MAX_SLICES:
+                story.append(_vbar_chart(items))      # 多选：柱状图
+            else:
+                story.append(_counts_table(items, total, styles))
+        elif s["type"] in CHOICE_TYPES:
+            if len(items) <= PIE_MAX_SLICES:
+                story.append(_pie_chart(items, total, styles))  # 单选：饼图
+            else:
+                story.append(_counts_table(items, total, styles))
         else:
-            t = Table(rows, colWidths=[240, 133, 55, 55])
-            t.setStyle(TableStyle([
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ]))
-            story.append(t)
+            story.append(_counts_table(items, total, styles))
     elif "files" in s:
         for f in s["files"]:
             story.append(Paragraph(_esc(f), styles["ans"]))
