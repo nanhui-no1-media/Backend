@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { messagingApi } from "../../api/messaging";
 import type { NotificationPreferences } from "../../types/messaging";
 
-/** 通知订阅面板：源 × 通道矩阵，勾选即时保存；站内为基线（不可关）。 */
+/** 通知订阅面板：源 × 通道矩阵，勾选即时保存；所有通道均可开关（用户可选择拒绝接收）。 */
 export default function NotificationPreferencesPanel() {
   const [prefs, setPrefs] = useState<NotificationPreferences | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,7 +48,7 @@ export default function NotificationPreferencesPanel() {
     <div className="card card-pad">
       <h3 style={{ marginTop: 0 }}>通知订阅</h3>
       <p className="hint">
-        选择想接收的通知来源，以及接收的通道。站内通知为基线（始终开启）。
+        选择想接收的通知来源与通道。关闭某来源的站内通道后，将不再接收该来源的通知。
         {emailCh && !emailReady && " 邮件通道需先绑定邮箱（见「资料编辑」）。"}
       </p>
       {saveState === "saving" && <p className="hint">保存中…</p>}
@@ -64,21 +64,16 @@ export default function NotificationPreferencesPanel() {
             </div>
             <div className="notif-source-channels">
               {prefs.channels.map((ch) => {
-                const locked = ch.key === "site";
-                const disabled = locked || !ch.available;
+                const disabled = !ch.available;
                 return (
                   <label
-                    className={"check notif-ch" + (disabled && !locked ? " is-off" : "")}
+                    className={"check notif-ch" + (disabled ? " is-off" : "")}
                     key={ch.key}
-                    title={
-                      locked ? "站内通知为基线，始终开启"
-                        : !ch.available ? `${ch.name}通道当前不可用`
-                        : ch.description
-                    }
+                    title={!ch.available ? `${ch.name}通道当前不可用` : ch.description}
                   >
                     <input
                       type="checkbox"
-                      checked={locked ? true : !!src.channels[ch.key]}
+                      checked={!!src.channels[ch.key]}
                       disabled={disabled}
                       onChange={(e) => toggle(src.key, ch.key, e.target.checked)}
                     />

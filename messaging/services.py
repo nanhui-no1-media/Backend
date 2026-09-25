@@ -260,18 +260,22 @@ def lift_mute(actor, user):
 
 # ---- 通知 / 横幅 / 推送 ---------------------------------------------------
 
-def notify(recipient, category: str, event: str, *, actor=None, payload: Mapping | None = None) -> Notification:
+def notify(
+    recipient, category: str, event: str, *, actor=None, payload: Mapping | None = None,
+) -> Notification | None:
     """兼容薄封装 → 通知框架（站内落库 + 推送 + 外发通道按订阅同步投递）。
 
-    详见 ``messaging.notifications.dispatch``；邮件等外发同步发送，
-    失败仅留痕（NotificationDelivery），不自动重试。
+    详见 ``messaging.notifications.dispatch``；邮件等外发同步发送，失败仅留痕
+    （NotificationDelivery），不自动重试。用户关闭该源的站内通道（拒绝接收）时
+    整条静默并返回 None。
     """
     from .notifications.dispatch import dispatch
 
     try:
-        return dispatch(category, event, [recipient], actor=actor, payload=payload)[0]
+        rows = dispatch(category, event, [recipient], actor=actor, payload=payload)
     except ValueError as exc:
         raise MessagingError(str(exc)) from exc
+    return rows[0] if rows else None
 
 
 def current_banner(now=None) -> Banner | None:

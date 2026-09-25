@@ -304,6 +304,54 @@ class MuteAndNotifyTest(TestCase):
             4,
         )
 
+    def test_disabled_site_silences_source(self):
+        """用户有权拒绝接收：关闭某源的站内后，该源整体静默（不落库、不投递、不发邮件）。"""
+        from messaging.models import NotificationDelivery, NotificationSubscription
+
+        grant_verification(self.target)
+        # 即使 email 开着，站内关闭也整体静默
+        NotificationSubscription.objects.create(
+            user=self.target, source_key=Notification.CATEGORY_COMMENT, channel_key="email", enabled=True,
+        )
+        NotificationSubscription.objects.create(
+            user=self.target, source_key=Notification.CATEGORY_COMMENT, channel_key="site", enabled=False,
+        )
+        result = notify(self.target, Notification.CATEGORY_COMMENT, "comment_posted", actor=self.mod, payload={})
+        self.assertIsNone(result)
+        self.assertEqual(
+            Notification.objects.filter(
+                recipient=self.target, category=Notification.CATEGORY_COMMENT,
+            ).count(),
+            0,
+        )
+        self.assertEqual(NotificationDelivery.objects.count(), 0)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_site_reenabled_resumes_notifications(self):
+        """重新开启站内后，通知恢复。"""
+        from messaging.models import NotificationSubscription
+
+        NotificationSubscription.objects.create(
+            user=self.target, source_key=Notification.CATEGORY_COMMENT, channel_key="site", enabled=False,
+        )
+        notify(self.target, Notification.CATEGORY_COMMENT, "comment_posted", actor=self.mod, payload={})
+        self.assertEqual(
+            Notification.objects.filter(
+                recipient=self.target, category=Notification.CATEGORY_COMMENT,
+            ).count(),
+            0,
+        )
+        NotificationSubscription.objects.filter(
+            user=self.target, source_key=Notification.CATEGORY_COMMENT, channel_key="site",
+        ).update(enabled=True)
+        notify(self.target, Notification.CATEGORY_COMMENT, "comment_posted", actor=self.mod, payload={})
+        self.assertEqual(
+            Notification.objects.filter(
+                recipient=self.target, category=Notification.CATEGORY_COMMENT,
+            ).count(),
+            1,
+        )
+
     def test_lift_requires_perm(self):
         other = User.objects.create_user(username="other", password="x")
         mute_user(self.mod, self.target)
