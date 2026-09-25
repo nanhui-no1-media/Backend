@@ -686,9 +686,6 @@ def _profile_response(user, profile):
             "bio": profile.bio,
             # 验证态（ADR-0006）：前端据此显访客提示 / 引导去验证面板。
             "is_verified": is_verified(user),
-            "email_notify_comment": bool(profile.email_notify_comment),
-            "email_notify_review": bool(profile.email_notify_review),
-            "email_notify_discipline": bool(profile.email_notify_discipline),
         },
     }
 
@@ -718,13 +715,6 @@ def profile_update_view(request):
 
     for field in ("nickname", "birthday", "gender", "bio"):
         setattr(profile, field, form.cleaned_data[field])
-
-    for field in ("email_notify_comment", "email_notify_review", "email_notify_discipline"):
-        raw = request.POST.get(field)
-        if not (request.user.email or "").strip():
-            setattr(profile, field, False)
-        elif raw is not None:
-            setattr(profile, field, str(raw).lower() in ("1", "true", "on", "yes"))
 
     profile.save()
     return JsonResponse(_profile_response(request.user, profile))

@@ -264,7 +264,7 @@
   "read_at": null, "created_at": "2026-09-19T03:06:00Z" }
 ```
 
-`payload` 为 JSON 对象，字段随类别不同（见下表）；`actor_id` / `actor_username` 在系统自动事件（如禁言到期）中缺省。落库时若收件人已绑定邮箱且开启对应邮件偏好（`email_notify_comment` / `email_notify_review` / `email_notify_discipline`），尽力发提醒邮件（失败静默）。
+`payload` 为 JSON 对象，字段随类别不同（见下表）；`actor_id` / `actor_username` 在系统自动事件（如禁言到期）中缺省。落库时按收件人订阅偏好（`/messaging/notification-preferences/`）同步投递外发通道（如邮件）；投递失败仅留痕（NotificationDelivery），不影响站内通知。
 
 | category | event | 触发 | payload（公共字段之外）|
 |---|---|---|---|
