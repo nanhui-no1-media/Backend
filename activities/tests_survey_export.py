@@ -1,6 +1,7 @@
-"""问卷导出单元测试：统计聚合 + CSV / JSON / PDF 生成（activities/survey_export.py）。"""
-import json
+"""问卷导出单元测试：统计聚合 + CSV / PDF 生成（activities/survey_export.py）。
 
+JSON 导出已移除；多份问卷支持聚合为单个文件。
+"""
 from django.contrib.auth.models import User
 from django.test import TestCase
 
@@ -40,6 +41,14 @@ class SurveyExportTest(TestCase):
             answers={"grade": "高二", "skills": ["摄影"], "score": 5},
         )
 
+    def _make_second(self):
+        q2 = Questionnaire.objects.create(
+            kind=Questionnaire.KIND_SURVEY,
+            schema={**_schema(), "title": "第二份问卷"},
+        )
+        QuestionnaireResponse.objects.create(questionnaire=q2, answers={"grade": "高一", "note": "ok"})
+        return q2
+
     # ---- 聚合 ----
 
     def test_stats_aggregates(self):
@@ -54,43 +63,67 @@ class SurveyExportTest(TestCase):
 
     # ---- 统计导出 ----
 
-    def test_stats_csv(self):
-        data, content_type, filename = survey_export.export_stats(self.q, "csv")
+    def test_stats_csv_single(self):
+        data, content_type, filename = survey_export.export_stats([self.q], "csv")
         text = data.decode("utf-8-sig")
         self.assertIn("年级", text)
         self.assertIn("高一", text)
-        self.assertTrue(filename.endswith(".csv"))
+        self.assertEqual(filename, f"survey-stats-{self.q.pk}.csv")
         self.assertIn("text/csv", content_type)
 
-    def test_stats_json(self):
-        data, content_type, filename = survey_export.export_stats(self.q, "json")
-        payload = json.loads(data)
-        self.assertEqual(payload["response_count"], 2)
-        self.assertEqual(len(payload["stats"]), 5)
-        self.assertTrue(filename.endswith(".json"))
+    def test_stats_json_removed(self):
+        with self.assertRaises(ValueError):
+            survey_export.export_stats([self.q], "json")
 
-    def test_stats_pdf(self):
-        data, content_type, filename = survey_export.export_stats(self.q, "pdf")
+    def test_stats_pdf_single(self):
+        data, content_type, filename = survey_export.export_stats([self.q], "pdf")
         self.assertTrue(data.startswith(b"%PDF"))
         self.assertEqual(content_type, "application/pdf")
+        self.assertEqual(filename, f"survey-stats-{self.q.pk}.pdf")
+
+    def test_stats_csv_multi(self):
+        q2 = self._make_second()
+        data, content_type, filename = survey_export.export_stats([self.q, q2], "csv")
+        text = data.decode("utf-8-sig")
+        self.assertTrue(text.splitlines()[0].startswith("问卷"))  # 多份时首列为「问卷」
+        self.assertIn("第二份问卷", text)
+        self.assertIn("batch-2", filename)
+
+    def test_stats_pdf_multi(self):
+        q2 = self._make_second()
+        data, content_type, filename = survey_export.export_stats([self.q, q2], "pdf")
+        self.assertTrue(data.startswith(b"%PDF"))
+        self.assertIn("batch-2", filename)
 
     # ---- 作答导出 ----
 
-    def test_responses_csv(self):
-        data, content_type, filename = survey_export.export_responses(self.q, "csv")
+    def test_responses_csv_single(self):
+        data, content_type, filename = survey_export.export_responses([self.q], "csv")
         text = data.decode("utf-8-sig")
         self.assertIn("stu", text)
         self.assertIn("高一", text)
         self.assertIn("访客", text)  # 无 user 无 device 的匿名行
+        self.assertEqual(filename, f"survey-responses-{self.q.pk}.csv")
 
-    def test_responses_json(self):
-        data, content_type, filename = survey_export.export_responses(self.q, "json")
-        payload = json.loads(data)
-        self.assertEqual(len(payload["responses"]), 2)
-        labels = [r["user_label"] for r in payload["responses"]]
-        self.assertIn("stu", labels)
+    def test_responses_json_removed(self):
+        with self.assertRaises(ValueError):
+            survey_export.export_responses([self.q], "json")
 
-    def test_responses_pdf(self):
-        data, content_type, filename = survey_export.export_responses(self.q, "pdf")
+    def test_responses_pdf_single(self):
+        data, content_type, filename = survey_export.export_responses([self.q], "pdf")
         self.assertTrue(data.startswith(b"%PDF"))
         self.assertEqual(content_type, "application/pdf")
+
+    def test_responses_csv_multi(self):
+        q2 = self._make_second()
+        data, content_type, filename = survey_export.export_responses([self.q, q2], "csv")
+        text = data.decode("utf-8-sig")
+        self.assertIn("问卷：测试问卷", text)
+        self.assertIn("问卷：第二份问卷", text)
+        self.assertIn("batch-2", filename)
+
+    def test_responses_pdf_multi(self):
+        q2 = self._make_second()
+        data, content_type, filename = survey_export.export_responses([self.q, q2], "pdf")
+        self.assertTrue(data.startswith(b"%PDF"))
+        self.assertIn("batch-2", filename)

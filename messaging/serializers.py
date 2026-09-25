@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
+from reviews.models import UserMute
 from tasks.serializers import SimpleUserSerializer
+
 from .models import (
     Banner,
     Comment,
@@ -8,7 +10,6 @@ from .models import (
     Conversation,
     Message,
     Notification,
-    UserMute,
     unread_message_count,
 )
 from .services import can_manage_thread

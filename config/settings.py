@@ -260,6 +260,8 @@ if EMAIL_HOST_USER:
     EMAIL_PORT = 465
     EMAIL_USE_SSL = True
     DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+    # 同步投递防呆：SMTP 卡死时最多阻塞请求 5 秒（失败留痕，不重试）。
+    EMAIL_TIMEOUT = 5
 
 LOGIN_URL = "/login/"
 

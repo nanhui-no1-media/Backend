@@ -4,7 +4,9 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from messaging.models import Comment, CommentThread
-from messaging.services import MessagingError, delete_comment_for_report, host_of, mute_user_for_report
+from messaging.services import MessagingError, delete_comment_for_report, host_of
+
+from .discipline import mute_user_for_report
 
 from .lifecycle import REMOVE, apply
 from .models import ReportCase, ReportFiling, Review

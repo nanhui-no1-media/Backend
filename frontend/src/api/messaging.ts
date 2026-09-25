@@ -9,6 +9,8 @@ import type {
   DirectMessage,
   MuteStatus,
   Notification,
+  NotificationPreferences,
+  SubscriptionUpdate,
   ThreadStatus,
   UserMute,
 } from "../types/messaging";
@@ -109,4 +111,13 @@ export const messagingApi = {
 
   // ---- 横幅公告 ----
   currentBanner: () => request(`/banners/current/`) as Promise<Banner | null>,
+
+  // ---- 订阅偏好（源 × 通道） ----
+  getNotificationPreferences: () =>
+    request(`/notification-preferences/`) as Promise<NotificationPreferences>,
+  updateNotificationPreferences: (updates: SubscriptionUpdate[]) =>
+    request(`/notification-preferences/`, {
+      method: "PATCH",
+      body: JSON.stringify({ updates }),
+    }) as Promise<NotificationPreferences>,
 };

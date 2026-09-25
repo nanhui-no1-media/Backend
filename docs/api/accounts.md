@@ -141,8 +141,7 @@
     }},
   "role": {"label": "用户", "variant": "user"},
   "profile": {"avatar": "/media/avatars/user_7.png", "nickname": "张三", "birthday": "2007-05-01",
-    "gender": "M", "bio": "摄影部部长", "is_verified": true,
-    "email_notify_comment": true, "email_notify_review": false, "email_notify_discipline": false}
+    "gender": "M", "bio": "摄影部部长", "is_verified": true}
 }
 ```
 
@@ -174,9 +173,7 @@
 | avatar | file | 否 | ≤2MB；仅 JPG / PNG / GIF / WebP |
 | nickname / bio | string | 否 | 昵称 ≤50 字符；简介 ≤500 字符 |
 | birthday / gender | string | 否 | 生日 `YYYY-MM-DD`；性别 `""` / `M` / `F` / `O` |
-| email_notify_comment / email_notify_review / email_notify_discipline | bool | 否 | 通知邮件转发开关；真值取 `1` / `true` / `on` / `yes` |
-
-未绑定邮箱（`User.email` 为空）时三个通知开关一律强制为 `false`；未提交的开关保持原值。**错误**：400 `{"error": "头像文件不能超过 2MB"}`、`{"error": "仅支持 JPG、PNG、GIF、WebP 格式"}` 或表单校验消息。
+通知订阅（站内 / 邮件等通道开关）已迁至通知框架：见 `/messaging/notification-preferences/`（详见 messaging.md）。**错误**：400 `{"error": "头像文件不能超过 2MB"}`、`{"error": "仅支持 JPG、PNG、GIF、WebP 格式"}` 或表单校验消息。
 
 `POST /auth/profile/change-password/`
 

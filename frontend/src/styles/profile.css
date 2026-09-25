@@ -95,6 +95,20 @@
 .verify-card-msg { margin: var(--s-2) 0 0; font-size: 13px; }
 .verify-card-err { margin: var(--s-2) 0 0; font-size: 13px; color: var(--danger, #c0392b); }
 
+.notif-matrix { display: flex; flex-direction: column; margin-top: var(--s-4); }
+.notif-source { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s-4); padding: var(--s-3) 0; border-bottom: 1px solid var(--line); }
+.notif-source:last-child { border-bottom: none; }
+.notif-source-info { min-width: 0; }
+.notif-source-info p { margin: var(--s-1) 0 0; font-size: 13px; }
+.notif-source-channels { display: flex; gap: var(--s-3); flex-wrap: wrap; flex-shrink: 0; padding-top: 2px; }
+.notif-ch { display: flex; align-items: center; gap: var(--s-1); white-space: nowrap; }
+.notif-ch.is-off { opacity: 0.5; }
+.notif-ch input[type="checkbox"] { margin: 0; }
+
+@media (max-width: 640px) {
+  .notif-source { flex-direction: column; gap: var(--s-2); }
+}
+
 @media (max-width: 820px) {
   .profile-layout { grid-template-columns: 1fr; }
   .profile-sidenav { position: static; flex-direction: row; overflow-x: auto; }

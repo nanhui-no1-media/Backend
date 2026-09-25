@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.generics import get_object_or_404
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from accounts.permissions import IsVerified
 from activities.models import Activity
@@ -25,6 +26,7 @@ from .models import (
     Notification,
     unread_message_count,
 )
+from .notifications.preferences import PreferencesError, apply_updates, build_preferences
 from .permissions import (
     CanManageThread,
     CanMuteUser,
@@ -40,16 +42,15 @@ from .serializers import (
     NotificationSerializer,
     UserMuteSerializer,
 )
+from reviews.discipline import current_mute, lift_mute, mute_user
+
 from .services import (
     MessagingError,
     MessagingNotFound,
     can_see_host,
     can_see_thread,
     current_banner,
-    current_mute,
     delete_comment,
-    lift_mute,
-    mute_user,
     post_comment,
     retract_comment,
     retract_dm,
@@ -462,3 +463,19 @@ class BannerViewSet(viewsets.ViewSet):
             # frontend readResponse (empty banner → null).
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(BannerSerializer(banner).data)
+
+
+class NotificationPreferencesView(APIView):
+    """通知订阅偏好：GET 读矩阵；PATCH 应用变更（源 × 通道）。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(build_preferences(request.user))
+
+    def patch(self, request):
+        try:
+            apply_updates(request.user, request.data.get("updates"))
+        except PreferencesError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(build_preferences(request.user))

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ActivityDetail,
@@ -38,6 +39,7 @@ export default function ActivityDetailShell({
 }) {
   const navigate = useNavigate();
   const embed = useEmbedMode();
+  const [copied, setCopied] = useState(false);
   const isOwner = !!user && a.creator?.id === user.id;
   const canManage = !!user && (isOwner || !!user.can_change_activity);
   const isDeliberation = a.type === "deliberation";
@@ -105,6 +107,12 @@ export default function ActivityDetailShell({
 
   const panelProps = { a, setActivity, user, busy, setBusy, setError };
 
+  const copyLink = async () => {
+    try { await navigator.clipboard.writeText(window.location.href); } catch { /* ignore */ }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+
   const doClose = async () => {
     if (!window.confirm(closeConfirm)) return;
     setBusy(true); setError("");
@@ -162,7 +170,17 @@ export default function ActivityDetailShell({
             )}
           </div>
           <h1 style={{ margin: "0 0 var(--s-4)" }}>{a.title}</h1>
-          {!embed && <ReportButton targetType="activity" targetId={a.id} isOwn={isOwner} compact />}
+          {!embed && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {a.audience === "public" && (
+                <button className="btn btn-ghost btn-sm" type="button" onClick={copyLink}>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a4 4 0 0 0 5.7.4l3-3a4 4 0 0 0-5.7-5.7l-1.4 1.4" /><path d="M14 11a4 4 0 0 0-5.7-.4l-3 3a4 4 0 0 0 5.7 5.7l1.4-1.4" /></svg>
+                  {copied ? "已复制" : "复制链接"}
+                </button>
+              )}
+              <ReportButton targetType="activity" targetId={a.id} isOwn={isOwner} compact />
+            </div>
+          )}
         </div>
 
         {!embed && (

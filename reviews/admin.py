@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.utils.html import format_html
 
 from .lifecycle import APPROVE, REJECT, REMOVE, TransitionDenied, apply
-from .models import Feedback, ReportCase, Review
+from .models import Feedback, ReportCase, Review, UserMute
 
 _TARGET_HASH = (
     ("news_id", "/news/{}"),
@@ -101,3 +101,12 @@ class ReportCaseAdmin(admin.ModelAdmin):
     list_filter = ["status"]
     search_fields = ["resolution_comment"]
     readonly_fields = ["created_at", "updated_at", "resolved_at"]
+
+
+@admin.register(UserMute)
+class UserMuteAdmin(admin.ModelAdmin):
+    """全站禁言（自 messaging 迁入；数据面表名不变）。"""
+
+    list_display = ["id", "user", "muted_by", "starts_at", "ends_at", "lifted_at"]
+    list_filter = ["starts_at", "ends_at", "lifted_at"]
+    search_fields = ["user__username", "reason"]

@@ -8,10 +8,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.test_helpers import grant_verification
-from messaging.models import Comment, CommentThread, UserMute
+from messaging.models import Comment, CommentThread
 from messaging.services import thread_for
 from news.models import News
-from reviews.models import ReportCase, ReportFiling, Review
+from reviews.models import ReportCase, ReportFiling, Review, UserMute
 from reviews.test_helpers import approve_news
 
 
@@ -194,7 +194,7 @@ class ReportCommentAndUserTest(TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_uphold_mutes_user_without_mute_perm(self):
-        self.assertFalse(self.handler.has_perm("messaging.mute_user"))
+        self.assertFalse(self.handler.has_perm("reviews.mute_user"))
         self.client.force_authenticate(self.reporter)
         resp = self.client.post(
             "/reviews/reports/",
