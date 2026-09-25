@@ -56,10 +56,10 @@ C_FAINT = "#8e9aa6"       # ink-400
 C_SOFT = "#f4f7fb"        # bg-soft
 C_BAR_BG = "#e6edf6"
 
-# 图表色板（品牌蓝阶；相邻色明度交替，便于区分）
+# 图表色板（高区分度：色相跨度大 + 明度交替；相邻扇区不易混淆）
 PALETTE = [
-    "#0c63b4", "#3da5f3", "#0a4f8f", "#79c2fa",
-    "#1f87e0", "#5fb0e8", "#083b6e", "#a8d4f7",
+    "#0c63b4", "#f2994a", "#27ae60", "#eb5757",
+    "#9b51e0", "#56ccf2", "#f2c94c", "#6b7785",
 ]
 
 PIE_MAX_SLICES = 8  # 选项超过该数时饼图/柱状图退回条形列表（标签会挤）
@@ -100,11 +100,15 @@ def extract_questions(schema):
             if not name:
                 continue
             choices = []
+            choice_labels = {}  # value → 展示文本（SurveyJS 默认 value 为 item1/item2…，导出须还原）
             for c in el.get("choices") or []:
                 if isinstance(c, dict):
-                    choices.append(str(c.get("value", c.get("text", ""))))
+                    val = str(c.get("value", c.get("text", "")))
+                    lab = str(c.get("text") or c.get("value") or "")
                 else:
-                    choices.append(str(c))
+                    val = lab = str(c)
+                choices.append(val)
+                choice_labels[val] = lab or val
             try:
                 rate_max = int(el.get("rateMax") or 5)
             except (TypeError, ValueError):
@@ -114,6 +118,7 @@ def extract_questions(schema):
                 "title": el.get("title") or str(name),
                 "type": t or "unknown",
                 "choices": choices,
+                "choice_labels": choice_labels,
                 "rate_max": rate_max,
             })
 
@@ -149,6 +154,15 @@ def _fmt_file(v):
     return "\n".join(p for p in parts if p)
 
 
+def _answer_display(q, v):
+    """答案 → 展示文本：选择题把 value 还原为选项文本（默认 item1/item2… 场景）；其余走 _fmt_value。"""
+    labels = q.get("choice_labels") or {}
+    if q["type"] in CHOICE_TYPES and labels:
+        vals = v if isinstance(v, list) else [v]
+        return "; ".join(labels.get(_fmt_value(x), _fmt_value(x)) for x in vals if x is not None and x != "")
+    return _fmt_value(v)
+
+
 def compute_stats(schema, answers_list):
     """按题聚合统计。answers_list: list[dict]。"""
     stats = []
@@ -170,6 +184,7 @@ def compute_stats(schema, answers_list):
             for c in q["choices"]:
                 counts.setdefault(c, 0)
             entry["counts"] = counts
+            entry["choice_labels"] = q.get("choice_labels") or {}
         elif q["type"] in SCORE_TYPES:
             nums = []
             for v in values:
@@ -212,7 +227,8 @@ def _sorted_counts(s):
             except (TypeError, ValueError):
                 return (1, 0.0)
         items.sort(key=key)
-    return items
+    labels = s.get("choice_labels") or {}
+    return [(labels.get(k, k), n) for k, n in items]
 
 
 def _stats_rows(stats):
@@ -263,7 +279,7 @@ def _responses_csv(sections):
             answers = answers or {}
             w.writerow(
                 [label, _local(submitted).strftime("%Y-%m-%d %H:%M:%S")]
-                + [_fmt_value(answers.get(q["name"])) for q in sec["questions"]]
+                + [_answer_display(q, answers.get(q["name"])) for q in sec["questions"]]
             )
     return buf.getvalue()
 
@@ -390,6 +406,7 @@ def _choice_block(q, chosen, story, styles):
     multi = q["type"] in MULTI_CHOICE_TYPES
     mark_on, mark_off = ("■", "□") if multi else ("●", "○")
     choices = list(q["choices"] or [])
+    labels = q.get("choice_labels") or {}
     extra = [v for v in chosen if v and v not in choices]  # 溢出值（如「其他」填写）
     rows = []
     sel_rows = []
@@ -401,7 +418,7 @@ def _choice_block(q, chosen, story, styles):
         tcolor = C_BRAND_DARK if sel else C_INK
         rows.append([
             Paragraph(f'<font color="{mcolor}">{mark_on if sel else mark_off}</font>', styles["opt"]),
-            Paragraph(f'<font color="{tcolor}">{_esc(c)}</font>', styles["opt"]),
+            Paragraph(f'<font color="{tcolor}">{_esc(labels.get(c, c))}</font>', styles["opt"]),
         ])
 
     t = Table(rows, colWidths=[20, CONTENT_W - 20])
