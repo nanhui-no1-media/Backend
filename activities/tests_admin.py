@@ -230,3 +230,58 @@ class ActivityAdminArchiveTest(TestCase):
         )
         self.collection.refresh_from_db()
         self.assertEqual(self.collection.status, COLLECTING)
+
+
+class QuestionnaireAdminExportTest(TestCase):
+    """admin 问卷结果页（survey-results）的导出按钮与导出视图。"""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser("exp_adm", "e@e.com", "x")
+        self.q = Questionnaire.objects.create(
+            kind=Questionnaire.KIND_SURVEY,
+            schema={
+                "title": "导出测试",
+                "pages": [{"name": "p1", "elements": [
+                    {"type": "radiogroup", "name": "grade", "title": "年级", "choices": ["高一", "高二"]},
+                    {"type": "text", "name": "note", "title": "备注"},
+                ]}],
+            },
+        )
+        u = User.objects.create_user("exp_stu", password="x")
+        QuestionnaireResponse.objects.create(
+            questionnaire=self.q, user=u, answers={"grade": "高一", "note": "ok"},
+        )
+        self.c = Client()
+        self.c.force_login(self.admin)
+        self.base = f"/admin/activities/questionnaire/{self.q.pk}"
+
+    def test_results_page_has_export_buttons(self):
+        page = self.c.get(f"{self.base}/survey-results/")
+        self.assertEqual(page.status_code, 200)
+        body = page.content.decode()
+        self.assertIn("导出 CSV", body)
+        self.assertIn("导出 PDF", body)
+        self.assertIn(f"{self.base}/survey-export/csv/", body)
+
+    def test_export_csv(self):
+        resp = self.c.get(f"{self.base}/survey-export/csv/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("text/csv", resp["Content-Type"])
+        self.assertIn("attachment;", resp["Content-Disposition"])
+        self.assertIn("exp_stu", resp.content.decode("utf-8-sig"))
+
+    def test_export_pdf(self):
+        resp = self.c.get(f"{self.base}/survey-export/pdf/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/pdf")
+        self.assertTrue(resp.content.startswith(b"%PDF"))
+
+    def test_export_unknown_format_404(self):
+        resp = self.c.get(f"{self.base}/survey-export/docx/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_export_requires_model_perm(self):
+        c = Client()
+        c.force_login(User.objects.create_user("nobody", password="x"))
+        resp = c.get(f"{self.base}/survey-export/csv/")
+        self.assertIn(resp.status_code, (302, 403))

@@ -27,7 +27,13 @@
 {% endblock %}
 
 {% block content %}
-<p><a href="{{ back_url }}" class="button">返回</a></p>
+<p>
+  <a href="{{ back_url }}" class="button">返回</a>
+  {% if can_export %}
+  <a href="{{ export_csv_url }}" class="button">导出 CSV</a>
+  <a href="{{ export_pdf_url }}" class="button">导出 PDF</a>
+  {% endif %}
+</p>
 <h2>统计</h2>
 <div id="survey-viz-panel" class="surveyjs-admin-host"></div>
 {{ schema_json|json_script:"survey-schema" }}

@@ -91,6 +91,12 @@ class QuestionnaireAdmin(SurveyJSAdminMixin, admin.ModelAdmin):
                 ),
             }
 
+    def survey_can_export(self, obj):
+        return True
+
+    def export_survey_results(self, obj, fmt):
+        return survey_export.export_responses([obj], fmt)
+
     actions = [
         "export_stats_csv", "export_stats_pdf",
         "export_responses_csv", "export_responses_pdf",
