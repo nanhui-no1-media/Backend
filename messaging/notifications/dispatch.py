@@ -1,8 +1,11 @@
-"""分发流水线：业务事件 → 站内落库 + 实时 push + 订阅匹配 → 外发通道入队。"""
+"""分发流水线：业务事件 → 站内落库 + 实时 push + 订阅匹配 → 外发通道同步投递。"""
 from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping
+
+from django.db import transaction
+from django.utils import timezone
 
 from ..models import Notification, NotificationDelivery, NotificationSubscription
 from .registry import all_channels, get_channel, get_source
@@ -21,8 +24,9 @@ def dispatch(
     """统一分发入口。
 
     - 站内：每条落库（Notification）并实时 push；
-    - 外发：按用户订阅（惰性默认）为启用的通道创建 NotificationDelivery(pending)，
-      由 ``manage.py notification_worker`` 异步投递。
+    - 外发：按用户订阅（惰性默认）为启用的通道创建 NotificationDelivery，
+      并同步投递（失败留痕、不自动重试；在事务中调用时挂到提交后执行，
+      避免「邮件已发、数据回滚」的幽灵通知）。
     """
     if get_source(source_key) is None:
         raise ValueError(f"未知通知源：{source_key}")
@@ -40,7 +44,7 @@ def dispatch(
             payload=data,
         )
         _push(row)
-        _enqueue(row)
+        _deliver(row)
         rows.append(row)
     return rows
 
@@ -62,6 +66,33 @@ def subscribed_channels(user, source_key: str) -> list:
     return result
 
 
+def deliver(delivery: NotificationDelivery) -> bool:
+    """同步投递单条投递行：成功标 sent，失败标 failed 留痕。本函数不抛出。"""
+    channel = get_channel(delivery.channel_key)
+    delivery.attempts = (delivery.attempts or 0) + 1
+    if channel is None:
+        delivery.status = NotificationDelivery.STATUS_FAILED
+        delivery.last_error = f"未知通道：{delivery.channel_key}"
+        delivery.save(update_fields=["status", "last_error", "attempts"])
+        return False
+    try:
+        channel.deliver(delivery)
+    except Exception as exc:
+        delivery.status = NotificationDelivery.STATUS_FAILED
+        delivery.last_error = str(exc)[:500]
+        delivery.save(update_fields=["status", "last_error", "attempts"])
+        logger.warning(
+            "通知投递失败 delivery=%s channel=%s: %s",
+            delivery.pk, delivery.channel_key, exc,
+        )
+        return False
+    delivery.status = NotificationDelivery.STATUS_SENT
+    delivery.sent_at = timezone.now()
+    delivery.last_error = ""
+    delivery.save(update_fields=["status", "sent_at", "last_error", "attempts"])
+    return True
+
+
 def _push(row: Notification) -> None:
     """实时推送（Channels 未接线时静默）。"""
     try:
@@ -76,8 +107,8 @@ def _push(row: Notification) -> None:
         logger.debug("notification push failed id=%s", row.pk, exc_info=True)
 
 
-def _enqueue(row: Notification) -> None:
-    """为启用的外发通道创建投递队列行（站内已落库，无需入队）。"""
+def _deliver(row: Notification) -> None:
+    """为启用的外发通道建投递行并同步投递（站内已落库，跳过）。"""
     for key in subscribed_channels(row.recipient, row.category):
         if key == "site":
             continue
@@ -90,7 +121,9 @@ def _enqueue(row: Notification) -> None:
             available = False
         if not available:
             continue
-        NotificationDelivery.objects.create(
+        delivery = NotificationDelivery.objects.create(
             notification=row,
             channel_key=key,
         )
+        # 事务中调用时挂到提交后投递，避免「邮件已发、数据回滚」的幽灵通知。
+        transaction.on_commit(lambda d=delivery: deliver(d))

@@ -10,10 +10,7 @@ import re
 from collections.abc import Mapping
 from datetime import timedelta
 
-from django.conf import settings
 from django.contrib.auth.models import User
-from django.core.exceptions import ObjectDoesNotExist
-from django.core.mail import send_mail
 from django.db.models import Q
 from django.utils import timezone
 
@@ -33,17 +30,6 @@ logger = logging.getLogger(__name__)
 
 RETRACT_WINDOW = timedelta(minutes=3)
 MENTION_RE = re.compile(r"@(\w+)")
-
-_EMAIL_PREF = {
-    Notification.CATEGORY_COMMENT: "email_notify_comment",
-    Notification.CATEGORY_REVIEW: "email_notify_review",
-    Notification.CATEGORY_DISCIPLINE: "email_notify_discipline",
-}
-_EMAIL_SUBJECT = {
-    Notification.CATEGORY_COMMENT: "评论通知 - 南汇一中传媒社",
-    Notification.CATEGORY_REVIEW: "审核通知 - 南汇一中传媒社",
-    Notification.CATEGORY_DISCIPLINE: "纪律通知 - 南汇一中传媒社",
-}
 
 
 class MessagingError(Exception):
@@ -275,10 +261,10 @@ def lift_mute(actor, user):
 # ---- 通知 / 横幅 / 推送 ---------------------------------------------------
 
 def notify(recipient, category: str, event: str, *, actor=None, payload: Mapping | None = None) -> Notification:
-    """兼容薄封装 → 通知框架（站内落库 + 推送 + 外发通道按订阅入队）。
+    """兼容薄封装 → 通知框架（站内落库 + 推送 + 外发通道按订阅同步投递）。
 
-    详见 ``messaging.notifications.dispatch``；邮件等外发由
-    ``manage.py notification_worker`` 异步投递。
+    详见 ``messaging.notifications.dispatch``；邮件等外发同步发送，
+    失败仅留痕（NotificationDelivery），不自动重试。
     """
     from .notifications.dispatch import dispatch
 
@@ -430,30 +416,6 @@ def _notify_comment(comment: Comment, author, parent: Comment | None) -> None:
             actor=author, payload=payload,
         )
         seen.add(mentioned.pk)
-
-
-def _maybe_email(recipient, category: str, event: str, payload: dict) -> None:
-    email = (getattr(recipient, "email", None) or "").strip()
-    if not email:
-        return
-    try:
-        profile = recipient.profile
-    except (ObjectDoesNotExist, AttributeError):
-        return
-    pref = _EMAIL_PREF.get(category)
-    if not pref or not getattr(profile, pref, False):
-        return
-    subject = _EMAIL_SUBJECT.get(category, "通知 - 南汇一中传媒社")
-    try:
-        send_mail(
-            subject=subject,
-            message=f"你有一条新通知（{event}）。请登录站点查看。",
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=[email],
-            fail_silently=True,
-        )
-    except Exception:
-        logger.exception("发送通知邮件失败: user_pk=%s event=%s", recipient.pk, event)
 
 
 def _group_send(group: str, event: str, payload: Mapping | None) -> None:

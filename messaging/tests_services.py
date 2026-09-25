@@ -255,9 +255,7 @@ class MuteAndNotifyTest(TestCase):
         self.assertTrue(is_muted(alice))
 
     def test_email_only_when_pref_and_bound_email(self):
-        """邮件经「订阅(email) + worker」投递（替代旧 Profile 布尔同步转发）。"""
-        from django.core.management import call_command
-
+        """邮件经「订阅(email) + 同步投递」（替代旧 Profile 布尔同步转发）。"""
         from messaging.models import NotificationDelivery, NotificationSubscription
 
         grant_verification(self.target)  # email 通道要求账号已验证
@@ -266,7 +264,8 @@ class MuteAndNotifyTest(TestCase):
         notify(self.target, Notification.CATEGORY_COMMENT, "comment_posted", actor=self.mod, payload={})
         self.assertEqual(NotificationDelivery.objects.count(), 0)
 
-        # 2) 订阅 email（≡ 旧 email_notify_comment=True 迁移后的状态）→ worker 投递
+        # 2) 订阅 email（≡ 旧 email_notify_comment=True 迁移后的状态）→ 同步投递
+        #    （投递挂在事务提交后执行；TestCase 用 captureOnCommitCallbacks 触发）
         NotificationSubscription.objects.create(
             user=self.target,
             source_key=Notification.CATEGORY_COMMENT,
@@ -274,11 +273,9 @@ class MuteAndNotifyTest(TestCase):
             enabled=True,
         )
         mail.outbox.clear()
-        notify(self.target, Notification.CATEGORY_COMMENT, "comment_posted", actor=self.mod, payload={})
+        with self.captureOnCommitCallbacks(execute=True):
+            notify(self.target, Notification.CATEGORY_COMMENT, "comment_posted", actor=self.mod, payload={})
         delivery = NotificationDelivery.objects.get()
-        self.assertEqual(delivery.status, NotificationDelivery.STATUS_PENDING)
-        call_command("notification_worker", "--once")
-        delivery.refresh_from_db()
         self.assertEqual(delivery.status, NotificationDelivery.STATUS_SENT)
         self.assertEqual(len(mail.outbox), 1)
 

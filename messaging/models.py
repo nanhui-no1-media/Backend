@@ -274,7 +274,7 @@ class NotificationSubscription(models.Model):
 
 
 class NotificationDelivery(models.Model):
-    """一条通知 × 一个通道的投递记录（notification_worker 的持久队列）。"""
+    """一条通知 × 一个通道的投递记录（同步投递留痕；失败可审计）。"""
 
     STATUS_PENDING = "pending"
     STATUS_SENT = "sent"
