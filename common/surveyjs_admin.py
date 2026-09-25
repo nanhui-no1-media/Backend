@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, cast
 from django.contrib.admin import AdminSite, ModelAdmin
 from django.core.exceptions import PermissionDenied
 from django.db.models.options import Options
-from django.http import Http404, HttpResponse, JsonResponse
+from django.http import Http404, JsonResponse
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 
@@ -50,17 +50,6 @@ class SurveyJSAdminMixin:
         """Yield dicts: answers, user_label, submitted_at, admin_url (optional)."""
         return []
 
-    def survey_can_export(self, obj):
-        """结果页是否提供导出按钮（子类配合 export_survey_results 实现）。"""
-        return False
-
-    def export_survey_results(self, obj, fmt):
-        """导出问卷结果，返回 (data: bytes, content_type, filename)。
-
-        子类按需实现；fmt 为 "csv" / "pdf" 等，未支持的格式抛 ValueError。
-        """
-        raise Http404
-
     def get_urls(self):
         info = self.opts.app_label, self.opts.model_name
         extra = [
@@ -73,11 +62,6 @@ class SurveyJSAdminMixin:
                 "<path:object_id>/survey-results/",
                 self.admin_site.admin_view(self.survey_results_view),
                 name="%s_%s_survey_results" % info,
-            ),
-            path(
-                "<path:object_id>/survey-export/<str:fmt>/",
-                self.admin_site.admin_view(self.survey_export_view),
-                name="%s_%s_survey_export" % info,
             ),
         ]
         return extra + cast(ModelAdmin, super()).get_urls()
@@ -136,11 +120,6 @@ class SurveyJSAdminMixin:
         obj = self._survey_obj(request, object_id)
         rows = list(self.iter_survey_responses(obj))
         info = self.opts.app_label, self.opts.model_name
-        can_export = self.survey_can_export(obj)
-
-        def _export_url(fmt):
-            return reverse("admin:%s_%s_survey_export" % info, args=[obj.pk, fmt])
-
         context = {
             **self.admin_site.each_context(request),
             "opts": self.opts,
@@ -150,23 +129,8 @@ class SurveyJSAdminMixin:
             "answers_json": [r.get("answers") or {} for r in rows],
             "response_rows": rows,
             "back_url": reverse("admin:%s_%s_change" % info, args=[obj.pk]),
-            "can_export": can_export,
-            "export_csv_url": _export_url("csv") if can_export else "",
-            "export_pdf_url": _export_url("pdf") if can_export else "",
         }
         return TemplateResponse(request, "admin/surveyjs/results.html", context)
-
-    def survey_export_view(self, request, object_id, fmt):
-        obj = self._survey_obj(request, object_id)
-        if not self.survey_can_export(obj):
-            raise Http404
-        try:
-            data, content_type, filename = self.export_survey_results(obj, fmt)
-        except ValueError:
-            raise Http404
-        response = HttpResponse(data, content_type=content_type)
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         extra_context = extra_context or {}
