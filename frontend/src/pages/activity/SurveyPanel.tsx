@@ -43,7 +43,7 @@ export default function SurveyPanel({
   return (
     <div className="card card-pad" style={{ marginTop: "var(--s-4)" }}>
       <h3 className="section-h">问卷</h3>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
         <button className="btn btn-ghost btn-sm" onClick={() => setShowSchema((v) => !v)} disabled={busy}>
           {showSchema ? "收起问卷" : "查看问卷"}
         </button>
