@@ -7,6 +7,7 @@ from .views import (
     CommentViewSet,
     ConversationViewSet,
     MuteViewSet,
+    NotificationPreferencesView,
     NotificationViewSet,
 )
 
@@ -19,5 +20,10 @@ router.register(r"mutes", MuteViewSet, basename="mute")
 router.register(r"banners", BannerViewSet, basename="banner")
 
 urlpatterns = [
+    path(
+        "notification-preferences/",
+        NotificationPreferencesView.as_view(),
+        name="notification-preferences",
+    ),
     path("", include(router.urls)),
 ]

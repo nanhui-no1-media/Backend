@@ -13,10 +13,11 @@ from common.models import SiteSettings
 from common.policy import invalidate_policy_cache
 from activities.models import Activity
 from news.models import News
+from reviews.models import UserMute
 from reviews.test_helpers import approve_news
 from tasks.models import Task
 
-from messaging.models import Banner, Comment, CommentThread, Notification, UserMute
+from messaging.models import Banner, Comment, CommentThread, Notification
 from messaging.services import (
     MessagingError,
     MessagingForbidden,
@@ -210,7 +211,7 @@ class MuteAndNotifyTest(TestCase):
     def setUp(self):
         self.mod = User.objects.create_user(username="mod", password="x")
         perm = Permission.objects.get(
-            content_type__app_label="messaging", codename="mute_user",
+            content_type__app_label="reviews", codename="mute_user",
         )
         self.mod.user_permissions.add(perm)
         self.target = User.objects.create_user(username="target", password="x", email="t@example.com")
@@ -254,31 +255,56 @@ class MuteAndNotifyTest(TestCase):
         self.assertTrue(is_muted(alice))
 
     def test_email_only_when_pref_and_bound_email(self):
-        profile = self.target.profile
-        profile.email_notify_comment = True
-        profile.save()
+        """邮件经「订阅(email) + worker」投递（替代旧 Profile 布尔同步转发）。"""
+        from django.core.management import call_command
+
+        from messaging.models import NotificationDelivery, NotificationSubscription
+
+        grant_verification(self.target)  # email 通道要求账号已验证
+
+        # 1) 未订阅 → 不产生外发投递
         notify(self.target, Notification.CATEGORY_COMMENT, "comment_posted", actor=self.mod, payload={})
+        self.assertEqual(NotificationDelivery.objects.count(), 0)
+
+        # 2) 订阅 email（≡ 旧 email_notify_comment=True 迁移后的状态）→ worker 投递
+        NotificationSubscription.objects.create(
+            user=self.target,
+            source_key=Notification.CATEGORY_COMMENT,
+            channel_key="email",
+            enabled=True,
+        )
+        mail.outbox.clear()
+        notify(self.target, Notification.CATEGORY_COMMENT, "comment_posted", actor=self.mod, payload={})
+        delivery = NotificationDelivery.objects.get()
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_PENDING)
+        call_command("notification_worker", "--once")
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.status, NotificationDelivery.STATUS_SENT)
         self.assertEqual(len(mail.outbox), 1)
 
+        # 3) 退订 → 不再产生投递（站内仍落库）
+        NotificationSubscription.objects.filter(
+            user=self.target, source_key=Notification.CATEGORY_COMMENT, channel_key="email",
+        ).update(enabled=False)
         mail.outbox.clear()
-        profile.email_notify_comment = False
-        profile.save()
         notify(self.target, Notification.CATEGORY_COMMENT, "comment_posted", actor=self.mod, payload={})
+        self.assertEqual(NotificationDelivery.objects.count(), 1)  # 无新增
         self.assertEqual(len(mail.outbox), 0)
 
-        mail.outbox.clear()
-        profile.email_notify_comment = True
-        profile.save()
+        # 4) 邮箱为空 → 不产生投递
+        NotificationSubscription.objects.filter(
+            user=self.target, source_key=Notification.CATEGORY_COMMENT, channel_key="email",
+        ).update(enabled=True)
         self.target.email = ""
-        self.target.save()
+        self.target.save(update_fields=["email"])
         notify(self.target, Notification.CATEGORY_COMMENT, "comment_posted", actor=self.mod, payload={})
-        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(NotificationDelivery.objects.count(), 1)
 
         self.assertEqual(
             Notification.objects.filter(
                 recipient=self.target, category=Notification.CATEGORY_COMMENT,
             ).count(),
-            3,
+            4,
         )
 
     def test_lift_requires_perm(self):

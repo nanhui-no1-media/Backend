@@ -27,7 +27,6 @@ from .models import (
     Conversation,
     Message,
     Notification,
-    UserMute,
 )
 
 logger = logging.getLogger(__name__)
@@ -236,96 +235,57 @@ def _tombstone_comment(comment: Comment, user) -> Comment:
 
 # ---- 全站禁言 ------------------------------------------------------------
 
-def current_mute(user) -> UserMute | None:
-    """最新一条仍生效的禁言；顺带惰性解除已到期的。无则 ``None``。"""
-    if not user or not getattr(user, "is_authenticated", False) or not getattr(user, "pk", None):
-        return None
-    _expire_mutes(user)
-    return _active_mute(user)
+# ---- 禁言（已迁至 reviews.discipline；以下为兼容转发，Deprecated）-----------
+
+def current_mute(user):
+    """Deprecated: 请改用 ``reviews.discipline.current_mute``。"""
+    from reviews.discipline import current_mute as _impl
+
+    return _impl(user)
 
 
 def is_muted(user) -> bool:
-    return current_mute(user) is not None
+    """Deprecated: 请改用 ``reviews.discipline.is_muted``。"""
+    from reviews.discipline import is_muted as _impl
+
+    return _impl(user)
 
 
-def mute_user(actor, user, *, reason: str = "", ends_at=None) -> UserMute:
-    if not actor.has_perm("messaging.mute_user"):
-        raise MessagingForbidden("没有全站禁言权限")
-    return _create_mute(actor, user, reason=reason, ends_at=ends_at)
+def mute_user(actor, user, *, reason: str = "", ends_at=None):
+    """Deprecated: 请改用 ``reviews.discipline.mute_user``。"""
+    from reviews.discipline import mute_user as _impl
+
+    return _impl(actor, user, reason=reason, ends_at=ends_at)
 
 
-def mute_user_for_report(actor, user, *, reason: str = "", ends_at=None) -> UserMute:
-    """举报成立时的特权禁言：跳过 ``mute_user`` 权限。仅 ``report_lifecycle`` 可调用。
+def mute_user_for_report(actor, user, *, reason: str = "", ends_at=None):
+    """Deprecated: 请改用 ``reviews.discipline.mute_user_for_report``。"""
+    from reviews.discipline import mute_user_for_report as _impl
 
-    仍禁止自禁；已禁言则拒绝。
-    """
-    return _create_mute(actor, user, reason=reason, ends_at=ends_at)
-
-
-def _create_mute(actor, user, *, reason: str = "", ends_at=None) -> UserMute:
-    if actor.pk == user.pk:
-        raise MessagingError("不能禁言自己")
-    if is_muted(user):
-        raise MessagingError("该用户已被禁言")
-    now = timezone.now()
-    if ends_at is not None and ends_at <= now:
-        raise MessagingError("结束时间须晚于当前时间")
-    row = UserMute.objects.create(
-        user=user,
-        muted_by=actor,
-        reason=reason or "",
-        starts_at=now,
-        ends_at=ends_at,
-    )
-    notify(
-        user, Notification.CATEGORY_DISCIPLINE, "muted",
-        actor=actor,
-        payload={
-            "mute_id": row.pk,
-            "reason": row.reason,
-            "ends_at": ends_at.isoformat() if ends_at else None,
-        },
-    )
-    return row
+    return _impl(actor, user, reason=reason, ends_at=ends_at)
 
 
-def lift_mute(actor, user) -> UserMute:
-    if not actor.has_perm("messaging.mute_user"):
-        raise MessagingForbidden("没有全站禁言权限")
-    row = current_mute(user)
-    if row is None:
-        raise MessagingError("该用户未被禁言")
-    row.lifted_at = timezone.now()
-    row.save(update_fields=["lifted_at"])
-    notify(
-        user, Notification.CATEGORY_DISCIPLINE, "mute_lifted",
-        actor=actor,
-        payload={"mute_id": row.pk},
-    )
-    return row
+def lift_mute(actor, user):
+    """Deprecated: 请改用 ``reviews.discipline.lift_mute``。"""
+    from reviews.discipline import lift_mute as _impl
+
+    return _impl(actor, user)
 
 
 # ---- 通知 / 横幅 / 推送 ---------------------------------------------------
 
 def notify(recipient, category: str, event: str, *, actor=None, payload: Mapping | None = None) -> Notification:
-    """落库 + 可选邮件（偏好开且有绑定邮箱）+ ``user_{id}`` 推送。"""
-    if category not in _EMAIL_PREF:
-        raise MessagingError("通知类别须为 comment、review 或 discipline")
-    data = dict(payload or {})
-    if actor is not None:
-        data.setdefault("actor_id", actor.pk)
-        data.setdefault("actor_username", actor.username)
-    row = Notification.objects.create(
-        recipient=recipient,
-        category=category,
-        event=event,
-        payload=data,
-    )
-    _maybe_email(recipient, category, event, data)
-    push_user(recipient.pk, "notification", {
-        "notification_id": row.pk, "category": category, "event": event,
-    })
-    return row
+    """兼容薄封装 → 通知框架（站内落库 + 推送 + 外发通道按订阅入队）。
+
+    详见 ``messaging.notifications.dispatch``；邮件等外发由
+    ``manage.py notification_worker`` 异步投递。
+    """
+    from .notifications.dispatch import dispatch
+
+    try:
+        return dispatch(category, event, [recipient], actor=actor, payload=payload)[0]
+    except ValueError as exc:
+        raise MessagingError(str(exc)) from exc
 
 
 def current_banner(now=None) -> Banner | None:
@@ -470,34 +430,6 @@ def _notify_comment(comment: Comment, author, parent: Comment | None) -> None:
             actor=author, payload=payload,
         )
         seen.add(mentioned.pk)
-
-
-def _active_mute(user, *, now=None) -> UserMute | None:
-    now = now or timezone.now()
-    return (
-        UserMute.objects
-        .filter(user=user, lifted_at__isnull=True)
-        .filter(Q(ends_at__isnull=True) | Q(ends_at__gt=now))
-        .order_by("-starts_at")
-        .first()
-    )
-
-
-def _expire_mutes(user) -> None:
-    now = timezone.now()
-    expired = list(
-        UserMute.objects.filter(
-            user=user, lifted_at__isnull=True, ends_at__isnull=False, ends_at__lte=now,
-        )
-    )
-    for row in expired:
-        row.lifted_at = now
-        row.save(update_fields=["lifted_at"])
-        notify(
-            user, Notification.CATEGORY_DISCIPLINE, "mute_expired",
-            actor=None,
-            payload={"mute_id": row.pk},
-        )
 
 
 def _maybe_email(recipient, category: str, event: str, payload: dict) -> None:

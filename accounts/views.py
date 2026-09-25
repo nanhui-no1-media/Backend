@@ -645,7 +645,7 @@ def _capabilities(user):
         "can_review_identity": user.has_perm("accounts.can_review_identity"),
         "can_force_publish": user.has_perm("reviews.force_publish"),
         "can_manage_comment_thread": user.has_perm("messaging.manage_comment_thread"),
-        "can_mute_user": user.has_perm("messaging.mute_user"),
+        "can_mute_user": user.has_perm("reviews.mute_user"),
         "can_manage_announcement": user.has_perm("messaging.manage_announcement"),
     }
 

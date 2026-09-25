@@ -5,6 +5,7 @@
 """
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Review(models.Model):
@@ -249,3 +250,35 @@ class ReportFiling(models.Model):
 
     def __str__(self):
         return f"filing:{self.case_id}:{self.reporter_id}"
+
+
+class UserMute(models.Model):
+    """全站禁言（纪律处罚）。归属审核模块；表名沿用 messaging 时期（数据零迁移）。"""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="mutes", verbose_name="被禁言用户",
+    )
+    muted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="issued_mutes", verbose_name="操作人",
+    )
+    reason = models.TextField("理由", blank=True, default="")
+    starts_at = models.DateTimeField("开始时间", default=timezone.now)
+    ends_at = models.DateTimeField("结束时间", null=True, blank=True)
+    lifted_at = models.DateTimeField("解除时间", null=True, blank=True)
+
+    class Meta:
+        db_table = "messaging_usermute"
+        verbose_name = "禁言"
+        verbose_name_plural = "禁言"
+        ordering = ["-starts_at"]
+        permissions = [
+            ("mute_user", "全站禁言"),
+        ]
+        indexes = [
+            models.Index(fields=["user", "lifted_at", "ends_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} muted by {self.muted_by.username}"

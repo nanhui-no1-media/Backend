@@ -218,7 +218,7 @@ class CustomUserAdmin(UserAdmin):
 
     def get_actions(self, request):
         actions = super().get_actions(request)
-        if not request.user.has_perm("messaging.mute_user"):
+        if not request.user.has_perm("reviews.mute_user"):
             actions.pop("mute_users", None)
         return actions
 
@@ -236,10 +236,11 @@ class CustomUserAdmin(UserAdmin):
 
     @admin.action(description="全站禁言")
     def mute_users(self, request, queryset):
-        """批量全站禁言（永久）。需 messaging.mute_user；已禁言 / 自己跳过。"""
-        from messaging.services import MessagingError, mute_user
+        """批量全站禁言（永久）。需 reviews.mute_user；已禁言 / 自己跳过。"""
+        from messaging.services import MessagingError
+        from reviews.discipline import mute_user
 
-        if not request.user.has_perm("messaging.mute_user"):
+        if not request.user.has_perm("reviews.mute_user"):
             self.message_user(request, "没有全站禁言权限。", level=messages.ERROR)
             return
         ok = skip = 0
