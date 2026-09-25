@@ -127,3 +127,62 @@ class SurveyExportTest(TestCase):
         data, content_type, filename = survey_export.export_responses([self.q, q2], "pdf")
         self.assertTrue(data.startswith(b"%PDF"))
         self.assertIn("batch-2", filename)
+
+
+def _schema_item_values():
+    """SurveyJS 默认 value 形态：{value: item1, text: 展示文本}。"""
+    return {
+        "title": "值文本问卷",
+        "pages": [{"name": "p1", "elements": [
+            {"type": "radiogroup", "name": "grade", "title": "年级",
+             "choices": [{"value": "item1", "text": "高一"}, {"value": "item2", "text": "高二"}]},
+            {"type": "checkbox", "name": "skills", "title": "方向",
+             "choices": [{"value": "item1", "text": "摄影"}, {"value": "item2", "text": "剪辑"}]},
+        ]}],
+    }
+
+
+class SurveyChoiceLabelsTest(TestCase):
+    """回归：SurveyJS 默认 value（item1/item2…）在导出时须还原为展示文本。"""
+
+    def setUp(self):
+        self.q = Questionnaire.objects.create(kind=Questionnaire.KIND_SURVEY, schema=_schema_item_values())
+        QuestionnaireResponse.objects.create(
+            questionnaire=self.q,
+            answers={"grade": "item2", "skills": ["item1", "item2"]},
+        )
+
+    def test_extract_choice_labels(self):
+        qs = {q["name"]: q for q in survey_export.extract_questions(self.q.schema)}
+        self.assertEqual(qs["grade"]["choices"], ["item1", "item2"])
+        self.assertEqual(qs["grade"]["choice_labels"], {"item1": "高一", "item2": "高二"})
+
+    def test_stats_labels_sorted_counts(self):
+        stats = survey_export.compute_stats(self.q.schema, [r.answers for r in self.q.responses.all()])
+        by_name = {s["name"]: s for s in stats}
+        items = dict(survey_export._sorted_counts(by_name["grade"]))
+        self.assertEqual(items["高一"], 0)  # 未选中选项保留零计数（分布图显示全部选项）
+        self.assertEqual(items["高二"], 1)
+
+    def test_stats_csv_shows_text_not_value(self):
+        data, _, _ = survey_export.export_stats([self.q], "csv")
+        text = data.decode("utf-8-sig")
+        self.assertIn("高一", text)
+        self.assertIn("高二", text)
+        self.assertNotIn("item1", text)
+
+    def test_responses_csv_shows_text_not_value(self):
+        data, _, _ = survey_export.export_responses([self.q], "csv")
+        text = data.decode("utf-8-sig")
+        self.assertIn("高二", text)
+        self.assertIn("摄影; 剪辑", text)
+        self.assertNotIn("item1", text)
+        self.assertNotIn("item2", text)
+
+    def test_responses_pdf_generates(self):
+        data, _, _ = survey_export.export_responses([self.q], "pdf")
+        self.assertTrue(data.startswith(b"%PDF"))
+
+    def test_palette_distinct(self):
+        self.assertEqual(len(survey_export.PALETTE), len(set(survey_export.PALETTE)))
+        self.assertGreaterEqual(len(survey_export.PALETTE), 8)
