@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.test_helpers import grant_verification
-from messaging.models import Banner, Conversation, Message, MessageReadStatus
+from messaging.models import Banner, Conversation, Message, MessageReadStatus, NotificationSubscription
 from messaging.services import mute_user, post_comment, thread_for
 from news.models import News
 from reviews.test_helpers import approve_news
@@ -313,7 +313,7 @@ class MuteHttpTest(TestCase):
     def setUp(self):
         self.mod = User.objects.create_user(username="mod", password="x")
         self.mod.user_permissions.add(
-            Permission.objects.get(content_type__app_label="messaging", codename="mute_user"),
+            Permission.objects.get(content_type__app_label="reviews", codename="mute_user"),
         )
         self.alice = grant_verification(
             User.objects.create_user(username="alice", password="secret123"),
@@ -406,4 +406,62 @@ class BannerCurrentHttpTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["id"], winner.pk)
         self.assertEqual(resp.json()["body"], "high")
+
+
+class NotificationPreferencesApiTest(TestCase):
+    """订阅偏好 API：矩阵读取 / 更新 / 校验（站内基线不可关）。"""
+
+    URL = "/messaging/notification-preferences/"
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="pref", password="x")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def test_matrix_lists_sources_and_channels(self):
+        resp = self.client.get(self.URL)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        source_keys = {s["key"] for s in data["sources"]}
+        self.assertIn("review", source_keys)
+        self.assertIn("activity", source_keys)
+        self.assertIn("discipline", source_keys)
+        channel_keys = {c["key"] for c in data["channels"]}
+        self.assertEqual(channel_keys, {"site", "email", "webhook", "sms"})
+        review = next(s for s in data["sources"] if s["key"] == "review")
+        self.assertTrue(review["channels"]["site"])  # 站内恒开
+
+    def test_patch_enables_email_subscription(self):
+        resp = self.client.patch(
+            self.URL,
+            {"updates": [{"source": "review", "channel": "email", "enabled": True}]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(
+            NotificationSubscription.objects.filter(
+                user=self.user, source_key="review", channel_key="email", enabled=True,
+            ).exists()
+        )
+        review = next(s for s in resp.json()["sources"] if s["key"] == "review")
+        self.assertTrue(review["channels"]["email"])
+
+    def test_patch_rejects_unknown_source(self):
+        resp = self.client.patch(
+            self.URL,
+            {"updates": [{"source": "nope", "channel": "email", "enabled": True}]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_site_channel_is_not_closable(self):
+        resp = self.client.patch(
+            self.URL,
+            {"updates": [{"source": "review", "channel": "site", "enabled": False}]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(
+            NotificationSubscription.objects.filter(user=self.user, channel_key="site").exists()
+        )
 

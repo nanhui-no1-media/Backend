@@ -191,9 +191,16 @@ class Notification(models.Model):
     CATEGORY_COMMENT = "comment"
     CATEGORY_REVIEW = "review"
     CATEGORY_DISCIPLINE = "discipline"
+    CATEGORY_ACTIVITY = "activity"
+    CATEGORY_DM = "dm"
+    CATEGORY_ANNOUNCEMENT = "announcement"
+    # category 与 messaging.notifications.sources 的源 key 对齐
     CATEGORY_CHOICES = [
-        (CATEGORY_COMMENT, "评论"),
         (CATEGORY_REVIEW, "审核"),
+        (CATEGORY_ACTIVITY, "活动"),
+        (CATEGORY_COMMENT, "评论"),
+        (CATEGORY_DM, "私信"),
+        (CATEGORY_ANNOUNCEMENT, "广播"),
         (CATEGORY_DISCIPLINE, "纪律"),
     ]
 
@@ -220,37 +227,6 @@ class Notification(models.Model):
         return f"{self.recipient.username} · {self.category} · {self.event}"
 
 
-class UserMute(models.Model):
-    """全站禁言记录。当前生效 = 最新一行 ``lifted_at`` 为空且（``ends_at`` 为空或未到期）。"""
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
-        related_name="mutes", verbose_name="被禁言用户",
-    )
-    muted_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
-        related_name="issued_mutes", verbose_name="操作人",
-    )
-    reason = models.TextField("理由", blank=True, default="")
-    starts_at = models.DateTimeField("开始时间", default=timezone.now)
-    ends_at = models.DateTimeField("结束时间", null=True, blank=True)
-    lifted_at = models.DateTimeField("解除时间", null=True, blank=True)
-
-    class Meta:
-        verbose_name = "禁言"
-        verbose_name_plural = "禁言"
-        ordering = ["-starts_at"]
-        permissions = [
-            ("mute_user", "全站禁言"),
-        ]
-        indexes = [
-            models.Index(fields=["user", "lifted_at", "ends_at"]),
-        ]
-
-    def __str__(self):
-        return f"{self.user.username} muted by {self.muted_by.username}"
-
-
 class Banner(models.Model):
     """全站横幅公告。同时只展示一条：未过期中 priority 最高，并列取较新。"""
 
@@ -274,3 +250,61 @@ class Banner(models.Model):
 
     def __str__(self):
         return self.body[:40]
+
+
+class NotificationSubscription(models.Model):
+    """用户 × 源 × 通道 的订阅开关（缺行 = 采用该源的默认通道）。"""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="notification_subscriptions", verbose_name="用户",
+    )
+    source_key = models.CharField("源", max_length=32)
+    channel_key = models.CharField("通道", max_length=32)
+    enabled = models.BooleanField("启用", default=True)
+    updated_at = models.DateTimeField("更新时间", auto_now=True)
+
+    class Meta:
+        verbose_name = "通知订阅"
+        verbose_name_plural = "通知订阅"
+        unique_together = ("user", "source_key", "channel_key")
+
+    def __str__(self):
+        return f"{self.user_id} · {self.source_key} · {self.channel_key} = {self.enabled}"
+
+
+class NotificationDelivery(models.Model):
+    """一条通知 × 一个通道的投递记录（同步投递留痕；失败可审计）。"""
+
+    STATUS_PENDING = "pending"
+    STATUS_SENT = "sent"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "待投递"),
+        (STATUS_SENT, "已送达"),
+        (STATUS_FAILED, "失败"),
+    ]
+
+    notification = models.ForeignKey(
+        Notification, on_delete=models.CASCADE,
+        related_name="deliveries", verbose_name="通知",
+    )
+    channel_key = models.CharField("通道", max_length=32)
+    status = models.CharField("状态", max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    attempts = models.PositiveIntegerField("尝试次数", default=0)
+    last_error = models.TextField("最后错误", blank=True, default="")
+    next_retry_at = models.DateTimeField("下次重试时间", null=True, blank=True)
+    sent_at = models.DateTimeField("送达时间", null=True, blank=True)
+    created_at = models.DateTimeField("创建时间", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "通知投递"
+        verbose_name_plural = "通知投递"
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["status", "next_retry_at"]),
+            models.Index(fields=["channel_key", "status"]),
+        ]
+
+    def __str__(self):
+        return f"delivery#{self.pk} {self.channel_key} {self.status}"

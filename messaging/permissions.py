@@ -1,7 +1,9 @@
 from rest_framework import permissions
 
+from reviews.discipline import is_muted
+
 from .models import Comment, CommentThread
-from .services import can_manage_thread, is_muted
+from .services import can_manage_thread
 
 
 class IsConversationParticipant(permissions.BasePermission):
@@ -52,10 +54,10 @@ class CanManageThread(permissions.BasePermission):
 
 
 class CanMuteUser(permissions.BasePermission):
-    """全站禁言 / 解除：持 ``messaging.mute_user``。"""
+    """全站禁言 / 解除：持 ``reviews.mute_user``。"""
 
     message = "没有全站禁言权限。"
 
     def has_permission(self, request, view):
         user = request.user
-        return bool(user and user.is_authenticated and user.has_perm("messaging.mute_user"))
+        return bool(user and user.is_authenticated and user.has_perm("reviews.mute_user"))

@@ -8,7 +8,6 @@ from .models import (
     Message,
     MessageReadStatus,
     Notification,
-    UserMute,
 )
 
 
@@ -62,13 +61,6 @@ class BannerAdmin(admin.ModelAdmin):
 
     def body_preview(self, obj):
         return obj.body[:50]
-
-
-@admin.register(UserMute)
-class UserMuteAdmin(admin.ModelAdmin):
-    list_display = ["id", "user", "muted_by", "starts_at", "ends_at", "lifted_at"]
-    list_filter = ["starts_at", "ends_at", "lifted_at"]
-    search_fields = ["user__username", "reason"]
 
 
 @admin.register(Notification)
