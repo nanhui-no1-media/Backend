@@ -148,6 +148,25 @@ class QuestionnaireResponseAdmin(SurveyJSResponseViewMixin, admin.ModelAdmin):
     autocomplete_fields = ["questionnaire", "user"]
     readonly_fields = ["answers", "submitted_at", "device_id"]
     date_hierarchy = "submitted_at"
+    actions = ["export_selected_csv", "export_selected_pdf"]
+
+    @admin.action(description="导出为 CSV")
+    def export_selected_csv(self, request, queryset):
+        return self._export_selected(queryset, "csv")
+
+    @admin.action(description="导出为 PDF")
+    def export_selected_pdf(self, request, queryset):
+        return self._export_selected(queryset, "pdf")
+
+    def _export_selected(self, queryset, fmt):
+        """导出勾选的作答（多选聚合为单个文件）。"""
+        rows = list(queryset.select_related("user", "questionnaire"))
+        if not rows:
+            return None
+        data, content_type, filename = survey_export.export_selected_responses(rows, fmt)
+        response = HttpResponse(data, content_type=content_type)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related("questionnaire", "user")

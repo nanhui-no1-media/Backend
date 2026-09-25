@@ -746,3 +746,30 @@ def export_responses(questionnaires, fmt):
     if fmt == "pdf":
         return _responses_pdf(sections), "application/pdf", _batch_name("responses", qs, "pdf")
     raise ValueError(f"unsupported format: {fmt}")
+
+
+def export_selected_responses(responses, fmt):
+    """导出勾选的作答集合（可跨问卷；按问卷分组聚合为单个文件）。
+
+    responses: 可迭代的 QuestionnaireResponse（需带 user / questionnaire）。
+    返回 (data: bytes, content_type, filename)。
+    """
+    groups = {}
+    for r in responses:
+        groups.setdefault(r.questionnaire_id, []).append(r)
+    sections = []
+    qs = []
+    for rows in groups.values():
+        q = rows[0].questionnaire
+        qs.append(q)
+        schema = q.schema or {}
+        sections.append({
+            "title": schema.get("title") or f"#{q.pk}",
+            "questions": extract_questions(schema),
+            "data": [(_label(r), r.submitted_at, r.answers or {}) for r in rows],
+        })
+    if fmt == "csv":
+        return _responses_csv(sections).encode("utf-8"), "text/csv; charset=utf-8", _batch_name("responses", qs, "csv")
+    if fmt == "pdf":
+        return _responses_pdf(sections), "application/pdf", _batch_name("responses", qs, "pdf")
+    raise ValueError(f"unsupported format: {fmt}")
