@@ -138,7 +138,13 @@ class ManualSubmitTest(TestCase):
         self.assertEqual(v.status, Verification.STATUS_APPROVED)
         self.assertEqual(v.verified_by, self.reviewer)
         self.assertTrue(is_verified(self.target))
-        self.assertEqual(len(mail.outbox), 1)
+        from messaging.models import Notification
+
+        self.assertTrue(
+            Notification.objects.filter(
+                recipient=self.target, category="review", event="identity_resolved",
+            ).exists()
+        )
 
     def test_reject_sets_manual_rejected_and_emails(self):
         Verification.objects.create(user=self.target, channel=Verification.CHANNEL_MANUAL, status=Verification.STATUS_PENDING)
@@ -146,8 +152,13 @@ class ManualSubmitTest(TestCase):
         v = Verification.objects.get(user=self.target, channel=Verification.CHANNEL_MANUAL)
         self.assertEqual(v.status, Verification.STATUS_REJECTED)
         self.assertFalse(is_verified(self.target))
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("驳回", mail.outbox[0].subject)
+        from messaging.models import Notification
+
+        n = Notification.objects.filter(
+            recipient=self.target, category="review", event="identity_resolved",
+        ).first()
+        self.assertIsNotNone(n)
+        self.assertEqual(n.payload.get("result"), "rejected")
 
     def test_disable_sets_inactive(self):
         Verification.objects.create(user=self.target, channel=Verification.CHANNEL_MANUAL, status=Verification.STATUS_PENDING)

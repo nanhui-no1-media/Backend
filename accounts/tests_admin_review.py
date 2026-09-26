@@ -87,8 +87,14 @@ class AdminReviewActionsTest(TestCase):
         self.assertEqual(v.verified_by, self.reviewer)
         self.assertIsNotNone(v.verified_at)
         self.assertTrue(is_verified(self.target))  # manual approved ⇒ 已验证
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("通过", mail.outbox[0].subject)
+        from messaging.models import Notification
+
+        n = Notification.objects.filter(
+            recipient=self.target, category="review", event="identity_resolved",
+        ).first()
+        self.assertIsNotNone(n)
+        self.assertEqual(n.payload.get("result"), "approved")
+        self.assertEqual(len(mail.outbox), 0)  # 默认仅站内订阅（邮件需用户开启）
 
     def test_disable_account_sets_inactive_and_emails(self):
         disable_account(self.ma, self._req(self.reviewer), Profile.objects.filter(pk=self.target.profile.pk))

@@ -52,6 +52,42 @@ def dispatch(
     return rows
 
 
+def users_with_perm(perm: str) -> list:
+    """持有 ``app_label.codename`` 权限的全部启用用户（直接授权 / 组授权 / 超级管理员）。
+
+    权限驱动投递的收件人解析：动态查询、即时生效（刚获授权即收到、失去权限即停止）。
+    """
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+
+    app_label, _, codename = perm.rpartition(".")
+    if not app_label or not codename:
+        raise ValueError(f"权限格式应为 app_label.codename：{perm!r}")
+    User = get_user_model()
+    return list(
+        User.objects.filter(is_active=True)
+        .filter(
+            Q(is_superuser=True)
+            | Q(
+                user_permissions__content_type__app_label=app_label,
+                user_permissions__codename=codename,
+            )
+            | Q(
+                groups__permissions__content_type__app_label=app_label,
+                groups__permissions__codename=codename,
+            )
+        )
+        .distinct()
+    )
+
+
+def all_active_users() -> list:
+    """全部启用用户（全体广播类通知的收件人集）。"""
+    from django.contrib.auth import get_user_model
+
+    return list(get_user_model().objects.filter(is_active=True))
+
+
 def site_enabled(user, source_key: str) -> bool:
     """该源是否对该用户开启站内（默认开启；用户可关闭以拒绝接收）。"""
     row = (

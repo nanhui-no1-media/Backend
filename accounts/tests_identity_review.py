@@ -130,8 +130,13 @@ class IdentityReviewApiTest(TestCase):
         self.assertEqual(self.v.status, Verification.STATUS_APPROVED)
         self.assertEqual(self.v.verified_by, self.reviewer)
         self.assertTrue(is_verified(self.target))
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("通过", mail.outbox[0].subject)
+        from messaging.models import Notification
+
+        n = Notification.objects.filter(
+            recipient=self.target, category="review", event="identity_resolved",
+        ).first()
+        self.assertIsNotNone(n)
+        self.assertEqual(n.payload.get("result"), "approved")
 
     def test_reject_sets_rejected_and_allows_resubmit(self):
         resp = self.client.post(f"{LIST}{self.v.pk}/reject/")
@@ -140,8 +145,13 @@ class IdentityReviewApiTest(TestCase):
         self.v.refresh_from_db()
         self.assertEqual(self.v.status, Verification.STATUS_REJECTED)
         self.assertFalse(is_verified(self.target))
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("驳回", mail.outbox[0].subject)
+        from messaging.models import Notification
+
+        n = Notification.objects.filter(
+            recipient=self.target, category="review", event="identity_resolved",
+        ).first()
+        self.assertIsNotNone(n)
+        self.assertEqual(n.payload.get("result"), "rejected")
 
         submitter = APIClient()
         submitter.force_login(self.target)

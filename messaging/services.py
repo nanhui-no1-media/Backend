@@ -278,6 +278,53 @@ def notify(
     return rows[0] if rows else None
 
 
+def notify_many(
+    recipients, category: str, event: str, *, actor=None, payload: Mapping | None = None,
+) -> list:
+    """向多收件人投递同一事件（自动去重、跳过 None）。返回落库的通知列表。"""
+    from .notifications.dispatch import dispatch
+
+    seen: set = set()
+    users = []
+    for user in recipients:
+        if user is None or user.pk in seen:
+            continue
+        seen.add(user.pk)
+        users.append(user)
+    if not users:
+        return []
+    try:
+        return dispatch(category, event, users, actor=actor, payload=payload)
+    except ValueError as exc:
+        raise MessagingError(str(exc)) from exc
+
+
+def notify_all(
+    category: str, event: str, *, actor=None, payload: Mapping | None = None,
+) -> list:
+    """全站广播：向所有启用用户投递（订阅开关与静默规则照常生效）。"""
+    from .notifications.dispatch import all_active_users
+
+    return notify_many(all_active_users(), category, event, actor=actor, payload=payload)
+
+
+def notify_perm(
+    category: str, event: str, perm: str, *,
+    actor=None, payload: Mapping | None = None, extra_recipients=(),
+) -> list:
+    """权限驱动投递：收件人 = 持有 ``perm``（``app_label.codename``）的全部用户。
+
+    - 动态解析：直接授权 / 组授权 / 超级管理员（刚获权即收、失权即停）
+    - 自动去重，并排除操作者本人（自己提交/操作不必再通知自己）
+    """
+    from .notifications.dispatch import users_with_perm
+
+    recipients = users_with_perm(perm) + list(extra_recipients)
+    if actor is not None:
+        recipients = [u for u in recipients if u.pk != actor.pk]
+    return notify_many(recipients, category, event, actor=actor, payload=payload)
+
+
 def current_banner(now=None) -> Banner | None:
     """当前窗口内至多一条：priority 高者胜，并列取较新。"""
     now = now or timezone.now()
@@ -337,10 +384,23 @@ def send_dm(conversation: Conversation, sender, content: str) -> Message:
     if mentioned:
         message.mentions.set(mentioned)
     Conversation.objects.filter(pk=conversation.pk).update(updated_at=timezone.now())
-    for uid in conversation.participants.exclude(pk=sender.pk).values_list("id", flat=True):
-        push_user(uid, "dm", {
+    others = list(conversation.participants.exclude(pk=sender.pk))
+    for other in others:
+        push_user(other.pk, "dm", {
             "conversation_id": conversation.pk, "message_id": message.pk,
         })
+    notify_many(
+        others,
+        "dm",
+        "new_message",
+        actor=sender,
+        payload={
+            "type": "dm",
+            "id": conversation.pk,
+            "title": getattr(conversation, "title", "") or "",
+            "url": f"/messages/{conversation.pk}",
+        },
+    )
     return message
 
 
