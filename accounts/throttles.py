@@ -51,6 +51,25 @@ class ResendVerificationThrottle(_IPLimitThrottle):
         return f"{get_policy().resend_verification_per_ip_per_hour}/hour"
 
 
+class AuthCodeRedeemThrottle(_IPLimitThrottle):
+    """认证码兑换节流：每个账号每小时 N 次失败（N 来自 get_policy()）。
+
+    按账号（user.pk）计数、**只计失败**——成功兑换不占额度；调用方在兑换失败时
+    显式调用 allow_request 记账（与登录节流同口径）。
+    """
+
+    scope = "authcode_redeem"
+
+    def get_cache_key(self, request, view):
+        user = getattr(request, "user", None)
+        if user is None or not getattr(user, "is_authenticated", False) or not user.pk:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": f"u{user.pk}"}
+
+    def get_rate(self):
+        return f"{get_policy().authcode_redeem_per_user_per_hour}/hour"
+
+
 class LoginIpThrottle(_IPLimitThrottle):
     """登录失败节流：每个 IP 每小时 N 次（N 来自 get_policy()）。"""
 

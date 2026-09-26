@@ -6,7 +6,7 @@ import "../../styles/profile.css";
 
 // 前后端契约（#36）：通道集 + 通道对象键集，与后端 /auth/verification/ 对齐
 // （accounts.tests_verification.VerificationPanelContractTest 钉死，防漂移）。
-export const VERIFICATION_CHANNELS = ["appointment", "email", "manual"];
+export const VERIFICATION_CHANNELS = ["appointment", "email", "manual", "authcode"];
 export const VERIFICATION_CARD_FIELDS = ["channel", "status", "identifier", "verified_at"];
 
 type ChannelStatus = "none" | "pending" | "approved" | "rejected";
@@ -35,6 +35,7 @@ const CHANNEL_META: Record<string, { label: string; desc: string }> = {
   },
   email: { label: "邮箱验证", desc: "绑定并验证一个邮箱即可成为已验证用户。" },
   manual: { label: "人工审批", desc: "提交身份证明，由管理员审核通过即成为已验证用户。" },
+  authcode: { label: "认证码", desc: "持有管理员发放的认证码时，输入码即可完成验证。" },
 };
 
 // 各通道各状态 → 展示文案 + 徽章 + 提示（数据驱动：加状态只改此处）。
@@ -56,6 +57,12 @@ const STATE: Record<string, Record<ChannelStatus, { label: string; badge: string
     pending: { label: "审核中", badge: "badge-warning", hint: "身份证明已提交，等待管理员审核。" },
     approved: { label: "已通过", badge: "badge-success", hint: "身份审核已通过。" },
     rejected: { label: "已驳回", badge: "badge-danger", hint: "身份证明被驳回，可重新提交。" },
+  },
+  authcode: {
+    none: { label: "未使用", badge: "badge-ghost", hint: "输入收到的认证码即可完成验证。" },
+    pending: { label: "待兑换", badge: "badge-warning", hint: "" }, // 该通道无 pending，保留数据驱动完备性
+    approved: { label: "已通过", badge: "badge-success", hint: "认证码已验证。" },
+    rejected: { label: "已撤销", badge: "badge-danger", hint: "" }, // 该通道无 rejected，保留数据驱动完备性
   },
 };
 
@@ -192,6 +199,50 @@ function ManualCard({ card, onChanged, closed }: { card: ChannelCard; onChanged:
   );
 }
 
+function CodeCard({ card, onChanged, closed }: { card: ChannelCard; onChanged: () => void; closed: boolean }) {
+  const [codeInput, setCodeInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  // 只能兑换、不能生成：码由管理员在 Django 后台生成并线下分发（ADR-0020）。
+  const canRedeem = !closed && card.status === "none";
+  if (!canRedeem) return <CardShell card={card} />;
+
+  const redeem = () => {
+    if (!codeInput.trim()) return;
+    setSubmitting(true);
+    setErr("");
+    setMsg("");
+    api.verificationAuthcodeRedeem(codeInput)
+      .then(() => {
+        setMsg("认证码验证通过，账号已完成验证。");
+        setCodeInput("");
+        onChanged();
+      })
+      .catch((e: any) => setErr(e.message || "兑换失败"))
+      .finally(() => setSubmitting(false));
+  };
+
+  return (
+    <CardShell card={card}>
+      <div className="verify-card-actions">
+        <div className="verify-email-form">
+          <input type="text" placeholder="输入认证码" value={codeInput} disabled={submitting}
+                 autoComplete="off" spellCheck={false}
+                 onChange={(e) => setCodeInput(e.target.value)}
+                 onKeyDown={(e) => { if (e.key === "Enter") redeem(); }} />
+          <button className="btn btn-sm btn-primary" type="button"
+                  disabled={submitting || !codeInput.trim()}
+                  onClick={redeem}>兑换</button>
+        </div>
+      </div>
+      {msg && <p className="muted verify-card-msg">{msg}</p>}
+      {err && <p className="verify-card-err">{err}</p>}
+    </CardShell>
+  );
+}
+
 export default function VerificationPanel() {
   const [data, setData] = useState<VerificationStatus | null>(null);
   const [err, setErr] = useState("");
@@ -239,6 +290,9 @@ export default function VerificationPanel() {
           }
           if (c.channel === "manual") {
             return <ManualCard key={c.channel} card={c} onChanged={load} closed={!policy.verification_enabled} />;
+          }
+          if (c.channel === "authcode") {
+            return <CodeCard key={c.channel} card={c} onChanged={load} closed={!policy.verification_enabled} />;
           }
           return <CardShell key={c.channel} card={c} />;
         })}

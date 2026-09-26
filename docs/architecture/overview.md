@@ -80,7 +80,7 @@
 
 ### 身份验证
 
-- 登录后需通过身份验证（人工审核 / 委任通道：见 [ADR-0006](../adr/0006-verification-model.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)）才计为正式「用户」；门禁分级：公开 → 登录 → 已验证 → 权限。
+- 登录后需通过身份验证（人工审核 / 委任 / 认证码通道：见 [ADR-0006](../adr/0006-verification-model.md)、[ADR-0013](../adr/0013-appointment-verification-channel.md)、[ADR-0020](../adr/0020-authcode-verification-channel.md)）才计为正式「用户」；门禁分级：公开 → 登录 → 已验证 → 权限。
 - 详见 [身份验证指南](../guides/verification.md)。
 
 ### 单会话与登录保护
@@ -112,5 +112,5 @@ Nginx（一层代理）→ Gunicorn ASGI 单 worker，systemd 托管；更新与
 
 ## 设计记录
 
-- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0019）。
+- 全部架构决策记录见 [docs/adr/](../adr/)（0001–0020）。
 - 领域术语与项目概览：仓库根目录 [CONTEXT.md](../../CONTEXT.md)。

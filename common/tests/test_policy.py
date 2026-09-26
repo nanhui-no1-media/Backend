@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 from common.admin import SiteSettingsAdmin
 from common.models import SiteSettings
 from common.policy import (
+    DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
     DEFAULT_AUTO_UPDATE_ENABLED,
     DEFAULT_COMMENT_MAX_DEPTH,
     DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY,
@@ -53,6 +54,7 @@ class SitePolicyDefaultsTest(TestCase):
         self.assertEqual(p.login_per_username_per_hour, DEFAULT_LOGIN_PER_USERNAME_PER_HOUR)
         self.assertEqual(p.feedback_anon_per_ip_per_day, DEFAULT_FEEDBACK_ANON_PER_IP_PER_DAY)
         self.assertEqual(p.reports_per_user_per_day, DEFAULT_REPORTS_PER_USER_PER_DAY)
+        self.assertEqual(p.authcode_redeem_per_user_per_hour, DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR)
         self.assertEqual(p.sync_upload_max_bytes, DEFAULT_SYNC_UPLOAD_MAX_BYTES)
         self.assertEqual(p.tus_media_max_bytes, DEFAULT_TUS_MEDIA_MAX_BYTES)
         self.assertEqual(p.auto_update_enabled, DEFAULT_AUTO_UPDATE_ENABLED)
@@ -128,6 +130,7 @@ class SitePolicyDefaultsTest(TestCase):
                 "login_per_username_per_hour",
                 "feedback_anon_per_ip_per_day",
                 "reports_per_user_per_day",
+                "authcode_redeem_per_user_per_hour",
             ),
         )
 
@@ -190,6 +193,7 @@ class SitePolicyPublicGetTest(TestCase):
         self.assertEqual(data["login_per_username_per_hour"], 10)
         self.assertEqual(data["feedback_anon_per_ip_per_day"], 10)
         self.assertEqual(data["reports_per_user_per_day"], 10)
+        self.assertEqual(data["authcode_redeem_per_user_per_hour"], 10)
         self.assertEqual(data["sync_upload_max_bytes"], 50 * 1024 * 1024)
         self.assertEqual(data["tus_media_max_bytes"], 500 * 1024 * 1024)
         self.assertEqual(data["auto_update_enabled"], True)

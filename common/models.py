@@ -2,6 +2,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from .policy import (
+    DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
     DEFAULT_AUTO_UPDATE_ENABLED,
     DEFAULT_COMMENT_MAX_DEPTH,
     DEFAULT_COMMENTS_ENABLED,
@@ -77,6 +78,12 @@ class SiteSettings(models.Model):
         default=DEFAULT_REPORTS_PER_USER_PER_DAY,
         validators=[MinValueValidator(1)],
         help_text="已验证成员提交举报的日上限。",
+    )
+    authcode_redeem_per_user_per_hour = models.PositiveIntegerField(
+        "每账号每小时认证码兑换失败次数",
+        default=DEFAULT_AUTHCODE_REDEEM_PER_USER_PER_HOUR,
+        validators=[MinValueValidator(1)],
+        help_text="认证码兑换只计失败；成功兑换不占额度。",
     )
     sync_upload_max_bytes = models.PositiveBigIntegerField(
         "同步上传单文件上限（字节）",

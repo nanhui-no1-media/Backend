@@ -1,13 +1,18 @@
+from datetime import timedelta
+
+from django import forms
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
-from django.db.models import OuterRef, Subquery
+from django.db.models import F, OuterRef, Subquery
+from django.utils import timezone
 from django.utils.html import format_html, format_html_join
 
 from common.policy import get_policy
 
+from .authcode import generate_authcode_value, normalize_authcode
 from .identity_review import approve_manual, disable_user, reject_manual
-from .models import IdentityProof, Profile, Verification, is_verified
+from .models import AuthCode, AuthCodeRedemption, IdentityProof, Profile, Verification, is_verified
 
 
 # ---- 审核动作（#31 / ADR-0006）----
@@ -257,3 +262,163 @@ admin.site.unregister(User)
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(Profile, ProfileAdmin)
 admin.site.register(IdentityProof, IdentityProofAdmin)
+
+
+# ---- 认证码（ADR-0020，生成侧）----
+# 生成 / 吊销全在 Django 后台（不建前端管理页）；权限 = 标准 CRUD
+# （accounts.add_authcode / view / change / delete，由 0012 授权迁移授给 社长 / 信息组；
+# 后台操作需 is_staff）。生成 / 吊销不受站点「验证通道」开关约束（可先备码）；
+# 兑换侧受约束（见 views.verification_authcode_redeem_view）。
+
+
+class AuthCodeStatusFilter(admin.SimpleListFilter):
+    """按派生状态过滤：有效 / 已过期 / 已用尽 / 已吊销（优先级：吊销 > 过期 > 用尽）。"""
+
+    title = "状态"
+    parameter_name = "status"
+
+    def lookups(self, request, model_admin):
+        return [
+            ("valid", "有效"),
+            ("expired", "已过期"),
+            ("exhausted", "已用尽"),
+            ("revoked", "已吊销"),
+        ]
+
+    def queryset(self, request, qs):
+        value = self.value()
+        if not value:
+            return qs
+        now = timezone.now()
+        if value == "revoked":
+            return qs.filter(revoked_at__isnull=False)
+        qs = qs.filter(revoked_at__isnull=True)
+        if value == "expired":
+            return qs.filter(expires_at__lte=now)
+        qs = qs.filter(expires_at__gt=now)
+        if value == "exhausted":
+            return qs.filter(used_count__gte=F("max_uses"))
+        if value == "valid":
+            return qs.filter(used_count__lt=F("max_uses"))
+        return qs
+
+
+class AuthCodeAdminForm(forms.ModelForm):
+    """后台表单：码值归一化（去空格 / 连字符、转大写）后做唯一校验。"""
+
+    class Meta:
+        model = AuthCode
+        fields = "__all__"
+
+    def clean_code(self):
+        value = normalize_authcode(self.cleaned_data.get("code", ""))
+        if not value:
+            raise forms.ValidationError("请输入有效的认证码。")
+        return value
+
+
+@admin.action(description="吊销认证码（不回溯已通过者）")
+def revoke_authcodes(modeladmin, request, queryset):
+    """软吊销：只停后续兑换，不改已通过用户的验证状态。"""
+    if not request.user.has_perm("accounts.change_authcode"):
+        modeladmin.message_user(request, "没有吊销认证码的权限。", level=messages.ERROR)
+        return
+    now = timezone.now()
+    count = 0
+    for obj in queryset:
+        if obj.revoked_at is not None:
+            continue
+        obj.revoked_at = now
+        obj.save(update_fields=["revoked_at"])
+        count += 1
+    modeladmin.message_user(request, f"已吊销 {count} 个认证码（已吊销的跳过）。")
+
+
+class AuthCodeRedemptionInline(admin.TabularInline):
+    """码详情页内嵌兑换记录（只读）。"""
+
+    model = AuthCodeRedemption
+    extra = 0
+    can_delete = False
+    readonly_fields = ("user", "redeemed_at")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+class AuthCodeAdmin(admin.ModelAdmin):
+    """认证码：后台直接创造（新增预生成 12 位码、可手改）+ 软吊销 + 删除规则。"""
+
+    form = AuthCodeAdminForm
+    fields = ("code", "note", "expires_at", "max_uses", "used_count", "created_by", "created_at", "revoked_at")
+    list_display = ("code", "status_display", "uses_display", "expires_at", "created_by", "note", "created_at")
+    list_filter = (AuthCodeStatusFilter, "created_by", "created_at")
+    search_fields = ("code", "note", "created_by__username")
+    inlines = [AuthCodeRedemptionInline]
+    actions = [revoke_authcodes]
+    ordering = ("-created_at",)
+
+    def get_readonly_fields(self, request, obj=None):
+        # 生成后：码 / 可用次数 / 生成人不可改；备注与有效期可改（「延期」场景）。
+        if obj is None:
+            return ("created_by", "created_at", "used_count", "revoked_at")
+        return ("code", "max_uses", "created_by", "created_at", "used_count", "revoked_at")
+
+    def get_changeform_initial_data(self, request):
+        # 新增表单自动预生成 12 位码（可手改 = 自定义码）；有效期初始「当前 +30 天」。
+        return {
+            "code": generate_authcode_value(),
+            "expires_at": timezone.now() + timedelta(days=30),
+            "max_uses": 1,
+        }
+
+    def save_model(self, request, obj, form, change):
+        if not change and obj.created_by_id is None:
+            obj.created_by = request.user  # 生成人自动 = 当前操作者
+        super().save_model(request, obj, form, change)
+
+    def has_delete_permission(self, request, obj=None):
+        # 仅从未使用且未吊销的码可删（纠错清理）；其余留审计。
+        if obj is not None and (obj.used_count > 0 or obj.revoked_at is not None):
+            return False
+        return super().has_delete_permission(request, obj)
+
+    @admin.display(description="状态")
+    def status_display(self, obj):
+        return {
+            "valid": "有效",
+            "expired": "已过期",
+            "exhausted": "已用尽",
+            "revoked": "已吊销",
+        }.get(obj.status, obj.status)
+
+    @admin.display(description="已用次数")
+    def uses_display(self, obj):
+        return f"{obj.used_count}/{obj.max_uses}"
+
+
+class AuthCodeRedemptionAdmin(admin.ModelAdmin):
+    """兑换记录（审计）：全局只读追溯，按用户 / 码搜索；随认证码查看权限可见。"""
+
+    list_display = ("user", "authcode", "redeemed_at")
+    search_fields = ("user__username", "user__email", "authcode__code")
+    list_filter = ("redeemed_at",)
+
+    def has_module_permission(self, request):
+        return request.user.has_perm("accounts.view_authcode")
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.has_perm("accounts.view_authcode")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+admin.site.register(AuthCode, AuthCodeAdmin)
+admin.site.register(AuthCodeRedemption, AuthCodeRedemptionAdmin)

@@ -24,6 +24,10 @@ export const api = {
   verificationManualSubmit: (data: FormData) =>
     request("/verification/manual/submit/", { method: "POST", body: data }),
 
+  // 认证码通道（ADR-0020）：只兑换、不生成（码由管理员在 Django 后台生成）。
+  verificationAuthcodeRedeem: (code: string) =>
+    request("/verification/authcode/redeem/", { method: "POST", body: JSON.stringify({ code }) }),
+
   listSessions: () =>
     request("/sessions/"),
 

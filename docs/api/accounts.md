@@ -35,6 +35,7 @@
 | GET | `/auth/verification/` | 登录 | — | 账号验证状态总览 |
 | POST | `/auth/verification/email/bind/` | 登录 | — | 绑定 / 换邮 / 重发邮箱验证 |
 | POST | `/auth/verification/manual/submit/` | 登录 | — | 提交人工通道身份证明（multipart） |
+| POST | `/auth/verification/authcode/redeem/` | 登录 | — | 兑换认证码（即时通过） |
 | GET | `/auth/identity-proof/{pk}/` | 登录 | 本人或 `accounts.can_review_identity` | 身份证明文件（鉴权下载） |
 | GET | `/auth/identity-reviews/` | 登录 | `accounts.can_review_identity` | 人工身份审核队列 |
 | GET | `/auth/identity-reviews/{pk}/` | 登录 | `accounts.can_review_identity` | 单条审核记录 |
@@ -228,7 +229,7 @@
 }
 ```
 
-`status` ∈ `none` / `pending` / `approved` / `rejected`；`identifier`：email = 待验地址（验证通过后即提升为 `User.email`）、manual = 空、appointment = `staff` / `superuser`。
+`status` ∈ `none` / `pending` / `approved` / `rejected`；`identifier`：email = 待验地址（验证通过后即提升为 `User.email`）、manual = 空、appointment = `staff` / `superuser`、authcode = 码原文（后台可读，供追溯）。
 
 ### 邮箱通道：绑定 / 换邮 / 重发
 
@@ -251,6 +252,16 @@
 | proof_files | file[] | 是 | 1–3 张；单张 ≤5MB；仅 `image/jpeg` / `image/png` / `image/webp` |
 
 **响应 `200 OK`**：`{"message": "身份证明已提交，等待管理员审核。"}`；**错误**：403 `verification_closed`；400 校验消息（可数组）或 `{"error": "当前不可提交（审核中或已通过）"}`。
+
+### 认证码通道：兑换
+
+`POST /auth/verification/authcode/redeem/`
+
+**认证**：登录；**权限**：—。请求体 JSON：`code`（是）。码经归一化（去空格 / 连字符、转大写）后按序校验：无效 / 已吊销 / 已过期 / 已用尽 / 每账号至多一次；通过即写 `authcode` 通道 `approved`（`identifier` = 码原文，`verified_by` = 发码人）、`used_count + 1` 并落兑换记录（审计留底）。**已通过任意通道**的账号再兑换 → 400 且不消耗任何码。
+
+**响应 `200 OK`**：`{"message": "认证码验证通过，账号已完成验证。"}`；**错误**：403 `verification_closed`；429 `{"error": "请求过于频繁，请稍后再试。"}`（每账号每小时失败次数超限，**只计失败**、成功不占额度）；400 `{"error": "…"}`（无效 / 已吊销 / 已过期 / 已用尽 / 账号已完成验证 / 空码 / JSON 非法）。
+
+码的生成与吊销**只在 Django 后台**（`账户 → 认证码`），前端无生成入口；过期 / 吊销只停后续兑换，不回溯已通过者。
 
 ### 人工身份审核（证明下载 / 队列 / 动作）
 
