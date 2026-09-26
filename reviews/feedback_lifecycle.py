@@ -1,7 +1,7 @@
 """意见反馈状态机（ADR-0003：状态转移不是访问控制，与 permission_classes 分离）。"""
 from django.utils import timezone
 
-from messaging.services import notify
+from messaging.services import notify, notify_perm
 
 from .models import Feedback
 
@@ -11,8 +11,11 @@ class FeedbackDenied(Exception):
 
 
 def submit(*, title, description="", category, contact="", creator=None):
-    """创建一条待处理反馈。匿名 ``creator=None``；署名才记创建人。"""
-    return Feedback.objects.create(
+    """创建一条待处理反馈。匿名 ``creator=None``；署名才记创建人。
+
+    新反馈按权限通知处理者（``reviews.read_feedback``）。
+    """
+    feedback = Feedback.objects.create(
         title=title,
         description=description or "",
         category=category,
@@ -20,6 +23,18 @@ def submit(*, title, description="", category, contact="", creator=None):
         creator=creator,
         status=Feedback.STATUS_PENDING,
     )
+    notify_perm(
+        "review",
+        "feedback_submitted",
+        "reviews.read_feedback",
+        payload={
+            "type": "feedback",
+            "id": feedback.pk,
+            "title": feedback.title,
+            "url": f"/feedback/{feedback.pk}",
+        },
+    )
+    return feedback
 
 
 def close(feedback, actor, *, note=""):

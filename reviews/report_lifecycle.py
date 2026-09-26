@@ -4,7 +4,13 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from messaging.models import Comment, CommentThread
-from messaging.services import MessagingError, delete_comment_for_report, host_of
+from messaging.services import (
+    MessagingError,
+    delete_comment_for_report,
+    host_of,
+    notify_many,
+    notify_perm,
+)
 
 from .discipline import mute_user_for_report
 
@@ -74,6 +80,7 @@ def file(*, actor, target_type, target_id, reason):
         raise ReportDenied("不能举报该对象")
 
     fk = _FK[target_type]
+    created = False
     try:
         with transaction.atomic():
             open_case = (
@@ -85,12 +92,25 @@ def file(*, actor, target_type, target_id, reason):
                 open_case = ReportCase.objects.create(
                     status=ReportCase.STATUS_OPEN, **{fk: target},
                 )
+                created = True
             if ReportFiling.objects.filter(case=open_case, reporter=actor).exists():
                 raise ReportDenied("你已举报过该对象")
             ReportFiling.objects.create(case=open_case, reporter=actor, reason=reason)
-            return open_case
     except IntegrityError as exc:
         raise ReportDenied("你已举报过该对象") from exc
+    if created:  # 首次立案 → 通知处理者（追加举报不重复打扰）
+        notify_perm(
+            "review",
+            "report_submitted",
+            "reviews.handle_report",
+            actor=actor,
+            payload={
+                "type": target_type,
+                "id": open_case.pk,
+                "url": "/reviews",
+            },
+        )
+    return open_case
 
 
 def dismiss(case, actor, *, comment):
@@ -107,7 +127,26 @@ def dismiss(case, actor, *, comment):
     case.save(update_fields=[
         "status", "resolved_by", "resolved_at", "resolution_comment", "updated_at",
     ])
+    _notify_reporters(case, actor)
     return case
+
+
+def _notify_reporters(case, actor):
+    """举报处理结果：通知该案全部举报人。"""
+    reporters = [filing.reporter for filing in case.filings.select_related("reporter")]
+    if not reporters:
+        return
+    notify_many(
+        reporters,
+        "review",
+        "report_resolved",
+        actor=actor,
+        payload={
+            "type": "report",
+            "id": case.pk,
+            "result": "dismissed" if case.status == ReportCase.STATUS_DISMISSED else "upheld",
+        },
+    )
 
 
 def uphold(case, actor, *, comment="", ends_at=None):
@@ -126,6 +165,7 @@ def uphold(case, actor, *, comment="", ends_at=None):
     case.save(update_fields=[
         "status", "resolved_by", "resolved_at", "resolution_comment", "updated_at",
     ])
+    _notify_reporters(case, actor)
     return case
 
 

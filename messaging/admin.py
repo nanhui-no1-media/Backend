@@ -62,6 +62,21 @@ class BannerAdmin(admin.ModelAdmin):
     def body_preview(self, obj):
         return obj.body[:50]
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if not change:  # 新建公告 → 全员广播（订阅与静默规则照常生效）
+            from messaging.services import notify_all
+
+            notify_all(
+                "announcement",
+                "published",
+                payload={
+                    "type": "banner",
+                    "id": obj.pk,
+                    "url": obj.link or "/",
+                },
+            )
+
 
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):

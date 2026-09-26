@@ -17,13 +17,15 @@ class Event:
 
 
 class NotificationSource:
-    """通知源基类。子类声明 key / name / description / events / default_channels。"""
+    """通知源基类。子类声明 key / name / description / events / default_channels / 视觉标识。"""
 
     key: str = ""
     name: str = ""
     description: str = ""
     events: tuple = ()
     default_channels: tuple = ("site",)
+    color: str = "#0756a2"  # 源主色（邮件头部/标签、界面标识）
+    emoji: str = "🔔"       # 源图标（邮件与界面）
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Source {self.key}>"

@@ -2,13 +2,95 @@
 from __future__ import annotations
 
 import logging
+from email.mime.image import MIMEImage
+from pathlib import Path
 
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
 
 from .registry import BaseChannel, get_source, register_channel
 
 logger = logging.getLogger(__name__)
+
+
+def _event_name(source, event_key: str) -> str:
+    """事件展示名（回退到原始 key）。"""
+    if source:
+        for ev in getattr(source, "events", ()) or ():
+            if ev.key == event_key:
+                return ev.name
+    return event_key
+
+
+def _absolute_url(path: str) -> str:
+    """相对路径 → 绝对 URL（邮件客户端无站点上下文）。"""
+    path = (path or "").strip()
+    if not path:
+        return ""
+    if path.startswith(("http://", "https://")):
+        return path
+    base = (getattr(settings, "FRONTEND_URL", "") or "").rstrip("/")
+    return f"{base}{path}" if base else path
+
+
+def _tint(hex_color: str, ratio: float = 0.88) -> str:
+    """主色的浅色底（源标签 pill 背景用）。"""
+    try:
+        h = hex_color.lstrip("#")
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except Exception:  # pragma: no cover - 防御性
+        return "#eef4fa"
+
+    def mix(c: int) -> int:
+        return int(c + (255 - c) * ratio)
+
+    return f"#{mix(r):02x}{mix(g):02x}{mix(b):02x}"
+
+
+def _copy_for(category: str, event: str, payload: dict) -> str:
+    """通知正文文案（按源与事件个性化；对象类附名称）。"""
+    obj_title = (payload.get("title") or "").strip()
+    quoted = f"「{obj_title}」" if obj_title else ""
+    if category == "review":
+        if event == "feedback_submitted":
+            return f"{quoted or '有用户'}提交了新的意见反馈，请前往查看并处理。"
+        if event == "content_submitted":
+            return f"{quoted or '有新内容'}等待审核，请前往审核工作台处理。"
+        if event == "report_submitted":
+            return "有新的举报提交，请前往审核工作台查看处理。"
+        if event == "identity_submitted":
+            return "有新的身份认证申请提交，请前往审核工作台处理。"
+        if event == "identity_resolved":
+            if payload.get("result") == "approved":
+                return "你的身份认证已通过审核，现在可以使用全部功能了。"
+            return "你的身份证明材料未通过审核，可在「账号验证」面板重新提交更清晰的材料。"
+        if event == "report_resolved":
+            if payload.get("result") == "upheld":
+                return "你提交的举报已成立并完成处置，感谢你的反馈。"
+            return "你提交的举报经核实后未予处理，感谢你的反馈。"
+        if event == "closed":
+            return "你提交的意见反馈已被处理了结。"
+    if category == "activity":
+        if event == "published":
+            return f"{quoted or '新活动'}已发布上线，快来看看吧！"
+        if event == "opened":
+            return f"{quoted or '活动'}已开始，现在可以参与了。"
+    if category == "comment":
+        if event == "comment_replied":
+            return "有人回复了你的评论，点击查看详情。"
+        if event == "comment_mentioned":
+            return "有人在评论中提到了你，点击查看详情。"
+    if category == "dm":
+        return "你收到了一条新私信，登录后即可查看。"
+    if category == "announcement":
+        return "全站发布了新的公告，点击查看。"
+    if category == "discipline":
+        if event == "muted":
+            return "你的账号已被禁言，期间暂时无法发言。"
+        if event in ("mute_lifted", "mute_expired"):
+            return "你的禁言已解除，现在可以正常发言了。"
+    return "你有一条新通知，登录站点即可查看完整内容。"
 
 
 @register_channel
@@ -25,7 +107,7 @@ class SiteChannel(BaseChannel):
 
 @register_channel
 class EmailChannel(BaseChannel):
-    """邮件：发送通知摘要到用户已验证邮箱。"""
+    """邮件：发送带社团徽标的 HTML 通知到用户已验证邮箱（每源独立配色）。"""
 
     key = "email"
     name = "邮件"
@@ -51,21 +133,48 @@ class EmailChannel(BaseChannel):
 
         source = get_source(notification.category)
         source_name = source.name if source else "站内"
-        subject = f"{source_name}通知 - 南汇一中传媒社"
+        color = (getattr(source, "color", "") or "#0756a2") if source else "#0756a2"
+        emoji = (getattr(source, "emoji", "") or "🔔") if source else "🔔"
+        event_name = _event_name(source, notification.event)
 
-        parts = [f"你有一条新通知（{notification.event}）。"]
-        link = (notification.payload or {}).get("url")
-        if link:
-            parts.append(f"详情：{link}")
-        parts.append("请登录站点查看完整内容。")
+        payload = notification.payload or {}
+        url = _absolute_url(payload.get("url"))
+        message = _copy_for(notification.category, notification.event, payload)
 
-        send_mail(
-            subject=subject,
-            message="\n".join(parts),
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=[email],
-            fail_silently=False,
+        subject = f"【南汇一中传媒社·{source_name}】{event_name}"
+        html = render_to_string(
+            "messaging/notifications/email.html",
+            {
+                "color": color,
+                "tint": _tint(color),
+                "emoji": emoji,
+                "source_name": source_name,
+                "title": event_name,
+                "message": message,
+                "url": url,
+            },
         )
+        text_lines = [event_name, "", message]
+        if url:
+            text_lines += ["", f"详情：{url}"]
+        text_lines += ["", "（可在「个人中心 → 通知设置」中调整通知方式）"]
+
+        msg = EmailMultiAlternatives(
+            subject=subject,
+            body="\n".join(text_lines),
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            to=[email],
+        )
+        msg.attach_alternative(html, "text/html")
+
+        logo_path = Path(__file__).resolve().parent.parent / "assets" / "club_logo.png"
+        if logo_path.exists():
+            image = MIMEImage(logo_path.read_bytes(), _subtype="png")
+            image.add_header("Content-ID", "<club-logo>")
+            image.add_header("Content-Disposition", "inline", filename="club-logo.png")
+            msg.attach(image)
+
+        msg.send(fail_silently=False)
 
 
 @register_channel

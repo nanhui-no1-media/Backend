@@ -15,6 +15,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from common.policy import get_policy
+from messaging.services import notify
 
 from .models import IdentityProof, Profile, UserSession, Verification
 from .permissions import CanReviewIdentity
@@ -67,10 +68,17 @@ def approve_manual(user, reviewer):
         verification.verified_at = now
         verification.verified_by = reviewer
         verification.save(update_fields=["status", "verified_at", "verified_by"])
-    _send(
+    notify(
         user,
-        "身份审核已通过 - 南汇一中传媒社",
-        "你的身份证明已通过审核，现在可以使用全部功能（发帖 / 发消息 / 建申报等）。",
+        "review",
+        "identity_resolved",
+        actor=reviewer,
+        payload={
+            "type": "identity",
+            "id": user.pk,
+            "result": "approved",
+            "url": "/profile",
+        },
     )
     return verification
 
@@ -91,10 +99,17 @@ def reject_manual(user, reviewer):
         verification.verified_at = None
         verification.verified_by = None
         verification.save(update_fields=["status", "verified_at", "verified_by"])
-    _send(
+    notify(
         user,
-        "身份审核已驳回 - 南汇一中传媒社",
-        "你的身份证明未通过审核。请在「账号验证」面板重新提交更清晰的证明材料。",
+        "review",
+        "identity_resolved",
+        actor=reviewer,
+        payload={
+            "type": "identity",
+            "id": user.pk,
+            "result": "rejected",
+            "url": "/profile",
+        },
     )
     return verification
 

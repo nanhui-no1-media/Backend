@@ -48,7 +48,26 @@ def transition_due_starts():
         )
         if changed:
             opened.append(activity.pk)
+    if opened:
+        _notify_opened(opened)
     return opened
+
+
+def _notify_opened(activity_ids):
+    """活动到点开放：向全体订阅者广播（订阅与静默规则照常生效）。"""
+    from messaging.services import notify_all
+
+    for activity in Activity.objects.filter(pk__in=activity_ids):
+        notify_all(
+            "activity",
+            "opened",
+            payload={
+                "type": "activity",
+                "id": activity.pk,
+                "title": getattr(activity, "title", "") or "",
+                "url": f"/activity/{activity.pk}",
+            },
+        )
 
 
 def can_edit(activity):

@@ -2,7 +2,7 @@
 from django.utils import timezone
 
 from common.policy import get_policy
-from messaging.services import notify
+from messaging.services import notify, notify_all, notify_perm
 
 from .models import Review
 
@@ -43,13 +43,17 @@ def open_review(*, news=None, activity=None, tutorial=None, actor, force_publish
         force_publish = bool(actor and actor.has_perm("reviews.force_publish"))
     kwargs = {"news": news, "activity": activity, "tutorial": tutorial}
     if force_publish or not get_policy().content_review_enabled:
-        return Review.objects.create(
+        review = Review.objects.create(
             **kwargs,
             status=Review.STATUS_APPROVED,
             reviewer=actor,
             reviewed_at=timezone.now(),
         )
-    return Review.objects.create(**kwargs, status=Review.STATUS_PENDING)
+        _notify_activity_published_if(review, actor)
+        return review
+    review = Review.objects.create(**kwargs, status=Review.STATUS_PENDING)
+    _notify_reviewers(review, actor)
+    return review
 
 
 def apply(action, review, user, *, comment=""):
@@ -73,6 +77,8 @@ def apply(action, review, user, *, comment=""):
         review.comment = (comment or "").strip()
     review.save(update_fields=["status", "comment", "reviewer", "reviewed_at", "updated_at"])
     _notify_owner(review, action, user)
+    if action == APPROVE:
+        _notify_activity_published_if(review, user)
     return review
 
 
@@ -92,6 +98,49 @@ def _notify_owner(review, action, actor):
         payload={
             "type": kind,
             "id": host.pk,
+            "url": _HOST_URL[kind].format(id=host.pk),
+        },
+    )
+
+
+def _host_title(kind, host):
+    return getattr(host, "title", "") or ""
+
+
+def _notify_reviewers(review, actor):
+    """待审内容 → 通知持 ``reviews.moderate`` 的审核者（权限驱动投递）。"""
+    host, _, kind = _host_owner(review)
+    if host is None:
+        return
+    notify_perm(
+        "review",
+        "content_submitted",
+        "reviews.moderate",
+        actor=actor,
+        payload={
+            "type": kind,
+            "id": host.pk,
+            "title": _host_title(kind, host),
+            "url": _HOST_URL[kind].format(id=host.pk),
+        },
+    )
+
+
+def _notify_activity_published_if(review, actor):
+    """活动上线（免审直过或审核通过）后向全体订阅者广播。"""
+    if review.status != Review.STATUS_APPROVED:
+        return
+    host, _, kind = _host_owner(review)
+    if host is None or kind != "activity":
+        return
+    notify_all(
+        "activity",
+        "published",
+        actor=actor,
+        payload={
+            "type": "activity",
+            "id": host.pk,
+            "title": _host_title(kind, host),
             "url": _HOST_URL[kind].format(id=host.pk),
         },
     )

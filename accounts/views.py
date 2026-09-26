@@ -322,6 +322,20 @@ def verification_manual_submit_view(request):
         profile.identity = identity
         profile.save(update_fields=["real_name", "identity"])
 
+    from messaging.services import notify_perm  # 局部导入：避免潜在循环依赖
+
+    notify_perm(
+        "review",
+        "identity_submitted",
+        "accounts.can_review_identity",
+        actor=user,
+        payload={
+            "type": "identity",
+            "id": user.pk,
+            "username": user.username,
+            "url": "/reviews",
+        },
+    )
     return JsonResponse({"message": "身份证明已提交，等待管理员审核。"})
 
 
