@@ -20,6 +20,7 @@ urlpatterns = [
     path("verification/", views.verification_status_view, name="verification_status"),
     path("verification/email/bind/", views.verification_email_bind_view, name="verification_email_bind"),
     path("verification/manual/submit/", views.verification_manual_submit_view, name="verification_manual_submit"),
+    path("verification/authcode/redeem/", views.verification_authcode_redeem_view, name="verification_authcode_redeem"),
     path("sessions/", views.sessions_view, name="sessions"),
     path("csrf/", views.csrf_token_view, name="csrf_token"),
     path("password-reset/", views.password_reset_view, name="password_reset"),

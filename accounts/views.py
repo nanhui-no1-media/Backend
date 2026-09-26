@@ -28,10 +28,16 @@ from rest_framework.request import Request
 
 from common.policy import get_policy
 
+from .authcode import AuthCodeError, redeem_authcode
 from .forms import LoginForm, PasswordResetForm, PasswordResetConfirmForm, ProfileForm, ChangePasswordForm
 from .models import Profile, IdentityProof, UserSession, Verification, is_verified
 from .tokens import email_verification_token
-from .throttles import RegisterThrottle, ResendVerificationThrottle, login_blocked_response
+from .throttles import (
+    AuthCodeRedeemThrottle,
+    RegisterThrottle,
+    ResendVerificationThrottle,
+    login_blocked_response,
+)
 from .turnstile import passes_turnstile, turnstile_error_response
 from .utils import SESSION_HISTORY_LIMIT
 from .visibility import content_visibility, profile_view_for
@@ -337,6 +343,42 @@ def verification_manual_submit_view(request):
         },
     )
     return JsonResponse({"message": "身份证明已提交，等待管理员审核。"})
+
+
+@require_POST
+@login_required
+def verification_authcode_redeem_view(request):
+    """认证码通道：兑换认证码（ADR-0020）。
+
+    码由持 accounts.add_authcode 的用户在 Django 后台生成、线下分发；成员在此兑换，
+    即时通过（无 pending、无人工环节）。无效 / 过期 / 用尽 / 吊销计入按账号节流
+    （只计失败）；成功不占额度。已通过任意通道的账号不可再兑换（不消耗任何码）。
+    """
+    if not get_policy().verification_enabled:
+        return _verification_closed_response()
+
+    throttle = AuthCodeRedeemThrottle()
+    if throttle.is_blocked(request):
+        return JsonResponse({"error": "请求过于频繁，请稍后再试。"}, status=429)
+
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    code = (body.get("code") or "").strip()
+    if not code:
+        return JsonResponse({"error": "请输入认证码。"}, status=400)
+
+    if is_verified(request.user):
+        return JsonResponse({"error": "账号已完成验证，无需使用认证码。"}, status=400)
+
+    try:
+        redeem_authcode(request.user, code)
+    except AuthCodeError as exc:
+        throttle.allow_request(request, None)  # 只计失败：成功不占额度
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    return JsonResponse({"message": "认证码验证通过，账号已完成验证。"})
 
 
 @login_required

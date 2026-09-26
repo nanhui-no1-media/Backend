@@ -169,6 +169,7 @@ news, reviews, tutorials, recruitment, attachments, rest_framework_tus
 | `login_per_username_per_hour` | `10` | 每用户名 / 邮箱每小时登录失败次数 |
 | `feedback_anon_per_ip_per_day` | `10` | 每 IP 每日匿名反馈次数 |
 | `reports_per_user_per_day` | `10` | 每用户每日举报次数 |
+| `authcode_redeem_per_user_per_hour` | `10` | 每账号每小时认证码兑换**失败**次数（只计失败） |
 | `sync_upload_max_bytes` | `52428800`（50MB） | 同步上传单文件上限 |
 | `tus_media_max_bytes` | `524288000`（500MB） | tus 图 / 视频上限 |
 | `auto_update_enabled` | `True` | 自动更新总开关 |

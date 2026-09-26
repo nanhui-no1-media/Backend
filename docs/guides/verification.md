@@ -1,6 +1,6 @@
 # 身份验证
 
-> 相关：[账号 API](../api/accounts.md) · [访问控制](access-control.md) · [ADR-0006](../adr/0006-verification-model.md) · [ADR-0013](../adr/0013-appointment-verification-channel.md)
+> 相关：[账号 API](../api/accounts.md) · [访问控制](access-control.md) · [ADR-0006](../adr/0006-verification-model.md) · [ADR-0013](../adr/0013-appointment-verification-channel.md) · [ADR-0020](../adr/0020-authcode-verification-channel.md)
 
 ## 为什么要验证
 
@@ -19,13 +19,14 @@
 - 人工通道的证据（`IdentityProof`）**永久留底**，审核通过或重新提交都不删除。
 - 人工通道驳回后**允许重交**：通道行回到 `pending`，新证明累加。
 
-### 三条通道
+### 四条通道
 
 | 通道 | 触发方式 | 说明 |
 |---|---|---|
 | `manual` 人工审批 | 用户提交身份证明 → 信息组审核 | 主通道：真实姓名 + 证明件上传 |
 | `email` 邮箱 | 用户自助绑定 → 点邮件链接确认 | 验证通过才把地址晋升为账号邮箱 |
 | `appointment` 后台委任 | 账号被授予 `is_staff` / `is_superuser` 时**自动** approved | 只读、无自助申请；撤销委任则删行、退回未验证 |
+| `authcode` 认证码 | 管理员在后台生成码 → 成员在面板兑换 | 线下分发；码带有效期 + 可用次数，兑换即通过、无人工环节；过期 / 吊销不回溯已通过者（[ADR-0020](../adr/0020-authcode-verification-channel.md)） |
 
 > 管理员 / 超级管理员不走自助流程——委任本身就是一条验证通道（[ADR-0013](../adr/0013-appointment-verification-channel.md)）。注意验证轴与权限轴的「逃生舱」相互独立：超管的 `has_perm` 恒真（[ADR-0005](../adr/0005-access-control-principle.md)），而验证面板照常显示其「后台委任」通道状态。
 
@@ -35,7 +36,8 @@
 2. 打开个人中心的**验证面板**（`GET /auth/verification/`）：数据驱动的通道状态卡，查状态、绑邮箱、提交证明都在这里。
 3. **走邮箱通道**：`POST /auth/verification/email/bind/` 绑定地址 → 收到验证邮件 → 点链接确认（`/auth/verify-email/`）→ 通道 approved，地址晋升为账号邮箱。
 4. **走人工通道**：`POST /auth/verification/manual/submit/` 提交真实姓名 + 证明件 → 等待审核。
-5. **结果**：通过 → 徽章变「用户」，受限功能放开；驳回 → 邮件通知，可重新提交。
+5. **走认证码通道**：收到管理员发放的认证码后，在面板输入并兑换（`POST /auth/verification/authcode/redeem/`）→ **即时通过**，无人工环节。
+6. **结果**：通过 → 徽章变「用户」，受限功能放开；驳回 → 邮件通知，可重新提交。
 
 > 没收到邮件可用 `/auth/resend-verification/` 重发；邮箱登录**只认已验证邮箱**，待验地址登不进。
 

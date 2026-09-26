@@ -197,10 +197,11 @@ class VerificationStatusEndpointTest(TestCase):
         data = self._get(u).json()
         self.assertFalse(data["is_verified"])
         channels = {c["channel"]: c for c in data["channels"]}
-        self.assertEqual(set(channels), {"appointment", "email", "manual"})  # 每定义通道一卡
+        self.assertEqual(set(channels), {"appointment", "email", "manual", "authcode"})  # 每定义通道一卡
         self.assertEqual(channels["appointment"]["status"], "none")
         self.assertEqual(channels["email"]["status"], "none")
         self.assertEqual(channels["manual"]["status"], "none")
+        self.assertEqual(channels["authcode"]["status"], "none")
 
     def test_email_pending_shown_not_verified(self):
         u = User.objects.create_user(username="u", password="p")
@@ -239,7 +240,7 @@ class VerificationStatusEndpointTest(TestCase):
     def test_channels_in_defined_order(self):
         u = User.objects.create_user(username="u", password="p")
         channels = [c["channel"] for c in self._get(u).json()["channels"]]
-        self.assertEqual(channels, ["appointment", "email", "manual"])  # CHANNELS 定义序
+        self.assertEqual(channels, ["appointment", "email", "manual", "authcode"])  # CHANNELS 定义序
 
     def test_channel_object_keyset(self):
         # 钉死通道对象键集（前后端契约的「后端半」；前端半见 VerificationPanelContractTest）
@@ -262,7 +263,7 @@ class VerificationPanelContractTest(TestCase):
         )
         src = ts_path.read_text(encoding="utf-8")
 
-        # 前端 VERIFICATION_CHANNELS = ["appointment", "email", "manual"]
+        # 前端 VERIFICATION_CHANNELS = ["appointment", "email", "manual", "authcode"]
         ch_match = re.search(r"VERIFICATION_CHANNELS\s*=\s*\[([^\]]*)\]", src)
         self.assertIsNotNone(ch_match, "前端未定义 VERIFICATION_CHANNELS")
         fe_channels = set(re.findall(r'"([a-z]+)"', ch_match.group(1)))

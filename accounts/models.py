@@ -71,10 +71,12 @@ class Verification(models.Model):
     CHANNEL_APPOINTMENT = "appointment"
     CHANNEL_EMAIL = "email"
     CHANNEL_MANUAL = "manual"
+    CHANNEL_AUTHCODE = "authcode"
     CHANNELS = [
         (CHANNEL_APPOINTMENT, "后台委任"),
         (CHANNEL_EMAIL, "邮箱"),
         (CHANNEL_MANUAL, "人工审批"),
+        (CHANNEL_AUTHCODE, "认证码"),
     ]
 
     STATUS_PENDING = "pending"
@@ -223,3 +225,70 @@ class UserSession(models.Model):
     def __str__(self):
         state = "current" if self.is_current else "old"
         return f"{self.user.username} @ {self.session_key[:8]} ({state})"
+
+
+class AuthCode(models.Model):
+    """认证码（ADR-0020）：后台生成、成员兑换即通过；有效期 × 可用次数。
+
+    归属验证体系：兑换直接写 authcode 通道 approved（identifier=码原文，后台可读）。
+    码的寿命（过期 / 吊销 / 用尽）只停止**后续**兑换，**不回溯**已通过者；兑换记录
+    （AuthCodeRedemption）为审计留底。生成侧只在 Django 后台（不建前端管理页）。
+    """
+
+    code = models.CharField("认证码", max_length=32, unique=True)  # 12 位模板，存归一化大写
+    note = models.CharField("备注", max_length=200, blank=True, default="")  # 发给谁 / 用途
+    created_by = models.ForeignKey(
+        User, verbose_name="生成人", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="authcodes_created",
+    )
+    created_at = models.DateTimeField("生成时间", auto_now_add=True)
+    expires_at = models.DateTimeField("有效期至")  # 必填：过期后不可兑换
+    max_uses = models.PositiveIntegerField("可用次数", default=1)  # 可供多少个账号各用一次
+    used_count = models.PositiveIntegerField("已用次数", default=0)
+    revoked_at = models.DateTimeField("吊销时间", null=True, blank=True)  # 软吊销（留底）
+
+    class Meta:
+        verbose_name = "认证码"
+        verbose_name_plural = "认证码"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.code
+
+    @property
+    def status(self):
+        """派生状态（不落库）：valid / expired / exhausted / revoked。
+
+        优先级：吊销 > 过期 > 用尽 > 有效。过期纯惰性判定（后台展示 + 兑换时校验），
+        无定时任务。
+        """
+        if self.revoked_at is not None:
+            return "revoked"
+        if self.expires_at is not None and self.expires_at <= timezone.now():
+            return "expired"
+        if self.used_count >= self.max_uses:
+            return "exhausted"
+        return "valid"
+
+
+class AuthCodeRedemption(models.Model):
+    """兑换记录（审计留底）：一码一账号一条；每账号至多一条（全局唯一约束）。"""
+
+    authcode = models.ForeignKey(
+        AuthCode, verbose_name="认证码", on_delete=models.CASCADE, related_name="redemptions"
+    )
+    user = models.ForeignKey(
+        User, verbose_name="用户", on_delete=models.CASCADE, related_name="authcode_redemptions"
+    )
+    redeemed_at = models.DateTimeField("兑换时间", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "认证码兑换记录"
+        verbose_name_plural = "认证码兑换记录"
+        ordering = ["-redeemed_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["user"], name="unique_authcode_per_user"),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} ← {self.authcode.code}"

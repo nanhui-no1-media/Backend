@@ -25,6 +25,7 @@ class SiteSettingsAdmin(admin.ModelAdmin):
                     "login_per_username_per_hour",
                     "feedback_anon_per_ip_per_day",
                     "reports_per_user_per_day",
+                    "authcode_redeem_per_user_per_hour",
                 )
             },
         ),
