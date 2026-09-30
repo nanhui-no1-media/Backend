@@ -142,7 +142,7 @@ export default function AboutPage() {
             <span>关于我们</span>
           </nav>
           <h1 className="detail-title">关于我们</h1>
-          <p className="section-sub">社团 / 学校 / 网站 / 联系 / 校园一览</p>
+          <p className="section-sub">{blocks.map((b) => b.title).join(" / ")}</p>
         </div>
       </div>
 
