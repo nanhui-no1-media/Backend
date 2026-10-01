@@ -1,3 +1,5 @@
+
+#需要上传收款码（支付宝/微信商家（个人也行）收款），这是注释
 from django.db import migrations
 
 
