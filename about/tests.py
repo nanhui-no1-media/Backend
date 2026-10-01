@@ -20,7 +20,7 @@ class AboutReadTest(TestCase):
         resp = self.client.get("/about/")
         self.assertEqual(resp.status_code, 200)
         keys = [b["key"] for b in resp.data["blocks"]]
-        self.assertEqual(keys, ["club", "school", "site", "contact", "campus-overview"])
+        self.assertEqual(keys, ["club", "school", "site", "contact", "campus-overview", "support-us"])
         self.assertEqual(resp.data["blocks"][0]["title"], "关于我们")  # 单例标题迁入第一块
         self.assertIn("overview", resp.data)
         self.assertEqual(resp.data["overview"]["founded"], "2026.03")
@@ -80,7 +80,7 @@ class AboutBlockWriteTest(TestCase):
 
     def test_same_perm_covers_all_blocks(self):
         self.client.force_authenticate(self.editor)
-        for key in ("club", "school", "site", "contact", "campus-overview"):
+        for key in ("club", "school", "site", "contact", "campus-overview", "support-us"):
             resp = self.client.patch(f"/about/blocks/{key}/", {"title": f"t-{key}"}, format="json")
             self.assertEqual(resp.status_code, 200, key)
 
