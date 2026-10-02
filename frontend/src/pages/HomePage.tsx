@@ -5,6 +5,7 @@ import { newsApi } from "../api/news";
 import { aboutApi, type ClubOverview } from "../api/about";
 import AppShell from "../components/AppShell";
 import ClubFeed from "../components/ClubFeed";
+import NeonParticles from "../components/NeonParticles";
 import { useLoginModal } from "../components/LoginModalProvider";
 import "../styles/form.css";
 import "../styles/home.css";
@@ -64,6 +65,7 @@ export default function HomePage() {
   return (
     <AppShell>
       <section className="hero">
+        <NeonParticles className="hero-particles" />
         <div className="hero-inner">
           <span className="hero-badge"><EqBars /> 上海市南汇第一中学 · 传媒社</span>
           <h1>用镜头记录青春<br /><span className="accent">以创新展望未来</span></h1>
