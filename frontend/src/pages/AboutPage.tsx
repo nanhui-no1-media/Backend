@@ -198,9 +198,9 @@ export default function AboutPage() {
                         ) : (
                           <p className="empty-text">{canEdit ? "尚未填写内容，点击「编辑」开始。" : "内容即将上线。"}</p>
                         )}
-                        {block.key === "campus-overview" && block.panorama_url && (
+                        {block.key === "campus-overview" && (
                           <p style={{ marginTop: "var(--s-4)" }}>
-                            <a className="btn btn-primary" href={block.panorama_url} target="_blank" rel="noopener noreferrer">
+                            <a className="btn btn-primary" href="/static/panorama/index.html" target="_blank" rel="noopener noreferrer">
                               校园全景图
                             </a>
                           </p>
