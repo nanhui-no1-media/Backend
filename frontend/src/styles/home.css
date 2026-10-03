@@ -49,16 +49,16 @@
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
   .hero h1 .accent {
     color: transparent;
-    background: linear-gradient(90deg, #00e5ff, #7b5cff 50%, #ff2d95);
-    background-size: 220% 100%;
+    background: linear-gradient(90deg, #00e5ff, #7b5cff 33%, #ff2d95 66%, #00e5ff 100%);
+    background-size: 200% 100%;
     -webkit-background-clip: text;
     background-clip: text;
     text-shadow: none;
-    animation: accent-flow 7s linear infinite;
+    animation: accent-flow 14s linear infinite;
     filter: drop-shadow(0 0 12px oklch(0.78 0.16 200 / .7));
   }
 }
-@keyframes accent-flow { 0% { background-position: 0% 50%; } 100% { background-position: 220% 50%; } }
+@keyframes accent-flow { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
 .hero-sub { font-size: clamp(15px, 1.6vw, 18px); color: oklch(1 0 0 / .78); max-width: 46ch; line-height: 1.7; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: var(--s-3); margin-top: var(--s-8); }
 .hero-actions .btn-primary { background: #fff; color: var(--brand-800); }
